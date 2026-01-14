@@ -12,8 +12,9 @@ dependencies = [
     "ONE-api",
     "iblatlas",
     "trimesh",
-    "rtree", # needed for splitting meshes into hemispheres using trimesh
-    "mapbox-earcut" # needed for splitting meshes into hemispheres using trimesh
+    "rtree", # needed for splitting meshes into hemispheres using trimesh # needed for splitting meshes into hemispheres using trimesh
+    "mapbox-earcut",
+    "pyqt6>=6.10.2",
 ]
 
 requires-python = ">=3.10"
@@ -26,6 +27,9 @@ build-backend = "pdm.backend"
 
 [tool.pdm]
 distribution = true
+
+[tool.uv.sources]
+datoviz = { path = "vendor/datoviz", editable = true }
 
 [dependency-groups]
 dev = [

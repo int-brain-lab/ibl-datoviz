@@ -7,6 +7,15 @@ cd ibl-datoviz
 pip install -e .
 ```
 
+## Local datoviz development (uv)
+To use a local checkout of `datoviz`, create a symlink and sync with uv:
+```bash
+mkdir -p vendor
+ln -s /path/to/datoviz vendor/datoviz
+uv venv --python 3.10
+uv sync
+```
+
 ## Create an interactive datoviz app
 ```python
 import datoviz as dvz
