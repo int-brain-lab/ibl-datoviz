@@ -272,7 +272,7 @@ class InsertionController:
 
         Parameters
         ----------
-        ids: list, optional
+        pids: list, optional
             A list IDs of insertions to show. If None, shows all insertions that have been added
             to the model. Default is None.
         """
@@ -331,7 +331,7 @@ class InsertionController:
         the model.
 
         If the width is given as an array it can only be set for a single insertion at a
-        time, i.e the ID must be specified.
+        time, i.e. the ID must be specified.
 
         Parameters
         ----------
@@ -363,7 +363,7 @@ class InsertionController:
         model.
 
         If the color is given as an array it can only be set for a single insertion at a time,
-        i.e the ID must be specified.
+        i.e. the ID must be specified.
 
         Parameters
         ----------

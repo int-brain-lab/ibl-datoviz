@@ -552,22 +552,6 @@ class BrainMeshView:
         """
         return (pos - self.offset) * self.scale
 
-    def remove_root(self):
-        """Remove the root brain region from the panel."""
-        region = self.regions.get(997, None)
-        if region is not None:
-            self.panel.remove(region.visual)
-
-    def add_root(self):
-        """Add the root brain region to the panel."""
-        region = self.regions.get(997, None)
-        if region is not None:
-            self.panel.add(region.visual)
-            if region.visible:
-                region.visual.show()
-            else:
-                region.visual.hide()
-
     def add_region(
             self,
             region_id: int,
@@ -577,9 +561,6 @@ class BrainMeshView:
     ) -> None:
         """
         Add a brain region mesh to the panel.
-
-        If root region is already present, it is temporarily removed to ensure correct
-        rendering order.
 
         Parameters
         ----------
@@ -595,8 +576,6 @@ class BrainMeshView:
         if self.regions.get(region_id) is not None:
             return
 
-        if region_id != 997:
-            self.remove_root()
         visual = self.app.mesh(indexed=True, lighting=True, cull='back')
 
         visual.set_data(
@@ -611,9 +590,8 @@ class BrainMeshView:
             visible=True,
             color=colors[0])
 
-        self.panel.add(visual)
-        if region_id != 997:
-            self.add_root()
+        layer = -1 if region_id == 997 else 0
+        self.panel.add(visual, layer=layer)
 
         visual.hide()
         visual.show()

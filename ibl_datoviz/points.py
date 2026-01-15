@@ -144,9 +144,6 @@ class PointsModel:
     def compute_colors(self) -> None:
         """Compute the colors for the points based on their values and the colormap and levels."""
         self.colors = dvz.cmap(self.cmap, self.values, self.cmin, self.cmax)
-        # norm = colors.Normalize(vmin=self.cmin, vmax=self.cmax, clip=True)
-        # cmap = matplotlib.colormaps[self.cmap]
-        # self.colors = (cmap(norm(self.values)) * 255).astype(np.uint8)
         if self.alpha is not None:
             self.colors[:, 3] = self.alpha
 
