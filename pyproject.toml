@@ -5,6 +5,11 @@ description = "IBL datoviz package for visualizing data"
 authors = [
     {name = "International Brain Laboratory", email = "software-devs@internationalbrainlab.org"},
 ]
+
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT"}
+
 dependencies = [
     "datoviz",
     "numpy",
@@ -13,13 +18,18 @@ dependencies = [
     "iblatlas",
     "trimesh",
     "rtree", # needed for splitting meshes into hemispheres using trimesh # needed for splitting meshes into hemispheres using trimesh
-    "mapbox-earcut",
-    "pyqt6>=6.10.2",
+    "mapbox-earcut"
 ]
 
-requires-python = ">=3.10"
-readme = "README.md"
-license = {text = "MIT"}
+[project.optional-dependencies]
+# Optional install instructions for PyQt6
+qt = [
+    "pyqt6>=6.10.2"
+]
+## Optional install instructions for datoviz development version
+#datoviz_dev = [
+#    "datoviz @ file://${DATOVIZ_PATH}"
+#]
 
 [build-system]
 requires = ["pdm-backend"]
@@ -28,8 +38,8 @@ build-backend = "pdm.backend"
 [tool.pdm]
 distribution = true
 
-[tool.uv.sources]
-datoviz = { path = "vendor/datoviz", editable = true }
+#[tool.uv.sources]
+#datoviz = { path = "vendor/datoviz", editable = true }
 
 [dependency-groups]
 dev = [
