@@ -5,7 +5,7 @@ from ibl_datoviz.insertions import InsertionController
 class Viewer:
     def __init__(self, app, panel):
 
-        model = BrainMeshModel()
+        model = BrainMeshModel()  # this is only useful to define a common reference for all items
         self.offset = model.load_mesh(997)[0].mean(axis=0)
         self.scale = 200
         self.points = PointsController(app, panel, self.offset, scale=self.scale)

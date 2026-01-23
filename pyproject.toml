@@ -12,13 +12,14 @@ license = {text = "MIT"}
 
 dependencies = [
     "datoviz",
-    "numpy",
-    "iblutil",
-    "ONE-api",
     "iblatlas",
-    "trimesh",
+    "iblutil",
+    "mapbox-earcut",
+    "numpy",
+    "ONE-api",
     "rtree", # needed for splitting meshes into hemispheres using trimesh # needed for splitting meshes into hemispheres using trimesh
-    "mapbox-earcut"
+    "shapely",
+    "trimesh",
 ]
 
 [project.optional-dependencies]
