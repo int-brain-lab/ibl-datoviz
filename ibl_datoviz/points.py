@@ -47,7 +47,8 @@ class PointsModel:
             sizes: np.ndarray | int = 3,
             cmap: str = 'Blues',
             cmin: float | None = None,
-            cmax: float | None = None
+            cmax: float | None = None,
+            alpha: np.ndarray | float = 1.0,
     ) -> None:
         """
         Add points to the model.
@@ -71,6 +72,8 @@ class PointsModel:
         cmax: float, optional
             The maximum value for the colormap. Only used if values are given as a single value
             per point. Default is None.
+        alpha: float | np.array, optional
+            The alpha (transparency) values of the points, between 0 and 1. Default is 1.0.
         """
         self.xyz = np.ascontiguousarray(xyz, dtype=np.float32)
         self.values = np.ascontiguousarray(values)
@@ -80,6 +83,7 @@ class PointsModel:
             self.cmin = cmin or np.nanmin(self.values)
             self.cmax = cmax or np.nanmax(self.values)
         self.set_values(values)
+        self.set_alpha(int(alpha * 255) if np.isscalar(alpha) else np.astype(alpha * 255, np.uint8))
 
     def set_values(self, values: np.ndarray) -> None:
         """
@@ -224,7 +228,8 @@ class PointsController:
             sizes: np.ndarray | int | float = 3,
             cmap: str = 'Blues',
             cmin: float | None = None,
-            cmax: float | None = None
+            cmax: float | None = None,
+            alpha: np.ndarray | float = 1.,
     ) -> None:
         """
         Add points to the model and update the view.
@@ -248,8 +253,10 @@ class PointsController:
         cmax: float, optional
             The maximum value for the colormap. Only used if values are given as a single
             value per point. Default is None.
+        alpha: float | np.array, optional
+            The alpha (transparency) values of the points, between 0 and 1. Default is 1.0.
         """
-        self.model.add_points(xyz, values, sizes, cmap=cmap, cmin=cmin, cmax=cmax)
+        self.model.add_points(xyz, values, sizes, cmap=cmap, cmin=cmin, cmax=cmax, alpha=alpha)
         self.view.update_points(self.model.xyz, self.model.sizes, self.model.colors)
 
     def set_cmap(self, cmap: str) -> None:
