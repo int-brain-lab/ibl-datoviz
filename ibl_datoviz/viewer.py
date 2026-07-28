@@ -1,5 +1,6 @@
 from ibl_datoviz.meshes import BrainMeshController, BrainMeshModel
 from ibl_datoviz.points import PointsController
+from ibl_datoviz.glyphs import TextController
 from ibl_datoviz.insertions import InsertionController
 
 class Viewer:
@@ -10,5 +11,6 @@ class Viewer:
         self.scale = 200
         self.points = PointsController(app, panel, self.offset, scale=self.scale)
         self.insertions = InsertionController(app, panel, self.offset, scale=self.scale)
+        self.texts = TextController(app, panel, self.offset, scale=self.scale)
         self.meshes = BrainMeshController(app, panel, self.offset, scale=self.scale, model=model)
         self.meshes.add_root()
