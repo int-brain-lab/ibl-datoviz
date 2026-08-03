@@ -91,3 +91,20 @@ for pid in pids:
 
 viewer.insertions.add_insertions(ins, pids, [10] * 10, [[0, 0, 255, 255]] * 10)
 ```
+
+## Add text labels
+```python
+import numpy as np
+
+# `text_id` defaults to the text string itself if not given, so it can be used later to
+# show/hide this specific label.
+viewer.texts.add_text('SCs', np.array([0, 0, 0]), color=[0, 0, 0, 255], size=2)
+viewer.texts.add_text('VISp', np.array([-2000/1e6, -3000/1e6, 0]), color=[255, 0, 0, 255], size=2, text_id='visp_label')
+
+viewer.texts.hide_text('SCs')
+viewer.texts.show_text('SCs')
+
+# Hide/show several labels at once, or all of them by omitting `text_ids`
+viewer.texts.hide_texts(['SCs', 'visp_label'])
+viewer.texts.show_texts()
+```
