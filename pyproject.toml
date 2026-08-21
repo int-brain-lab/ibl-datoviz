@@ -11,12 +11,12 @@ readme = "README.md"
 license = {text = "MIT"}
 
 dependencies = [
-    "datoviz",
+    "datoviz<=0.3.5",
     "numpy",
     "iblutil",
     "ONE-api",
     "iblatlas",
-    "trimesh",
+    "trimesh[easy]", # requires shapely
     "rtree", # needed for splitting meshes into hemispheres using trimesh # needed for splitting meshes into hemispheres using trimesh
     "mapbox-earcut"
 ]
