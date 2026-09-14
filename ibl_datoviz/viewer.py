@@ -10,12 +10,15 @@ import datoviz as dvz
 import numpy as np
 
 from .atlas import AtlasMesh
+from .ontology import AtlasTreeModel, decode_region_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from types import ModuleType
 
     from numpy.typing import NDArray
+
+    from ibl_atlas_assets import AtlasRegionCatalog
 
 
 class AtlasViewer:
@@ -27,6 +30,7 @@ class AtlasViewer:
         *,
         mapping: str = 'allen',
         palette: Mapping[int, Sequence[int]] | None = None,
+        catalog: AtlasRegionCatalog | None = None,
         width: int = 900,
         height: int = 720,
         datoviz: ModuleType | None = None,
@@ -34,7 +38,9 @@ class AtlasViewer:
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
         self.mapping = mapping
-        self.palette = palette
+        self.catalog = catalog
+        self.tree_model = AtlasTreeModel.from_catalog(catalog, mapping) if catalog else None
+        self.palette = self.tree_model.palette if palette is None and self.tree_model else palette
         self.width = width
         self.height = height
         self.scene = self.dvz.dvz_scene()
@@ -44,6 +50,13 @@ class AtlasViewer:
         self.view = None
         self.arcball = None
         self.interaction = None
+        self.region_tree = None
+        self.gui = None
+        self._mapping_control = ctypes.c_int(mesh.mapping_names.index(mapping))
+        self._mapping_items = (ctypes.c_char_p * len(mesh.mapping_names))(
+            *(name.title().encode() for name in mesh.mapping_names)
+        )
+        self._highlight_region_ids: tuple[int, ...] = ()
         self._closed = False
         try:
             self.figure = self.dvz.dvz_figure(self.scene, width, height, 0)
@@ -58,7 +71,7 @@ class AtlasViewer:
                     {
                         'position': mesh.positions,
                         'normal': mesh.normals,
-                        'color': mesh.colors(mapping, palette),
+                        'color': mesh.colors(mapping, self.palette),
                     },
                 ),
                 'dense mesh upload',
@@ -69,19 +82,26 @@ class AtlasViewer:
             )
             self._check(
                 self.dvz.dvz_visual_set_query_capabilities(
-                    self.mesh, self.dvz.DVZ_QUERY_CAPABILITY_ITEM
+                    self.mesh, self.dvz.DVZ_QUERY_CAPABILITY_FACE
                 ),
                 'mesh picking capability',
             )
             self.link_channel = self.dvz.dvz_link_channel(self.scene, b'atlas-region')
             self._check(
-                self.dvz.dvz_visual_set_link_keys(
-                    self.mesh, self.link_channel, mesh.link_keys(mapping)
+                self.dvz.dvz_visual_set_target_link_keys(
+                    self.mesh,
+                    self.dvz.DVZ_SCENE_TARGET_FACE,
+                    self.link_channel,
+                    mesh.link_keys(mapping),
                 ),
                 'mesh region link keys',
             )
             self._check(self.dvz.dvz_panel_add_visual(self.panel, self.mesh, None), 'mesh attach')
-            self.interaction = self.dvz.dvz_item_interaction(self.panel, None)
+            interaction_desc = self.dvz.dvz_item_interaction_desc()
+            interaction_desc.target = self.dvz.DVZ_SCENE_TARGET_FACE
+            self.interaction = self.dvz.dvz_item_interaction(
+                self.panel, ctypes.byref(interaction_desc)
+            )
             if not self.interaction:
                 raise RuntimeError('dvz_item_interaction() failed')
             self.probe = None
@@ -106,6 +126,9 @@ class AtlasViewer:
         if self._closed:
             raise RuntimeError('viewer is closed')
         effective_palette = self.palette if palette is None else palette
+        if self.catalog is not None and palette is None:
+            self.tree_model = AtlasTreeModel.from_catalog(self.catalog, mapping)
+            effective_palette = self.tree_model.palette
         self._check(
             self.dvz.dvz_visual_set_data(
                 self.mesh, 'color', self.mesh_data.colors(mapping, effective_palette)
@@ -113,8 +136,11 @@ class AtlasViewer:
             'mapping color update',
         )
         self._check(
-            self.dvz.dvz_visual_set_link_keys(
-                self.mesh, self.link_channel, self.mesh_data.link_keys(mapping)
+            self.dvz.dvz_visual_set_target_link_keys(
+                self.mesh,
+                self.dvz.DVZ_SCENE_TARGET_FACE,
+                self.link_channel,
+                self.mesh_data.link_keys(mapping),
             ),
             'mapping link-key update',
         )
@@ -126,6 +152,10 @@ class AtlasViewer:
         )
         self.mapping = mapping
         self.palette = effective_palette
+        self._highlight_region_ids = ()
+        self._mapping_control.value = self.mesh_data.mapping_names.index(mapping)
+        if self.region_tree is not None:
+            self._replace_region_tree()
 
     def set_probe(
         self,
@@ -160,10 +190,16 @@ class AtlasViewer:
 
     def selected_region_ids(self) -> tuple[int, ...]:
         """Return signed mapped region IDs currently retained by mesh selection."""
+        tree_ids = ()
+        if self.region_tree is not None:
+            tree_ids = tuple(
+                decode_region_key(key)
+                for key in self.dvz.dvz_gui_tree_get_selection(self.region_tree)
+            )
         selection = self.dvz.dvz_item_interaction_selection(self.interaction)
         count = self.dvz.dvz_selection_count(selection)
         if count == 0:
-            return ()
+            return tree_ids
         items = (self.dvz.DvzSelectionItem * count)()
         self.dvz.dvz_selection_copy(selection, items, count)
         signed = []
@@ -171,7 +207,95 @@ class AtlasViewer:
             if item.link_key:
                 value = np.asarray(item.link_key, dtype=np.uint64).view(np.int64).item()
                 signed.append(value)
-        return tuple(signed)
+        return tuple(dict.fromkeys((*tree_ids, *signed)))
+
+    def _replace_region_tree(self) -> None:
+        if self.region_tree is not None:
+            self.dvz.dvz_gui_tree_destroy(self.region_tree)
+        model = self.tree_model
+        if model is None:
+            self.region_tree = None
+            return
+        self.region_tree = self.dvz.dvz_gui_tree(
+            b'ibl_atlas_ontology', self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_FILTER
+        )
+        if not self.region_tree:
+            raise RuntimeError('dvz_gui_tree() failed')
+        self._check(
+            self.dvz.dvz_gui_tree_set_rows(
+                self.region_tree,
+                model.keys,
+                model.parents,
+                model.acronyms,
+                model.names,
+                self.dvz.DVZ_GUI_DATA_SET_FLAGS_RESET_STATE,
+            ),
+            'atlas ontology rows',
+        )
+        self._check(
+            self.dvz.dvz_gui_tree_set_swatches(self.region_tree, model.colors),
+            'atlas ontology colors',
+        )
+        self._check(
+            self.dvz.dvz_gui_tree_expand_to_depth(self.region_tree, 3),
+            'atlas ontology expansion',
+        )
+
+    def _gui_callback(self, gui, _view, _user_data) -> None:
+        self.dvz.dvz_gui_dock_window_once(
+            gui, b'Allen mouse brain atlas', self.dvz.DVZ_GUI_DOCK_SLOT_LEFT, 390.0
+        )
+        if self.dvz.dvz_gui_begin(gui, b'Allen mouse brain atlas', None, 0):
+            self.dvz.dvz_gui_text(gui, b'Regions')
+            if self.dvz.dvz_gui_combo(
+                gui,
+                b'Mapping##ibl_atlas_mapping',
+                ctypes.byref(self._mapping_control),
+                self._mapping_items,
+                len(self._mapping_items),
+            ):
+                self.set_mapping(self.mesh_data.mapping_names[self._mapping_control.value])
+            if self.dvz.dvz_gui_button(gui, b'Collapse all'):
+                self.dvz.dvz_gui_tree_collapse_all(self.region_tree)
+            self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
+            if self.dvz.dvz_gui_button(gui, b'Expand 3 levels'):
+                self.dvz.dvz_gui_tree_expand_to_depth(self.region_tree, 3)
+            self.dvz.dvz_gui_tree_draw(gui, self.region_tree)
+            self._sync_selection_highlight()
+        self.dvz.dvz_gui_end(gui)
+
+    def _sync_selection_highlight(self) -> None:
+        selected = tuple(
+            sorted({abs(region_id) for region_id in self.selected_region_ids() if region_id})
+        )
+        if selected == self._highlight_region_ids:
+            return
+        colors = self.mesh_data.colors(self.mapping, self.palette)
+        if selected:
+            mask = np.isin(np.abs(self.mesh_data.mapping_ids(self.mapping)), selected)
+            dimmed = colors.astype(np.float32)
+            dimmed[:, :3] *= 0.22
+            colors = np.ascontiguousarray(np.rint(dimmed), dtype=np.uint8)
+            colors[mask] = self.mesh_data.colors(self.mapping, self.palette)[mask]
+        self._check(
+            self.dvz.dvz_visual_set_data(self.mesh, 'color', colors),
+            'selection color update',
+        )
+        if self.tree_model is not None:
+            tree_ids = set(int(region_id) for region_id in self.tree_model.region_ids)
+            tree_keys = np.asarray(
+                [
+                    np.asarray(-region_id, dtype=np.int64).view(np.uint64)
+                    for region_id in selected
+                    if -region_id in tree_ids
+                ],
+                dtype=np.uint64,
+            )
+            self._check(
+                self.dvz.dvz_gui_tree_set_selection(self.region_tree, tree_keys),
+                'atlas ontology selection sync',
+            )
+        self._highlight_region_ids = selected
 
     def _create_view(self, *, offscreen: bool, title: str) -> None:
         if self.app is not None:
@@ -192,6 +316,18 @@ class AtlasViewer:
             raise RuntimeError('dvz_view_arcball() failed')
         angles = (ctypes.c_float * 3)(-0.35, 0.25, 0.12)
         self._check(self.dvz.dvz_arcball_set(self.arcball, angles), 'arcball setup')
+        if not offscreen and self.catalog is not None:
+            self._replace_region_tree()
+            config = self.dvz.dvz_gui_config()
+            config.gui_flags = self.dvz.DVZ_GUI_FLAGS_DOCKING | self.dvz.DVZ_GUI_FLAGS_DOCKSPACE
+            config.default_window_width = 390
+            self.gui = self.dvz.dvz_view_gui(self.view, ctypes.byref(config))
+            if not self.gui:
+                raise RuntimeError('dvz_view_gui() failed')
+            self._check(
+                self.dvz.dvz_view_set_gui_callback(self.view, self._gui_callback, None),
+                'atlas GUI callback',
+            )
 
     def render_offscreen(self, output: str | Path | None = None) -> NDArray[np.uint8]:
         """Render exactly one frame and return a copied RGBA image."""
@@ -223,6 +359,9 @@ class AtlasViewer:
         if self.app:
             self.dvz.dvz_app_destroy(self.app)
             self.app = None
+        if self.region_tree is not None:
+            self.dvz.dvz_gui_tree_destroy(self.region_tree)
+            self.region_tree = None
         if self.scene:
             self.dvz.dvz_scene_destroy(self.scene)
             self.scene = None

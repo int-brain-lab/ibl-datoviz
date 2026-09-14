@@ -27,12 +27,15 @@ Run the miniature offline viewer and write its smoke image:
 ```bash
 python examples/atlas_spike.py \
   ../ibl-atlas-assets/tests/fixtures/mesh-pack-v1/pack \
+  --regions ../ibl-atlas-assets/tests/fixtures/atlas-regions-v1/regions.json \
   --offscreen build/atlas-spike.png
 ```
 
-Omit `--offscreen` for the interactive view. Drag to orbit the arcball and click a mesh item to
-exercise retained picking/selection. `AtlasViewer.selected_region_ids()` returns the signed IDs
-stored by the current mapping's selection.
+Omit `--offscreen` for the interactive view. With `--regions`, the viewer uses official ontology
+colors and adds a native retained region browser with Allen/Beryl/Cosmos switching, search,
+color swatches, collapse/expand controls, and signed-ID selection. Drag to orbit the arcball and
+click a mesh face to exercise picking. `AtlasViewer.selected_region_ids()` returns signed IDs
+selected through either surface or tree.
 
 The miniature fixture is intentionally synthetic and its Beryl mapping is absent. Missing
 mapping values therefore use a neutral gray. Real atlas colors should eventually come from a

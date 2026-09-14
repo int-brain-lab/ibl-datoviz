@@ -1,7 +1,8 @@
 # Datoviz v0.4 atlas spike findings
 
 This note records evidence from the first `ibl-datoviz` 0.2 consumer. The tested revisions are
-Datoviz `6387745a1`, `ibl-atlas-assets` `3fb2212a0`, and the synthetic mesh-pack-v1 fixture.
+Datoviz `489f7564b`, `ibl-atlas-assets` `b6fdfc3`, and the synthetic
+mesh-pack-v1 fixture.
 
 ## What works without another Datoviz API
 
@@ -12,23 +13,26 @@ Datoviz `6387745a1`, `ibl-atlas-assets` `3fb2212a0`, and the synthetic mesh-pack
   change without rebuilding or re-uploading position, normal, or index data.
 - Arcball binding, a 3-D path for the probe, an offscreen view, exact RGBA capture, and explicit
   app-before-scene destruction all work through the public Python facade.
-- Indexed-mesh item queries return triangle primitive identity. Datoviz's query geometry expands
-  each indexed triangle and writes `primitive_index + 1` to all three query vertices. A link-key
-  array indexed by face can therefore carry a signed atlas region ID losslessly, encoded as the
-  bit-preserving `int64`/`uint64` view.
+- Indexed-mesh face queries return triangle primitive identity. A target-specific link-key array
+  indexed by face carries a signed atlas region ID losslessly, encoded as the bit-preserving
+  `int64`/`uint64` view. Mesh item queries retain their distinct whole-mesh/instance semantics.
 
-## Narrow API mismatch discovered
+## Narrow API gap resolved
 
-Mesh querying and mesh item-state styling currently disagree about the meaning of an item.
-Indexed-mesh queries resolve a triangle index, while `_item_state_visual_item_count()` treats a
-non-instanced mesh as one item (and an instanced mesh's items as its instances). Consequently a
-face link key gives a correct query/selection identity, but built-in hover or selection styling
-cannot reliably highlight the selected anatomical region in one dense multi-region mesh.
+The original spike incorrectly attached face keys to Datoviz's item target. That target correctly
+means a whole mesh or instance, so the apparent face picking was false. The consumer evidence led
+to an explicit `DVZ_SCENE_TARGET_FACE` path and `dvz_visual_set_target_link_keys()`, leaving item
+semantics unchanged and allowing item and face key maps to coexist.
 
-This spike does not propose an ABI change yet. Plausible options are an explicit mesh query
-identity attribute (per face/group), a face-to-group table, or a distinct face query target whose
-result may carry a group/link key. The real atlas pack should be tried before choosing. One visual
-per region remains the straightforward fallback when correct region highlighting is required.
+Linked identity is scoped by a scene-local channel plus its 64-bit key, rather than by key alone.
+That permits the same ontology ID to be reused safely by unrelated linked views and keeps zero as a
+valid application key. Rebinding or destroying a channel also recomputes retained item state, so
+linked highlights cannot remain stale.
+
+Face picking now has exact triangle and application link identity. Built-in item-state styling is
+still intentionally whole-mesh/instance based: highlighting an anatomical region requires owned
+vertex recoloring or separate component visuals. Atlas-scale hover should also be throttled because
+the current query path expands indexed geometry on the CPU per request.
 
 ## Asset-contract evidence
 

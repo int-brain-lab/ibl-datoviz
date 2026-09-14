@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import ctypes
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from ibl_datoviz import AtlasMesh, AtlasViewer
+from ibl_atlas_assets import open_region_catalog
+from ibl_datoviz import (
+    AtlasMesh,
+    AtlasTreeModel,
+    AtlasViewer,
+    decode_region_key,
+    encode_region_key,
+)
 
 FIXTURE = (
     Path(__file__).resolve().parents[2]
@@ -16,10 +24,25 @@ FIXTURE = (
     / 'mesh-pack-v1'
     / 'pack'
 )
+REGIONS = (
+    Path(__file__).resolve().parents[2]
+    / 'ibl-atlas-assets'
+    / 'tests'
+    / 'fixtures'
+    / 'atlas-regions-v1'
+    / 'regions.json'
+)
+
+
+class FakeItemInteractionDesc(ctypes.Structure):
+    _fields_ = [('target', ctypes.c_int)]
 
 
 class FakeDatoviz:
-    DVZ_QUERY_CAPABILITY_ITEM = 2
+    DVZ_QUERY_CAPABILITY_FACE = 4
+    DVZ_SCENE_TARGET_FACE = 4
+    DVZ_GUI_DATA_WIDGET_FLAGS_FILTER = 2
+    DVZ_GUI_DATA_SET_FLAGS_RESET_STATE = 1
     DVZ_SEGMENT_CAP_ROUND = 1
     DVZ_PATH_JOIN_ROUND = 1
 
@@ -71,12 +94,43 @@ class FakeDatoviz:
     def dvz_link_channel(self, *_args):
         return self._handle('link_channel')
 
-    def dvz_visual_set_link_keys(self, _visual, _channel, keys):
-        self.calls.append(('link_keys', np.array(keys, copy=True)))
+    def dvz_visual_set_target_link_keys(self, _visual, target, _channel, keys):
+        self.calls.append(('link_keys', target, np.array(keys, copy=True)))
         return 0
+
+    def dvz_gui_tree(self, *_args):
+        return self._handle('region_tree')
+
+    def dvz_gui_tree_set_rows(self, _tree, keys, parents, labels, names, flags):
+        self.calls.append(
+            (
+                'tree_rows',
+                np.array(keys, copy=True),
+                np.array(parents, copy=True),
+                tuple(labels),
+                tuple(names),
+                flags,
+            )
+        )
+        return 0
+
+    def dvz_gui_tree_set_swatches(self, _tree, colors):
+        self.calls.append(('tree_swatches', np.array(colors, copy=True)))
+        return 0
+
+    def dvz_gui_tree_expand_to_depth(self, _tree, depth):
+        self.calls.append(('tree_depth', depth))
+        return 0
+
+    def dvz_gui_tree_destroy(self, *_args):
+        self.calls.append(('tree_destroy',))
 
     def dvz_panel_add_visual(self, *_args):
         return 0
+
+    @staticmethod
+    def dvz_item_interaction_desc():
+        return FakeItemInteractionDesc()
 
     def dvz_item_interaction(self, *_args):
         return self._handle('interaction')
@@ -169,3 +223,31 @@ def test_probe_uses_same_display_transform(mesh):
     assert len(probe_upload) == 1
     positions = probe_upload[0][3]['position']
     np.testing.assert_allclose(positions[:, 0], [-0.8, 0.8])
+
+
+def test_region_tree_model_preserves_signed_identity_and_canonical_colors():
+    model = AtlasTreeModel.from_catalog(open_region_catalog(REGIONS), 'allen')
+    np.testing.assert_array_equal(model.region_ids, [-997, -8])
+    np.testing.assert_array_equal(model.parents, [2**32 - 1, 0])
+    assert model.acronyms == ('root', 'grey')
+    assert model.names == ('root', 'Basic cell groups and regions')
+    np.testing.assert_array_equal(model.colors[1], [191, 218, 227, 255])
+    assert model.palette[-8] == (191, 218, 227, 255)
+    assert model.palette[8] == (191, 218, 227, 255)
+    for region_id in model.region_ids:
+        assert decode_region_key(encode_region_key(int(region_id))) == region_id
+
+
+def test_viewer_uploads_catalog_to_one_retained_tree_batch(mesh):
+    fake = FakeDatoviz()
+    catalog = open_region_catalog(REGIONS)
+    with AtlasViewer(mesh, datoviz=fake, catalog=catalog) as viewer:
+        viewer._replace_region_tree()
+        row_call = next(call for call in fake.calls if call[0] == 'tree_rows')
+        assert row_call[3:] == (
+            ('root', 'grey'),
+            ('root', 'Basic cell groups and regions'),
+            fake.DVZ_GUI_DATA_SET_FLAGS_RESET_STATE,
+        )
+        np.testing.assert_array_equal(row_call[2], [2**32 - 1, 0])
+        assert sum(call[0] == 'tree_rows' for call in fake.calls) == 1

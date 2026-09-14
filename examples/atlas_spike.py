@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from ibl_atlas_assets import open_region_catalog
 from ibl_datoviz import AtlasViewer
 
 
@@ -15,9 +16,11 @@ def main() -> int:
     parser.add_argument('mesh_pack', type=Path)
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
+    parser.add_argument('--regions', type=Path, help='optional ibl-atlas-regions-v1 catalog')
     args = parser.parse_args()
 
-    with AtlasViewer.from_pack(args.mesh_pack, mapping=args.mapping) as viewer:
+    catalog = open_region_catalog(args.regions) if args.regions else None
+    with AtlasViewer.from_pack(args.mesh_pack, mapping=args.mapping, catalog=catalog) as viewer:
         viewer.set_probe([[-1.5, -0.8, -0.8], [0.0, 0.0, 0.0], [2.5, 0.8, 0.8]])
         if args.offscreen:
             rgba = viewer.render_offscreen(args.offscreen)
