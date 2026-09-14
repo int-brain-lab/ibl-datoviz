@@ -1,0 +1,41 @@
+{
+  "artifact": {
+    "path": "bwm-ephys-1.1.0-a21bade7-probe.csv",
+    "sha256": "bdda0c7568bf1ab78fa7b573234b8b6102aed93fd9331d15d26e55ad91ae247a"
+  },
+  "dataset": {
+    "name": "bwm_ephys",
+    "version": "1.1.0"
+  },
+  "derivation": {
+    "coordinates": "source ML/AP/DV micrometres; exact co-located channels collapsed",
+    "hemisphere": "nonzero Allen IDs negated where original ML < 0",
+    "missing_value": "empty CSV field where no good unit is assigned",
+    "value": "mean firing rate of good units assigned to each co-located channel group"
+  },
+  "format": "ibl-datoviz-real-probe-fixture-v1",
+  "insertion": {
+    "date": "2022-09-16",
+    "eid": "c16d3557-b2c1-4545-93d0-112ac0915d93",
+    "lab": "hausserlab",
+    "pid": "a21bade7-5be7-4a17-a9b9-ddee453e6260",
+    "probe_name": "probe00",
+    "subject": "PL030"
+  },
+  "site_count": 192,
+  "source": {
+    "files": {
+      "metadata/channels.parquet": {
+        "sha256": "e64fc3806a8f1fd9a8ae974d6fb644d71d53e45995dd9a01b681789c72384ed3"
+      },
+      "metadata/insertions.parquet": {
+        "sha256": "ac7c914644b284cab0f37734fbbe5cb7d0a62fd016befe43b1005543218e38d3"
+      },
+      "metadata/units.parquet": {
+        "sha256": "ba21b4a568a2ee7241dd432a3d9af0568be5202039b583a0439be9be5ea79ed8"
+      }
+    },
+    "freeze": "2023_12_bwm_release",
+    "good_unit_rule": "label >= 1.0"
+  }
+}

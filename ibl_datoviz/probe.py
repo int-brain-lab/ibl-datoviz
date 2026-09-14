@@ -22,6 +22,7 @@ class ProbeSites:
     values: NDArray[np.float64]
     allen_region_ids: NDArray[np.int64]
     labels: tuple[str, ...]
+    value_name: str
 
     @classmethod
     def from_arrays(
@@ -32,6 +33,7 @@ class ProbeSites:
         *,
         site_ids: Sequence[int] | None = None,
         labels: Sequence[str] | None = None,
+        value_name: str = 'Value',
     ) -> ProbeSites:
         """Validate arrays and copy them into immutable contiguous storage."""
         positions = np.asarray(positions_um, dtype=np.float32)
@@ -62,6 +64,8 @@ class ProbeSites:
         )
         if len(site_labels) != count or any(not label for label in site_labels):
             raise ValueError('probe labels must contain one non-empty label per site')
+        if not value_name:
+            raise ValueError('probe value name cannot be empty')
 
         arrays = (
             np.ascontiguousarray(raw_ids, dtype=np.uint64),
@@ -71,4 +75,4 @@ class ProbeSites:
         )
         for array in arrays:
             array.setflags(write=False)
-        return cls(*arrays, site_labels)
+        return cls(*arrays, site_labels, str(value_name))

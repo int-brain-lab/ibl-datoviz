@@ -23,6 +23,7 @@ from .ontology import AtlasTreeModel, decode_region_key, encode_region_key
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from types import ModuleType
+    from typing import Literal
 
     from numpy.typing import NDArray
 
@@ -273,6 +274,7 @@ class AtlasViewer:
         colors: Sequence[Sequence[int]] | None = None,
         value_range: tuple[float, float] | None = None,
         radius_um: float = 45.0,
+        color_scheme: Literal['diverging', 'sequential'] = 'diverging',
     ) -> None:
         """Add or replace probe sites, optionally colored by one scalar feature."""
         positions = self.mesh_data.normalize_points(points_um)
@@ -303,7 +305,7 @@ class AtlasViewer:
             scalar = np.asarray(values, dtype=np.float64)
             if scalar.shape != (count,):
                 raise ValueError('probe values must have shape (n,)')
-            rgba = self._probe_value_colors(scalar, value_range)
+            rgba = self._probe_value_colors(scalar, value_range, color_scheme)
         else:
             rgba = np.tile(np.asarray((255, 205, 72, 255), dtype=np.uint8), (count, 1))
 
@@ -330,12 +332,13 @@ class AtlasViewer:
         *,
         value_range: tuple[float, float] | None = None,
         radius_um: float = 45.0,
+        color_scheme: Literal['diverging', 'sequential'] = 'diverging',
     ) -> None:
         """Display a typed probe payload and link its Allen labels to atlas presentation."""
         if self.catalog is None:
             raise ValueError('linked probe data requires an atlas region catalog')
         mapped_ids = self._mapped_probe_region_ids(data)
-        colors = self._probe_value_colors(data.values, value_range)
+        colors = self._probe_value_colors(data.values, value_range, color_scheme)
         self.set_probe_sites(data.positions_um, colors=colors, radius_um=radius_um)
         self.probe_data = data
         self._probe_colors = colors
@@ -370,8 +373,12 @@ class AtlasViewer:
 
     @staticmethod
     def _probe_value_colors(
-        values: NDArray[np.float64], value_range: tuple[float, float] | None
+        values: NDArray[np.float64],
+        value_range: tuple[float, float] | None,
+        color_scheme: Literal['diverging', 'sequential'] = 'diverging',
     ) -> NDArray[np.uint8]:
+        if color_scheme not in ('diverging', 'sequential'):
+            raise ValueError(f'unknown probe color scheme: {color_scheme}')
         finite = np.isfinite(values)
         if value_range is None:
             if not np.any(finite):
@@ -391,9 +398,14 @@ class AtlasViewer:
             if constant
             else np.clip((values - limits[0]) / (limits[1] - limits[0]), 0.0, 1.0)
         )
-        low = np.asarray((49, 116, 178), dtype=np.float64)
-        middle = np.asarray((247, 247, 247), dtype=np.float64)
-        high = np.asarray((203, 45, 62), dtype=np.float64)
+        if color_scheme == 'sequential':
+            low = np.asarray((88, 70, 180), dtype=np.float64)
+            middle = np.asarray((45, 180, 170), dtype=np.float64)
+            high = np.asarray((253, 231, 73), dtype=np.float64)
+        else:
+            low = np.asarray((49, 116, 178), dtype=np.float64)
+            middle = np.asarray((247, 247, 247), dtype=np.float64)
+            high = np.asarray((203, 45, 62), dtype=np.float64)
         rgb = np.empty((len(values), 3), dtype=np.float64)
         lower = t <= 0.5
         rgb[lower] = low + (middle - low) * (2 * t[lower, None])
@@ -471,7 +483,7 @@ class AtlasViewer:
                 'column_id': 3,
                 'type': self.dvz.DVZ_GUI_TABLE_COLUMN_DOUBLE,
                 'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SORTABLE,
-                'title': 'Value',
+                'title': data.value_name,
                 'format': '%.3f',
             },
             {

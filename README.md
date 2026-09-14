@@ -89,6 +89,32 @@ tree or surface selection selects matching sites. Custom coordinates remain avai
 `--probe ENTRY_ML ENTRY_AP ENTRY_DV TIP_ML TIP_AP TIP_DV`, without pretending they have been
 anatomically annotated.
 
+## Real BWM ephys checkpoint
+
+The repository includes one compact derived fixture from the local `bwm_ephys` 1.1.0 dataset. It
+contains insertion `a21bade7-5be7-4a17-a9b9-ddee453e6260` (PL030, Hausser lab): 384 channels
+collapsed to 192 exact atlas locations, seven signed Allen regions, and the mean firing rate of the
+459 good units assigned to those sites. Source hashes and the full derivation are stored in the
+adjacent provenance JSON.
+
+```bash
+PYTHONPATH=.:../ibl-atlas-assets/src python examples/bwm_probe.py \
+  build/atlas-d070 --mapping beryl
+```
+
+The demo uses a sequential color scheme and clips its display range to the finite 5th–95th
+percentiles. This is a robust visualization choice, not a statistical analysis or a change to the
+recorded values. Missing values remain explicit and gray. The GUI table exposes the raw mean firing
+rate and links its stable channel-group rows to surface and ontology selection.
+
+To reproduce the committed fixture from the local BWM dataset, run the optional Pandas-based build
+tool; Pandas is deliberately not an `ibl-datoviz` runtime dependency:
+
+```bash
+python tools/build_bwm_probe_fixture.py \
+  ../ibl-ai-agent/reports/datasets/bwm_ephys/1.1.0 examples/data
+```
+
 The tree is a parent-closed ontology view. Rows used only to preserve hierarchy in reduced Beryl
 or Cosmos mappings are visibly muted but remain expandable. Selecting a parent highlights all mapped descendants;
 multiple selection, search, mapping changes, surface picking, clearing, and tree reveal all share

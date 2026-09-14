@@ -352,13 +352,28 @@ def test_probe_sites_use_world_transform_and_scalar_colors(mesh):
     np.testing.assert_array_equal(upload['color'][2], [203, 45, 62, 255])
     np.testing.assert_allclose(upload['radius'], np.full(3, 0.25 * mesh.display_scale))
 
-    with AtlasViewer(mesh, datoviz=FakeDatoviz()) as viewer:
+    second_fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=second_fake) as viewer:
         with pytest.raises(ValueError, match='values or colors'):
             viewer.set_probe_sites([[0, 0, 0]], values=[1], colors=[[1, 2, 3]])
         with pytest.raises(ValueError, match='probe colors'):
             viewer.set_probe_sites([[0, 0, 0]], colors=[[300, 2, 3]])
         with pytest.raises(ValueError, match='value range'):
             viewer.set_probe_sites([[0, 0, 0]], values=[1], value_range=(1, 1))
+        with pytest.raises(ValueError, match='color scheme'):
+            viewer.set_probe_sites([[0, 0, 0]], values=[1], color_scheme='unknown')
+
+        viewer.set_probe_sites(
+            [[0, 0, 0], [1, 0, 0]],
+            values=[0, 1],
+            value_range=(0, 1),
+            color_scheme='sequential',
+        )
+        sequential = [
+            call for call in second_fake.calls if call[:2] == ('data_many', 'sphere')
+        ][-1][3]
+        np.testing.assert_array_equal(sequential['color'][0], [88, 70, 180, 255])
+        np.testing.assert_array_equal(sequential['color'][1], [253, 231, 73, 255])
 
 
 def test_typed_probe_sites_link_table_and_mapping(mesh):

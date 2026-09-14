@@ -86,6 +86,26 @@ an `iblatlas` responsibility. An application may persist its resulting signed Al
 payload; `ibl-datoviz` handles rendering and interaction, while `ibl-atlas-assets` supplies the
 versioned catalog used for presentation remapping. No new `iblatlas` API is justified by this slice.
 
+## Real BWM insertion evidence
+
+The first real consumer record comes from local `bwm_ephys` 1.1.0 insertion
+`a21bade7-5be7-4a17-a9b9-ddee453e6260`. Its 384 channel rows form 192 exact co-located atlas sites;
+459 units pass the dataset's recorded `label >= 1.0` good-unit rule, and 154 sites have at least one
+assigned unit. The display value is the mean firing rate of good units per co-located channel group.
+The committed fixture records hashes for the channels, insertions, and units Parquet inputs as well
+as its own CSV hash.
+
+This case required only two small generalizations: a human-readable scalar name and an explicit
+sequential color scheme. A robust finite 5th–95th percentile display range prevents a few high-rate
+sites from flattening the rest; it does not alter raw table values. The fixture retains good-unit
+count as evidence, but the renderer payload does not absorb it speculatively. Multiple simultaneous
+metrics and feature switching should be designed from another real use case.
+
+The exercise also exposed a Datoviz integration issue: setting substantially different Euler angles
+through `dvz_arcball_set()` after `dvz_view_arcball()` produced byte-identical initial offscreen
+captures. Interactive pointer updates and programmatic initial-state propagation need a focused
+Datoviz regression before `ibl-datoviz` exposes a camera-preset API.
+
 ## Next evidence step
 
 The real D070 checkpoint is complete. Every one of its 486,674 vertices and 966,645 triangles
@@ -102,7 +122,8 @@ unchanged subsequent queries take roughly 11 milliseconds instead of 85–101 mi
 expanded picking representation still raises peak memory materially; avoiding that footprint would
 require an indexed picking shader/data path rather than this deliberately smaller cache fix.
 
-The next vertical slice should consume a small real ephys record rather than adding fields to the
-payload speculatively. Candidate questions are whether one scalar is enough, whether site grouping
-belongs in the application, and whether table-to-3-D selection needs a dedicated public interaction
-method. Volume rendering should wait until a pinned annotation/template volume contract exists.
+The real-record slice shows one scalar is enough for a single-feature probe view and that co-located
+channel grouping belongs in source adaptation, not rendering. The next work should fix and regress
+the initial arcball-state issue in Datoviz, then test a second real ephys feature before designing
+multi-feature switching. Volume rendering should wait until a pinned annotation/template volume
+contract exists.
