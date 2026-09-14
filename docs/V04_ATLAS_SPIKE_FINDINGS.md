@@ -34,6 +34,13 @@ still intentionally whole-mesh/instance based: highlighting an anatomical region
 vertex recoloring or separate component visuals. Atlas-scale hover should be throttled even though
 unchanged picks now reuse retained query geometry.
 
+The viewer now keeps one authoritative region selection instead of merging independently retained
+tree and surface selections. A tree event replaces surface selection; a changed surface selection
+replaces and reveals the corresponding canonical left-tree row. This prevents mirrored selections
+from feeding back into the next frame and accumulating stale regions. Parent ontology selection is
+expanded to mapping-member descendants before the color mask is built, while the public selection
+continues to report exactly the signed IDs chosen by the user.
+
 ## Asset-contract evidence
 
 The consumer needs the declared presentation boundary to classify bilateral component vertices
@@ -62,3 +69,7 @@ revisions change. On the real D070 mesh the initial query takes roughly 120 mill
 unchanged subsequent queries take roughly 11 milliseconds instead of 85–101 milliseconds. The
 expanded picking representation still raises peak memory materially; avoiding that footprint would
 require an indexed picking shader/data path rather than this deliberately smaller cache fix.
+
+The next vertical slice should add a real probe/ephys data layer to this stable anatomy shell. That
+will test whether shared region identity remains sufficient across surface selection, probe samples,
+and quantitative tables before introducing volume rendering or a more general application model.

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ibl_atlas_assets import open_region_catalog
+from ibl_atlas_assets import open_mesh_pack, open_region_catalog
 from ibl_datoviz import (
     AtlasMesh,
     AtlasTreeModel,
@@ -38,9 +38,18 @@ class FakeItemInteractionDesc(ctypes.Structure):
     _fields_ = [('target', ctypes.c_int)]
 
 
+class FakeSelectionItem(ctypes.Structure):
+    _fields_ = [('link_key', ctypes.c_uint64)]
+
+
 class FakeDatoviz:
+    DvzSelectionItem = FakeSelectionItem
     DVZ_QUERY_CAPABILITY_FACE = 4
     DVZ_SCENE_TARGET_FACE = 4
+    DVZ_GUI_DATA_EVENT_SELECTION_CHANGED = 1
+    DVZ_GUI_DATA_STYLE_FLAGS_FOREGROUND = 1
+    DVZ_GUI_DATA_STYLE_FLAGS_DISABLED = 8
+    DVZ_GUI_DATA_WIDGET_FLAGS_MULTI_SELECT = 1
     DVZ_GUI_DATA_WIDGET_FLAGS_FILTER = 2
     DVZ_GUI_DATA_SET_FLAGS_RESET_STATE = 1
     DVZ_SEGMENT_CAP_ROUND = 1
@@ -48,6 +57,8 @@ class FakeDatoviz:
 
     def __init__(self):
         self.calls = []
+        self.mesh_selection = []
+        self.tree_selection = []
 
     def _handle(self, name):
         value = SimpleNamespace(name=name)
@@ -118,6 +129,26 @@ class FakeDatoviz:
         self.calls.append(('tree_swatches', np.array(colors, copy=True)))
         return 0
 
+    @staticmethod
+    def dvz_gui_data_style():
+        return SimpleNamespace(flags=0, row_key=0, foreground=None)
+
+    def dvz_gui_tree_set_styles(self, _tree, styles):
+        self.calls.append(('tree_styles', tuple(styles)))
+        return 0
+
+    def dvz_gui_tree_set_selection(self, _tree, keys):
+        self.tree_selection = [int(key) for key in keys]
+        self.calls.append(('tree_selection', tuple(self.tree_selection)))
+        return 0
+
+    def dvz_gui_tree_get_selection(self, _tree):
+        return list(self.tree_selection)
+
+    def dvz_gui_tree_reveal(self, _tree, key):
+        self.calls.append(('tree_reveal', int(key)))
+        return 0
+
     def dvz_gui_tree_expand_to_depth(self, _tree, depth):
         self.calls.append(('tree_depth', depth))
         return 0
@@ -138,11 +169,16 @@ class FakeDatoviz:
     def dvz_item_interaction_selection(self, *_args):
         return self._handle('selection')
 
-    @staticmethod
-    def dvz_selection_count(_selection):
-        return 0
+    def dvz_selection_count(self, _selection):
+        return len(self.mesh_selection)
+
+    def dvz_selection_copy(self, _selection, items, count):
+        for index, key in enumerate(self.mesh_selection[:count]):
+            items[index].link_key = key
+        return len(self.mesh_selection)
 
     def dvz_selection_clear(self, *_args):
+        self.mesh_selection = []
         self.calls.append(('selection_clear',))
         return 0
 
@@ -214,6 +250,9 @@ def test_viewer_switches_mapping_without_geometry_upload(mesh):
     viewer.close()
     assert fake.calls[-1] == ('destroy_scene',)
 
+    with pytest.raises(ValueError, match='selection_dim_factor'):
+        AtlasViewer(mesh, datoviz=FakeDatoviz(), selection_dim_factor=1.1)
+
 
 def test_probe_uses_same_display_transform(mesh):
     fake = FakeDatoviz()
@@ -234,6 +273,9 @@ def test_region_tree_model_preserves_signed_identity_and_canonical_colors():
     np.testing.assert_array_equal(model.colors[1], [191, 218, 227, 255])
     assert model.palette[-8] == (191, 218, 227, 255)
     assert model.palette[8] == (191, 218, 227, 255)
+    assert model.selectable_region_ids == {-997, -8}
+    assert model.expanded_logical_ids((-997,)) == (8, 997)
+    assert model.describe(8) == 'grey — Basic cell groups and regions'
     for region_id in model.region_ids:
         assert decode_region_key(encode_region_key(int(region_id))) == region_id
 
@@ -251,3 +293,57 @@ def test_viewer_uploads_catalog_to_one_retained_tree_batch(mesh):
         )
         np.testing.assert_array_equal(row_call[2], [2**32 - 1, 0])
         assert sum(call[0] == 'tree_rows' for call in fake.calls) == 1
+
+
+def test_viewer_uses_one_authoritative_selection_source(mesh):
+    fake = FakeDatoviz()
+    catalog = open_region_catalog(REGIONS)
+    with AtlasViewer(mesh, datoviz=fake, catalog=catalog) as viewer:
+        viewer._replace_region_tree()
+        fake.tree_selection = [encode_region_key(-8)]
+        fake.mesh_selection = [encode_region_key(-997)]
+
+        viewer._sync_selection_highlight(tree_changed=True)
+
+        assert viewer.selected_region_ids() == (-8,)
+        assert fake.mesh_selection == []
+
+        fake.mesh_selection = [encode_region_key(-997)]
+        viewer._sync_selection_highlight()
+
+        assert viewer.selected_region_ids() == (-997,)
+        assert fake.tree_selection == [encode_region_key(-997)]
+
+        fake.mesh_selection = []
+        viewer._sync_selection_highlight()
+
+        assert viewer.selected_region_ids() == ()
+        assert fake.tree_selection == []
+
+
+def test_programmatic_selection_highlights_descendants(mesh):
+    fake = FakeDatoviz()
+    catalog = open_region_catalog(REGIONS)
+    with AtlasViewer(mesh, datoviz=fake, catalog=catalog) as viewer:
+        viewer._replace_region_tree()
+        viewer.set_selected_region_ids([-997])
+
+        assert viewer.selected_region_ids() == (-997,)
+        assert viewer._highlight_region_ids == (8, 997)
+        assert fake.tree_selection == [encode_region_key(-997)]
+
+        with pytest.raises(ValueError, match='not members of allen'):
+            viewer.set_selected_region_ids([123456])
+
+
+def test_viewer_constructs_from_verified_assets():
+    fake = FakeDatoviz()
+    assets = SimpleNamespace(
+        geometry=open_mesh_pack(FIXTURE).load_geometry(),
+        regions=open_region_catalog(REGIONS),
+    )
+    with AtlasViewer.from_assets(assets, datoviz=fake) as viewer:
+        assert viewer.catalog is assets.regions
+        assert viewer.mesh_data.reference_space == assets.regions.reference_space_id
+    with pytest.raises(TypeError, match='verified region catalog'):
+        AtlasViewer.from_assets(assets, datoviz=fake, catalog=assets.regions)

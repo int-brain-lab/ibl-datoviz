@@ -58,3 +58,16 @@ PYTHONPATH=.:../ibl-atlas-assets/src python examples/benchmark_atlas.py \
 The EAM3 arrays are already compiled into declared ML/AP/DV micrometre coordinates. `source_to_world_um` is source provenance and must not be applied again. The shared reader owns that invariant and the vertex/face presentation classification; this package owns display normalization, palette upload, Datoviz interaction, and viewer lifecycle.
 
 See [the real D070 checkpoint](docs/REAL_D070_CHECKPOINT.md) for reproducible preparation, rendering, memory, and face-query measurements.
+
+Launch the linked real-atlas explorer directly from that verified asset graph:
+
+```bash
+PYTHONPATH=.:../ibl-atlas-assets/src python examples/allen_mouse_brain.py \
+  build/atlas-d070 --mapping allen
+```
+
+The tree is a parent-closed ontology view. Rows used only to preserve hierarchy in reduced Beryl
+or Cosmos mappings are visibly muted but remain expandable. Selecting a parent highlights all mapped descendants;
+multiple selection, search, mapping changes, surface picking, clearing, and tree reveal all share
+one authoritative selection state. Geometry remains unchanged while colors and face identities
+follow the selected mapping.

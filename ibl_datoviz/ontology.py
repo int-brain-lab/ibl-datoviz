@@ -80,3 +80,40 @@ class AtlasTreeModel:
             result[int(region_id)] = rgba
             result.setdefault(abs(int(region_id)), rgba)
         return result
+
+    @property
+    def selectable_region_ids(self) -> frozenset[int]:
+        """Return signed IDs which are actual members of this mapping."""
+        return frozenset(
+            int(region_id)
+            for region_id, member in zip(self.region_ids, self.mapping_members, strict=True)
+            if member
+        )
+
+    def expanded_logical_ids(self, region_ids: tuple[int, ...]) -> tuple[int, ...]:
+        """Expand selected ontology rows to selectable descendants, ignoring hemisphere."""
+        selected = {abs(int(region_id)) for region_id in region_ids if region_id}
+        if not selected:
+            return ()
+        included = set(selected)
+        for index, region_id in enumerate(self.region_ids):
+            if not self.mapping_members[index]:
+                continue
+            parent_index = index
+            while parent_index != ROOT_PARENT:
+                ancestor = abs(int(self.region_ids[parent_index]))
+                if ancestor in selected:
+                    included.add(abs(int(region_id)))
+                    break
+                parent_index = int(self.parents[parent_index])
+        return tuple(sorted(included))
+
+    def describe(self, region_id: int) -> str:
+        """Return a compact acronym and name for a signed or logical region ID."""
+        logical_id = abs(int(region_id))
+        for row_id, acronym, name in zip(
+            self.region_ids, self.acronyms, self.names, strict=True
+        ):
+            if abs(int(row_id)) == logical_id:
+                return f'{acronym} — {name}'
+        return str(region_id)
