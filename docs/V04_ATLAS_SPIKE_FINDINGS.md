@@ -1,7 +1,7 @@
 # Datoviz v0.4 atlas spike findings
 
 This note records evidence from the first `ibl-datoviz` 0.2 consumer. The tested revisions are
-Datoviz `02eab5d9d`, `ibl-atlas-assets` `25845bb`, the synthetic mesh-pack-v1
+Datoviz `2274ca3c3`, `ibl-atlas-assets` `25845bb`, the synthetic mesh-pack-v1
 fixture, and the materialized real D070 asset-set lock.
 
 ## What works without another Datoviz API
@@ -31,8 +31,8 @@ linked highlights cannot remain stale.
 
 Face picking now has exact triangle and application link identity. Built-in item-state styling is
 still intentionally whole-mesh/instance based: highlighting an anatomical region requires owned
-vertex recoloring or separate component visuals. Atlas-scale hover should also be throttled because
-the current query path expands indexed geometry on the CPU per request.
+vertex recoloring or separate component visuals. Atlas-scale hover should be throttled even though
+unchanged picks now reuse retained query geometry.
 
 ## Asset-contract evidence
 
@@ -56,8 +56,9 @@ are already compiled into declared world coordinates, so the source-provenance t
 be applied again.
 
 Dense upload and mapping-only updates remain appropriate: native preparation is below 0.1 seconds
-and mapping color/identity arrays take about 7–8 milliseconds on the diagnostic host. Datoviz face
-queries resolve correctly but take roughly 85–101 milliseconds and raise peak memory materially on
-this mesh because indexed query geometry is expanded per request. Click selection is viable;
-unthrottled hover is not. The next renderer evidence task is to cache or retain query geometry in
-Datoviz and repeat this benchmark before choosing a multi-visual atlas layout.
+and mapping color/identity arrays take about 7–9 milliseconds on the diagnostic host. Datoviz now
+retains the expanded picking upload until the mesh position, index, instance-transform, or topology
+revisions change. On the real D070 mesh the initial query takes roughly 120 milliseconds, while
+unchanged subsequent queries take roughly 11 milliseconds instead of 85–101 milliseconds. The
+expanded picking representation still raises peak memory materially; avoiding that footprint would
+require an indexed picking shader/data path rather than this deliberately smaller cache fix.

@@ -12,10 +12,10 @@ On the local Linux development host, one diagnostic run measured:
 - native display-array preparation: approximately 0.07–0.08 seconds;
 - preparation of colors plus vertex and face IDs for each mapping: approximately 7–8 milliseconds;
 - Datoviz setup, first offscreen render, and 900 × 720 capture: approximately 0.32 seconds;
-- maximum process RSS after rendering: approximately 412 MiB, rising to approximately 618 MiB after face queries; and
-- three center-pixel face queries: approximately 84–111 milliseconds each, resolving in one subsequent frame.
+- maximum process RSS after rendering: approximately 412–471 MiB, rising to approximately 618–672 MiB after face queries; and
+- center-pixel face queries: approximately 120 milliseconds for the first expansion/upload and 11 milliseconds for subsequent unchanged queries, each resolving in one subsequent frame.
 
-These are development diagnostics rather than portable performance thresholds. The mapping path is fast enough for interactive switching after replacing per-element Python lookups with presentation-indexed NumPy tables. Face queries are correct but too expensive for unthrottled hover on this mesh, consistent with Datoviz currently expanding indexed query geometry per request. Click selection is usable; a retained or cached face-query geometry path is now a concrete Datoviz optimization candidate.
+These are development diagnostics rather than portable performance thresholds. The mapping path is fast enough for interactive switching after replacing per-element Python lookups with presentation-indexed NumPy tables. Face queries are correct, and Datoviz commit `2274ca3c3` retains their static expanded upload so repeated picks are suitable for throttled hover. The first pick and retained memory footprint remain expensive. A future indexed picking path could remove the expanded position buffer rather than merely caching it.
 
 Reproduce the measurement with:
 
