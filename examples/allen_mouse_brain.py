@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
+
 from ibl_datoviz import AtlasViewer
 
 
@@ -15,6 +17,11 @@ def main() -> int:
     parser.add_argument('asset_root', type=Path, help='materialized atlas asset-set directory')
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
+    parser.add_argument(
+        '--surface-opacity',
+        type=float,
+        help='anatomy opacity; defaults to 0.18 with --probe and 1 otherwise',
+    )
     parser.add_argument(
         '--frames', type=int, default=0, help='interactive frame limit; zero runs until closed'
     )
@@ -27,9 +34,21 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    with AtlasViewer.from_asset_set(args.asset_root, mapping=args.mapping) as viewer:
+    surface_opacity = args.surface_opacity
+    if surface_opacity is None:
+        surface_opacity = 0.18 if args.probe else 1.0
+    with AtlasViewer.from_asset_set(
+        args.asset_root, mapping=args.mapping, surface_opacity=surface_opacity
+    ) as viewer:
         if args.probe:
-            viewer.set_probe((args.probe[:3], args.probe[3:]))
+            entry = np.asarray(args.probe[:3], dtype=np.float32)
+            tip = np.asarray(args.probe[3:], dtype=np.float32)
+            viewer.set_probe((entry, tip), width_px=2.0)
+            sites = np.linspace(entry, tip, 48, dtype=np.float32)
+            phase = np.linspace(-np.pi, np.pi, len(sites))
+            viewer.set_probe_sites(
+                sites, values=np.sin(phase), value_range=(-1, 1), radius_um=75
+            )
         if args.offscreen:
             rgba = viewer.render_offscreen(args.offscreen)
             print(f'wrote {args.offscreen} ({rgba.shape[1]}x{rgba.shape[0]})')

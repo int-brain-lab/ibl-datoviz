@@ -2,8 +2,8 @@
 
 `ibl-datoviz` 0.2 is a deliberately breaking Datoviz v0.4-based atlas viewer. The first
 vertical slice reads the renderer-neutral mesh-pack contract from `ibl-atlas-assets`, uploads
-its dense NumPy arrays, retains signed Allen/Beryl/Cosmos presentation identity, and adds a
-probe path, arcball navigation, and Datoviz item interaction.
+its dense NumPy arrays, retains signed Allen/Beryl/Cosmos presentation identity, and adds
+scalar-colored probe sites, a probe path, arcball navigation, and Datoviz item interaction.
 
 The mesh geometry is uploaded once. Calling `AtlasViewer.set_mapping()` updates only vertex
 colors and per-face link keys, so switching ontology mappings does not reload geometry. Datoviz
@@ -65,6 +65,21 @@ Launch the linked real-atlas explorer directly from that verified asset graph:
 PYTHONPATH=.:../ibl-atlas-assets/src python examples/allen_mouse_brain.py \
   build/atlas-d070 --mapping allen
 ```
+
+Add a probe trajectory and 48 synthetic scalar-colored sites in ML/AP/DV micrometres:
+
+```bash
+PYTHONPATH=.:../ibl-atlas-assets/src python examples/allen_mouse_brain.py \
+  build/atlas-d070 --mapping allen \
+  --probe -2200 -2500 0 1000 -2500 -6500
+```
+
+With `--probe`, the example lowers anatomy opacity to 0.18 and renders the dense atlas mesh with
+Datoviz v0.4 weighted blended order-independent transparency (WBOIT). Override that choice with
+`--surface-opacity`. The viewer API keeps opacity as a multiplier on canonical region alpha, so
+mapping changes and selection highlighting preserve the translucent anatomy shell. WBOIT is a
+native capability in this checkpoint; a future WebGPU version needs an explicit supported
+fallback rather than silently changing the rendering model.
 
 The tree is a parent-closed ontology view. Rows used only to preserve hierarchy in reduced Beryl
 or Cosmos mappings are visibly muted but remain expandable. Selecting a parent highlights all mapped descendants;

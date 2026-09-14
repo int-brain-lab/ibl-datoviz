@@ -11,8 +11,9 @@ fixture, and the materialized real D070 asset-set lock.
   `dvz_visual_set_index_data()`.
 - Color changes are independent retained updates. Allen/Beryl/Cosmos presentation can therefore
   change without rebuilding or re-uploading position, normal, or index data.
-- Arcball binding, a 3-D path for the probe, an offscreen view, exact RGBA capture, and explicit
-  app-before-scene destruction all work through the public Python facade.
+- Arcball binding, a 3-D path and scalar-colored sphere sites for a probe, an offscreen view,
+  exact RGBA capture, and explicit app-before-scene destruction all work through the public
+  Python facade.
 - Indexed-mesh face queries return triangle primitive identity. A target-specific link-key array
   indexed by face carries a signed atlas region ID losslessly, encoded as the bit-preserving
   `int64`/`uint64` view. Mesh item queries retain their distinct whole-mesh/instance semantics.
@@ -54,6 +55,24 @@ assuming IDs are dense or aligned with tuple order. Signed ontology IDs remain p
 values, not presentation IDs, and are covered by regressions on both vertex colors and face link
 keys.
 
+## Probe-overlay evidence
+
+The first quantitative overlay uses one retained sphere visual for all sites and one batched
+`dvz_visual_set_data_many()` upload for positions, RGBA colors, and radii. Coordinates go through
+the same atlas-world-to-display transform as the surface and probe path. A small diverging color
+mapping handles finite ranges, clipping, constant data, and missing values in Python while the
+renderer receives only display-ready arrays. Supplying application colors bypasses that mapping.
+
+An opaque whole-brain surface hides internal sites. Lowering only the atlas vertex alpha and using
+ordinary source-over blending is also insufficient for this dense, self-overlapping surface. The
+viewer therefore applies `DVZ_ALPHA_WBOIT` automatically when `surface_opacity < 1`, and every
+mapping or selection recolor preserves the configured alpha multiplier. This is a concrete use of
+Datoviz v0.4's improved 3-D transparency, not a decorative feature toggle.
+
+The current browser subset does not promise this WBOIT path. A WebGPU export should expose that
+capability difference and choose a deliberate fallback (region isolation, clipping, or an opaque
+surface plus exterior sites) instead of presenting source-over output as equivalent.
+
 ## Next evidence step
 
 The real D070 checkpoint is complete. Every one of its 486,674 vertices and 966,645 triangles
@@ -70,6 +89,7 @@ unchanged subsequent queries take roughly 11 milliseconds instead of 85–101 mi
 expanded picking representation still raises peak memory materially; avoiding that footprint would
 require an indexed picking shader/data path rather than this deliberately smaller cache fix.
 
-The next vertical slice should add a real probe/ephys data layer to this stable anatomy shell. That
-will test whether shared region identity remains sufficient across surface selection, probe samples,
-and quantitative tables before introducing volume rendering or a more general application model.
+The next vertical slice should replace the synthetic probe scalars with a small renderer-neutral
+probe/ephys payload and link each site to atlas region identity. That will test coordinated surface,
+ontology, site, and quantitative-table selection before introducing volume rendering or a more
+general application model.

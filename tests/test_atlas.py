@@ -54,6 +54,7 @@ class FakeDatoviz:
     DVZ_GUI_DATA_SET_FLAGS_RESET_STATE = 1
     DVZ_SEGMENT_CAP_ROUND = 1
     DVZ_PATH_JOIN_ROUND = 1
+    DVZ_ALPHA_WBOIT = 2
 
     def __init__(self):
         self.calls = []
@@ -87,6 +88,9 @@ class FakeDatoviz:
     def dvz_path(self, *_args):
         return self._handle('path')
 
+    def dvz_sphere(self, *_args):
+        return self._handle('sphere')
+
     def dvz_visual_set_data_many(self, visual, updates):
         self.calls.append(('data_many', visual.name, tuple(updates), updates))
         return 0
@@ -100,6 +104,10 @@ class FakeDatoviz:
         return 0
 
     def dvz_visual_set_query_capabilities(self, *_args):
+        return 0
+
+    def dvz_visual_set_alpha_mode(self, visual, mode):
+        self.calls.append(('alpha_mode', visual.name, mode))
         return 0
 
     def dvz_link_channel(self, *_args):
@@ -252,6 +260,27 @@ def test_viewer_switches_mapping_without_geometry_upload(mesh):
 
     with pytest.raises(ValueError, match='selection_dim_factor'):
         AtlasViewer(mesh, datoviz=FakeDatoviz(), selection_dim_factor=1.1)
+    with pytest.raises(ValueError, match='surface_opacity'):
+        AtlasViewer(mesh, datoviz=FakeDatoviz(), surface_opacity=-0.1)
+    with pytest.raises(ValueError, match='surface_opacity'):
+        AtlasViewer(mesh, datoviz=FakeDatoviz(), surface_opacity=np.nan)
+
+
+def test_translucent_surface_uses_wboit_and_preserves_alpha(mesh):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake, surface_opacity=0.25) as viewer:
+        initial = next(call for call in fake.calls if call[:2] == ('data_many', 'mesh'))[3]
+        np.testing.assert_array_equal(initial['color'][:, 3], [64] * len(mesh.positions))
+        assert ('alpha_mode', 'mesh', fake.DVZ_ALPHA_WBOIT) in fake.calls
+
+        viewer.set_mapping('beryl')
+        mapping_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][-1]
+        np.testing.assert_array_equal(mapping_colors[3][:, 3], [64] * len(mesh.positions))
+
+        viewer.set_selected_region_ids([-315])
+        color_calls = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')]
+        selected_colors = color_calls[-1]
+        np.testing.assert_array_equal(selected_colors[3][:, 3], [64] * len(mesh.positions))
 
 
 def test_probe_uses_same_display_transform(mesh):
@@ -262,6 +291,31 @@ def test_probe_uses_same_display_transform(mesh):
     assert len(probe_upload) == 1
     positions = probe_upload[0][3]['position']
     np.testing.assert_allclose(positions[:, 0], [-0.8, 0.8])
+
+
+def test_probe_sites_use_world_transform_and_scalar_colors(mesh):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake) as viewer:
+        viewer.set_probe_sites(
+            [[-2, 0, 0], [1.5, 0, 0], [5, 0, 0]],
+            values=[-1, np.nan, 1],
+            value_range=(-1, 1),
+            radius_um=0.25,
+        )
+    upload = next(call for call in fake.calls if call[:2] == ('data_many', 'sphere'))[3]
+    np.testing.assert_allclose(upload['position'][:, 0], [-0.8, 0, 0.8])
+    np.testing.assert_array_equal(upload['color'][0], [49, 116, 178, 255])
+    np.testing.assert_array_equal(upload['color'][1], [110, 116, 126, 255])
+    np.testing.assert_array_equal(upload['color'][2], [203, 45, 62, 255])
+    np.testing.assert_allclose(upload['radius'], np.full(3, 0.25 * mesh.display_scale))
+
+    with AtlasViewer(mesh, datoviz=FakeDatoviz()) as viewer:
+        with pytest.raises(ValueError, match='values or colors'):
+            viewer.set_probe_sites([[0, 0, 0]], values=[1], colors=[[1, 2, 3]])
+        with pytest.raises(ValueError, match='probe colors'):
+            viewer.set_probe_sites([[0, 0, 0]], colors=[[300, 2, 3]])
+        with pytest.raises(ValueError, match='value range'):
+            viewer.set_probe_sites([[0, 0, 0]], values=[1], value_range=(1, 1))
 
 
 def test_region_tree_model_preserves_signed_identity_and_canonical_colors():

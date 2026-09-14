@@ -40,10 +40,13 @@ class AtlasViewer:
         width: int = 900,
         height: int = 720,
         selection_dim_factor: float = 0.42,
+        surface_opacity: float = 1.0,
         datoviz: ModuleType | None = None,
     ) -> None:
-        if not 0 <= selection_dim_factor <= 1:
+        if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
             raise ValueError('selection_dim_factor must be between zero and one')
+        if not np.isfinite(surface_opacity) or not 0 <= surface_opacity <= 1:
+            raise ValueError('surface_opacity must be between zero and one')
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
         self.mapping = mapping
@@ -53,6 +56,7 @@ class AtlasViewer:
         self.width = width
         self.height = height
         self.selection_dim_factor = selection_dim_factor
+        self.surface_opacity = surface_opacity
         self.scene = self.dvz.dvz_scene()
         if not self.scene:
             raise RuntimeError('dvz_scene() failed')
@@ -62,6 +66,7 @@ class AtlasViewer:
         self.interaction = None
         self.region_tree = None
         self.gui = None
+        self.probe_sites = None
         self._mapping_control = ctypes.c_int(mesh.mapping_names.index(mapping))
         self._mapping_items = (ctypes.c_char_p * len(mesh.mapping_names))(
             *(name.title().encode() for name in mesh.mapping_names)
@@ -74,41 +79,7 @@ class AtlasViewer:
             self.figure = self.dvz.dvz_figure(self.scene, width, height, 0)
             self.panel = self.dvz.dvz_panel_full(self.figure)
             self.dvz.dvz_panel_set_background_color(self.panel, self.dvz.DvzColor(8, 12, 18, 255))
-            self.mesh = self.dvz.dvz_mesh(self.scene, 0)
-            if not self.mesh:
-                raise RuntimeError('dvz_mesh() failed')
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
-                    self.mesh,
-                    {
-                        'position': mesh.positions,
-                        'normal': mesh.normals,
-                        'color': mesh.colors(mapping, self.palette),
-                    },
-                ),
-                'dense mesh upload',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_index_data(self.mesh, mesh.indices),
-                'mesh index upload',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_query_capabilities(
-                    self.mesh, self.dvz.DVZ_QUERY_CAPABILITY_FACE
-                ),
-                'mesh picking capability',
-            )
-            self.link_channel = self.dvz.dvz_link_channel(self.scene, b'atlas-region')
-            self._check(
-                self.dvz.dvz_visual_set_target_link_keys(
-                    self.mesh,
-                    self.dvz.DVZ_SCENE_TARGET_FACE,
-                    self.link_channel,
-                    mesh.link_keys(mapping),
-                ),
-                'mesh region link keys',
-            )
-            self._check(self.dvz.dvz_panel_add_visual(self.panel, self.mesh, None), 'mesh attach')
+            self._create_surface()
             interaction_desc = self.dvz.dvz_item_interaction_desc()
             interaction_desc.target = self.dvz.DVZ_SCENE_TARGET_FACE
             self.interaction = self.dvz.dvz_item_interaction(
@@ -152,6 +123,62 @@ class AtlasViewer:
         if result != 0:
             raise RuntimeError(f'Datoviz {action} failed')
 
+    def _surface_colors(
+        self,
+        mapping: str,
+        palette: Mapping[int, Sequence[int]] | None,
+    ) -> NDArray[np.uint8]:
+        colors = self.mesh_data.colors(mapping, palette)
+        if self.surface_opacity == 1:
+            return colors
+        colors = colors.copy()
+        colors[:, 3] = np.rint(colors[:, 3].astype(np.float32) * self.surface_opacity).astype(
+            np.uint8
+        )
+        return colors
+
+    def _create_surface(self) -> None:
+        self.mesh = self.dvz.dvz_mesh(self.scene, 0)
+        if not self.mesh:
+            raise RuntimeError('dvz_mesh() failed')
+        self._check(
+            self.dvz.dvz_visual_set_data_many(
+                self.mesh,
+                {
+                    'position': self.mesh_data.positions,
+                    'normal': self.mesh_data.normals,
+                    'color': self._surface_colors(self.mapping, self.palette),
+                },
+            ),
+            'dense mesh upload',
+        )
+        if self.surface_opacity < 1:
+            self._check(
+                self.dvz.dvz_visual_set_alpha_mode(self.mesh, self.dvz.DVZ_ALPHA_WBOIT),
+                'surface weighted transparency',
+            )
+        self._check(
+            self.dvz.dvz_visual_set_index_data(self.mesh, self.mesh_data.indices),
+            'mesh index upload',
+        )
+        self._check(
+            self.dvz.dvz_visual_set_query_capabilities(
+                self.mesh, self.dvz.DVZ_QUERY_CAPABILITY_FACE
+            ),
+            'mesh picking capability',
+        )
+        self.link_channel = self.dvz.dvz_link_channel(self.scene, b'atlas-region')
+        self._check(
+            self.dvz.dvz_visual_set_target_link_keys(
+                self.mesh,
+                self.dvz.DVZ_SCENE_TARGET_FACE,
+                self.link_channel,
+                self.mesh_data.link_keys(self.mapping),
+            ),
+            'mesh region link keys',
+        )
+        self._check(self.dvz.dvz_panel_add_visual(self.panel, self.mesh, None), 'mesh attach')
+
     def set_mapping(
         self, mapping: str, palette: Mapping[int, Sequence[int]] | None = None
     ) -> None:
@@ -164,7 +191,7 @@ class AtlasViewer:
             effective_palette = self.tree_model.palette
         self._check(
             self.dvz.dvz_visual_set_data(
-                self.mesh, 'color', self.mesh_data.colors(mapping, effective_palette)
+                self.mesh, 'color', self._surface_colors(mapping, effective_palette)
             ),
             'mapping color update',
         )
@@ -221,6 +248,100 @@ class AtlasViewer:
                 {'position': positions, 'color': colors, 'stroke_width_px': widths},
             ),
             'probe upload',
+        )
+
+    def set_probe_sites(
+        self,
+        points_um: Sequence[Sequence[float]],
+        *,
+        values: Sequence[float] | None = None,
+        colors: Sequence[Sequence[int]] | None = None,
+        value_range: tuple[float, float] | None = None,
+        radius_um: float = 45.0,
+    ) -> None:
+        """Add or replace probe sites, optionally colored by one scalar feature."""
+        positions = self.mesh_data.normalize_points(points_um)
+        count = len(positions)
+        if count == 0:
+            raise ValueError('probe sites cannot be empty')
+        if radius_um <= 0:
+            raise ValueError('probe site radius must be positive')
+        if values is not None and colors is not None:
+            raise ValueError('provide probe values or colors, not both')
+
+        if colors is not None:
+            raw_colors = np.asarray(colors)
+            if (
+                raw_colors.ndim != 2
+                or raw_colors.shape[0] != count
+                or raw_colors.shape[1] not in (3, 4)
+                or not np.issubdtype(raw_colors.dtype, np.integer)
+                or np.any(raw_colors < 0)
+                or np.any(raw_colors > 255)
+            ):
+                raise ValueError('probe colors must have shape (n, 3) or (n, 4)')
+            rgba = np.asarray(raw_colors, dtype=np.uint8)
+            if rgba.shape[1] == 3:
+                rgba = np.column_stack((rgba, np.full(count, 255, dtype=np.uint8)))
+            rgba = np.ascontiguousarray(rgba, dtype=np.uint8)
+        elif values is not None:
+            scalar = np.asarray(values, dtype=np.float64)
+            if scalar.shape != (count,):
+                raise ValueError('probe values must have shape (n,)')
+            rgba = self._probe_value_colors(scalar, value_range)
+        else:
+            rgba = np.tile(np.asarray((255, 205, 72, 255), dtype=np.uint8), (count, 1))
+
+        radii = np.full(count, radius_um * self.mesh_data.display_scale, dtype=np.float32)
+        if self.probe_sites is None:
+            self.probe_sites = self.dvz.dvz_sphere(self.scene, 0)
+            if not self.probe_sites:
+                raise RuntimeError('dvz_sphere() failed')
+            self._check(
+                self.dvz.dvz_panel_add_visual(self.panel, self.probe_sites, None),
+                'probe sites attach',
+            )
+        self._check(
+            self.dvz.dvz_visual_set_data_many(
+                self.probe_sites,
+                {'position': positions, 'color': rgba, 'radius': radii},
+            ),
+            'probe sites upload',
+        )
+
+    @staticmethod
+    def _probe_value_colors(
+        values: NDArray[np.float64], value_range: tuple[float, float] | None
+    ) -> NDArray[np.uint8]:
+        finite = np.isfinite(values)
+        if value_range is None:
+            if not np.any(finite):
+                limits = (0.0, 1.0)
+            else:
+                limits = (float(np.min(values[finite])), float(np.max(values[finite])))
+        else:
+            limits = (float(value_range[0]), float(value_range[1]))
+        constant = value_range is None and limits[1] == limits[0]
+        if not np.isfinite(limits).all() or (limits[1] < limits[0]) or (
+            value_range is not None and limits[1] == limits[0]
+        ):
+            raise ValueError('probe value range must be finite and increasing')
+
+        t = (
+            np.full(len(values), 0.5, dtype=np.float64)
+            if constant
+            else np.clip((values - limits[0]) / (limits[1] - limits[0]), 0.0, 1.0)
+        )
+        low = np.asarray((49, 116, 178), dtype=np.float64)
+        middle = np.asarray((247, 247, 247), dtype=np.float64)
+        high = np.asarray((203, 45, 62), dtype=np.float64)
+        rgb = np.empty((len(values), 3), dtype=np.float64)
+        lower = t <= 0.5
+        rgb[lower] = low + (middle - low) * (2 * t[lower, None])
+        rgb[~lower] = middle + (high - middle) * (2 * t[~lower, None] - 1)
+        rgb[~finite] = (110, 116, 126)
+        return np.ascontiguousarray(
+            np.column_stack((np.rint(rgb), np.full(len(values), 255))), dtype=np.uint8
         )
 
     def selected_region_ids(self) -> tuple[int, ...]:
@@ -402,7 +523,7 @@ class AtlasViewer:
         )
         if logical_ids == self._highlight_region_ids:
             return
-        base_colors = self.mesh_data.colors(self.mapping, self.palette)
+        base_colors = self._surface_colors(self.mapping, self.palette)
         colors = base_colors
         if logical_ids:
             mask = np.isin(np.abs(self.mesh_data.mapping_ids(self.mapping)), logical_ids)
