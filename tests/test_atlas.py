@@ -10,6 +10,7 @@ import pytest
 from ibl_atlas_assets import open_mesh_pack, open_region_catalog
 from ibl_datoviz import (
     AtlasMesh,
+    AtlasRegionValues,
     AtlasTreeModel,
     AtlasViewer,
     ProbeSites,
@@ -419,6 +420,39 @@ def test_typed_probe_sites_link_table_and_mapping(mesh):
         pytest.raises(ValueError, match='absent'),
     ):
         viewer.set_probe_data(unknown)
+
+
+def test_region_values_color_surface_and_follow_mapping(mesh):
+    catalog = open_region_catalog(REGIONS)
+    data = AtlasRegionValues.from_arrays(
+        [-8],
+        [2.5],
+        weights=[3],
+        value_name='Mean FR (Hz)',
+        weight_name='Sites',
+    )
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, catalog=catalog, datoviz=fake) as viewer:
+        viewer.set_region_data(data, value_range=(0, 5))
+        assert [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')]
+
+        viewer._replace_region_tree()
+        viewer._replace_region_table()
+        row_call = [call for call in fake.calls if call[0] == 'table_rows'][-1]
+        np.testing.assert_array_equal(row_call[1].view(np.int64), [-8])
+        fake.table_selection = [encode_region_key(-8)]
+        viewer._sync_selection_highlight(region_table_changed=True)
+        assert viewer.selected_region_ids() == (-8,)
+
+        viewer.set_mapping('beryl')
+        row_call = [call for call in fake.calls if call[0] == 'table_rows'][-1]
+        np.testing.assert_array_equal(row_call[1].view(np.int64), [997])
+
+    with (
+        AtlasViewer(mesh, datoviz=FakeDatoviz()) as viewer,
+        pytest.raises(ValueError, match='region catalog'),
+    ):
+        viewer.set_region_data(data)
 
 
 def test_region_tree_model_preserves_signed_identity_and_canonical_colors():

@@ -123,7 +123,11 @@ expanded picking representation still raises peak memory materially; avoiding th
 require an indexed picking shader/data path rather than this deliberately smaller cache fix.
 
 The real-record slice shows one scalar is enough for a single-feature probe view and that co-located
-channel grouping belongs in source adaptation, not rendering. The next work should fix and regress
-the initial arcball-state issue in Datoviz, then test a second real ephys feature before designing
-multi-feature switching. Volume rendering should wait until a pinned annotation/template volume
-contract exists.
+channel grouping belongs in source adaptation, not rendering. The follow-up regional view supplies
+that second use case without introducing metric switching. `AtlasRegionValues` retains signed Allen
+identity and explicit aggregation weights; the viewer combines values only when Beryl or Cosmos
+collapses multiple Allen rows. One authoritative selection now links regional surface color,
+individual probe sites, the ontology tree, a regional summary table, and the site table. This is
+evidence for a small typed region-scalar boundary, but not for a shared dashboard abstraction.
+
+Volume rendering should wait until a pinned annotation/template volume contract exists.

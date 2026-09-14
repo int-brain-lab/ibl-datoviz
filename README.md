@@ -107,6 +107,19 @@ percentiles. This is a robust visualization choice, not a statistical analysis o
 recorded values. Missing values remain explicit and gray. The GUI table exposes the raw mean firing
 rate and links its stable channel-group rows to surface and ontology selection.
 
+The second view aggregates those same measurements by signed Allen region and carries the declared
+site counts forward as weights when Allen rows collapse into Beryl or Cosmos. It exercises one
+selection across scalar-colored surfaces, probe sites, the ontology tree, and both retained tables:
+
+```bash
+PYTHONPATH=.:../ibl-atlas-assets/src python examples/bwm_region_activity.py \
+  build/atlas-d070 --mapping beryl
+```
+
+`AtlasRegionValues` deliberately contains only signed Allen IDs, one scalar, weights, and display
+labels. Mapping-aware reduction and rendering belong here; scientific derivation remains explicit
+in the example, while asset decoding and ontology metadata remain in `ibl-atlas-assets`.
+
 To reproduce the committed fixture from the local BWM dataset, run the optional Pandas-based build
 tool; Pandas is deliberately not an `ibl-datoviz` runtime dependency:
 
