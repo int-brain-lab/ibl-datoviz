@@ -67,21 +67,11 @@ def _presentation_ids(
     except ValueError as error:
         raise ValueError('mesh world axes do not declare the ML coordinate') from error
 
-    # The v1 provisional presentation boundary is original-world ML == 0, with points on the
-    # plane assigned right. A future asset contract should expose this through MeshGeometry.
-    threshold = 0.0
     for item in geometry.ranges:
         sl = slice(item.vertex_start, item.vertex_start + item.vertex_count)
-        left = item.left_presentation_id
-        right = item.right_presentation_id
-        if left is None and right is None:
-            raise ValueError(f'component {item.component_id} has no presentation identity')
-        if left is None:
-            ids[sl] = right
-        elif right is None:
-            ids[sl] = left
-        else:
-            ids[sl] = np.where(positions_um[sl, ml_axis] < threshold, left, right)
+        ids[sl] = geometry.presentation_ids_for_component(
+            item.component_id, positions_um[sl, ml_axis]
+        )
     if np.any(ids == sentinel):
         raise ValueError('mesh presentation identity does not cover every vertex')
     return ids
@@ -98,15 +88,10 @@ def _face_presentation_ids(
     for item in geometry.ranges:
         face_start = item.index_start // 3
         face_end = (item.index_start + item.index_count) // 3
-        left = item.left_presentation_id
-        right = item.right_presentation_id
-        if left is None:
-            ids[face_start:face_end] = right
-        elif right is None:
-            ids[face_start:face_end] = left
-        else:
-            centroids_ml = positions_um[triangles[face_start:face_end], ml_axis].mean(axis=1)
-            ids[face_start:face_end] = np.where(centroids_ml < 0.0, left, right)
+        centroids_ml = positions_um[triangles[face_start:face_end], ml_axis].mean(axis=1)
+        ids[face_start:face_end] = geometry.presentation_ids_for_component(
+            item.component_id, centroids_ml
+        )
     if np.any(ids == sentinel):
         raise ValueError('mesh presentation identity does not cover every face')
     return ids

@@ -1,7 +1,7 @@
 # Datoviz v0.4 atlas spike findings
 
 This note records evidence from the first `ibl-datoviz` 0.2 consumer. The tested revisions are
-Datoviz `6387745a1`, `ibl-atlas-assets` `958f722f8`, and the synthetic mesh-pack-v1 fixture.
+Datoviz `6387745a1`, `ibl-atlas-assets` `3fb2212a0`, and the synthetic mesh-pack-v1 fixture.
 
 ## What works without another Datoviz API
 
@@ -33,11 +33,10 @@ per region remains the straightforward fallback when correct region highlighting
 ## Asset-contract evidence
 
 The consumer needs the declared presentation boundary to classify bilateral component vertices
-and faces. `MeshPack.manifest` contains it, but `MeshGeometry` does not expose it. The current v1
-fixture declares the provisional boundary as original-world ML zero with on-plane points assigned
-right, so this spike implements that exact rule and documents the hard-coded assumption. The next
-small `ibl-atlas-assets` change should expose validated presentation-boundary metadata on
-`MeshGeometry`; consumer code should then reject unsupported boundary coordinates/statuses.
+and faces. The first spike exposed that `MeshPack.manifest` contained the rule while `MeshGeometry`
+did not. `ibl-atlas-assets` now validates and exposes the boundary and provides batched
+`presentation_ids_for_component()` resolution. This consumer uses that shared rule for both vertex
+presentation and per-face query identity; it no longer hard-codes ML zero or the on-plane side.
 
 Presentation IDs should be treated as opaque keys. The adapter uses keyed lookup rather than
 assuming IDs are dense or aligned with tuple order. Signed ontology IDs remain presentation

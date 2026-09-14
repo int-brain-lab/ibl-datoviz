@@ -29,7 +29,7 @@ testpaths = ["tests"]
 [tool.uv.sources]
 # Immutable revisions define the spike. Adjacent source checkouts may override via PYTHONPATH.
 datoviz = { git = "https://github.com/datoviz/datoviz.git", rev = "6387745a1df89c6ba929a61af7a143ed7a83ce3e" }
-ibl-atlas-assets = { git = "https://github.com/int-brain-lab/ibl-atlas-assets.git", rev = "958f722f8f76ac2ae6edbe3d8f09ff1bf26f673b" }
+ibl-atlas-assets = { git = "https://github.com/int-brain-lab/ibl-atlas-assets.git", rev = "3fb2212a0dc2dbfcbf559e625e1efb3bd7ce18cf" }
 
 [dependency-groups]
 dev = [
