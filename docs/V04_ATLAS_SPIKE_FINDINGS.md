@@ -73,6 +73,19 @@ The current browser subset does not promise this WBOIT path. A WebGPU export sho
 capability difference and choose a deliberate fallback (region isolation, clipping, or an opaque
 surface plus exterior sites) instead of presenting source-over output as equivalent.
 
+The linked probe follow-up deliberately keeps the payload smaller than an ephys application model:
+stable site IDs, atlas-world coordinates, one scalar, signed Allen IDs, and labels. The viewer maps
+those Allen IDs through the verified catalog for the active presentation, installs all sphere item
+link keys in one call, and populates a retained searchable/sortable table through column-wise batch
+setters. Table selection becomes the authoritative region selection for that event; tree or surface
+selection selects every matching site. Stable site keys remain distinct from atlas keys, avoiding
+the common mistake of treating multiple sites in one region as one row.
+
+This experiment also sharpens package boundaries. Coordinate-to-annotation-volume lookup remains
+an `iblatlas` responsibility. An application may persist its resulting signed Allen IDs in a probe
+payload; `ibl-datoviz` handles rendering and interaction, while `ibl-atlas-assets` supplies the
+versioned catalog used for presentation remapping. No new `iblatlas` API is justified by this slice.
+
 ## Next evidence step
 
 The real D070 checkpoint is complete. Every one of its 486,674 vertices and 966,645 triangles
@@ -89,7 +102,7 @@ unchanged subsequent queries take roughly 11 milliseconds instead of 85–101 mi
 expanded picking representation still raises peak memory materially; avoiding that footprint would
 require an indexed picking shader/data path rather than this deliberately smaller cache fix.
 
-The next vertical slice should replace the synthetic probe scalars with a small renderer-neutral
-probe/ephys payload and link each site to atlas region identity. That will test coordinated surface,
-ontology, site, and quantitative-table selection before introducing volume rendering or a more
-general application model.
+The next vertical slice should consume a small real ephys record rather than adding fields to the
+payload speculatively. Candidate questions are whether one scalar is enough, whether site grouping
+belongs in the application, and whether table-to-3-D selection needs a dedicated public interaction
+method. Volume rendering should wait until a pinned annotation/template volume contract exists.

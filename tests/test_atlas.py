@@ -12,6 +12,7 @@ from ibl_datoviz import (
     AtlasMesh,
     AtlasTreeModel,
     AtlasViewer,
+    ProbeSites,
     decode_region_key,
     encode_region_key,
 )
@@ -55,11 +56,18 @@ class FakeDatoviz:
     DVZ_SEGMENT_CAP_ROUND = 1
     DVZ_PATH_JOIN_ROUND = 1
     DVZ_ALPHA_WBOIT = 2
+    DVZ_GUI_TABLE_COLUMN_TEXT = 0
+    DVZ_GUI_TABLE_COLUMN_DOUBLE = 2
+    DVZ_GUI_TABLE_COLUMN_COLOR = 4
+    DVZ_GUI_TABLE_COLUMN_FLAGS_SORTABLE = 1
+    DVZ_GUI_TABLE_COLUMN_FLAGS_SEARCHABLE = 2
+    DVZ_GUI_TABLE_COLUMN_FLAGS_STRETCH = 4
 
     def __init__(self):
         self.calls = []
         self.mesh_selection = []
         self.tree_selection = []
+        self.table_selection = []
 
     def _handle(self, name):
         value = SimpleNamespace(name=name)
@@ -163,6 +171,41 @@ class FakeDatoviz:
 
     def dvz_gui_tree_destroy(self, *_args):
         self.calls.append(('tree_destroy',))
+
+    def dvz_gui_table(self, _name, columns, flags):
+        self.calls.append(('table_create', tuple(columns), flags))
+        return SimpleNamespace(name='probe_table')
+
+    def dvz_gui_table_set_rows(self, _table, keys, flags=0):
+        self.calls.append(('table_rows', np.array(keys, copy=True), flags))
+        return 0
+
+    def dvz_gui_table_set_column_text(self, _table, column, values):
+        self.calls.append(('table_text', column, tuple(values)))
+        return 0
+
+    def dvz_gui_table_set_column_double(self, _table, column, values):
+        self.calls.append(('table_double', column, np.array(values, copy=True)))
+        return 0
+
+    def dvz_gui_table_set_column_color(self, _table, column, values):
+        self.calls.append(('table_color', column, np.array(values, copy=True)))
+        return 0
+
+    def dvz_gui_table_set_selection(self, _table, keys):
+        self.table_selection = [int(key) for key in keys]
+        self.calls.append(('table_selection', tuple(self.table_selection)))
+        return 0
+
+    def dvz_gui_table_get_selection(self, _table):
+        return list(self.table_selection)
+
+    def dvz_gui_table_destroy(self, *_args):
+        self.calls.append(('table_destroy',))
+
+    def dvz_visual_set_link_keys(self, _visual, _channel, keys):
+        self.calls.append(('item_link_keys', np.array(keys, copy=True)))
+        return 0
 
     def dvz_panel_add_visual(self, *_args):
         return 0
@@ -316,6 +359,51 @@ def test_probe_sites_use_world_transform_and_scalar_colors(mesh):
             viewer.set_probe_sites([[0, 0, 0]], colors=[[300, 2, 3]])
         with pytest.raises(ValueError, match='value range'):
             viewer.set_probe_sites([[0, 0, 0]], values=[1], value_range=(1, 1))
+
+
+def test_typed_probe_sites_link_table_and_mapping(mesh):
+    catalog = open_region_catalog(REGIONS)
+    data = ProbeSites.from_arrays(
+        [[-2, 0, 0], [1.5, 0, 0], [5, 0, 0]],
+        [-1, 0, 1],
+        [-8, 8, 0],
+        site_ids=[11, 12, 13],
+        labels=['left', 'right', 'outside'],
+    )
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, catalog=catalog, datoviz=fake) as viewer:
+        viewer.set_probe_data(data, value_range=(-1, 1))
+        item_keys = next(call for call in fake.calls if call[0] == 'item_link_keys')[1]
+        np.testing.assert_array_equal(item_keys.view(np.int64), [-8, 8, 0])
+
+        viewer._replace_region_tree()
+        viewer._replace_probe_table()
+        assert next(call for call in fake.calls if call[0] == 'table_text')[2] == (
+            'left',
+            'right',
+            'outside',
+        )
+        fake.table_selection = [11]
+        viewer._sync_selection_highlight(table_changed=True)
+        assert viewer.selected_region_ids() == (-8,)
+        assert fake.tree_selection == [encode_region_key(-8)]
+
+        viewer.set_mapping('beryl')
+        item_keys = [call for call in fake.calls if call[0] == 'item_link_keys'][-1][1]
+        np.testing.assert_array_equal(item_keys.view(np.int64), [997, 997, 0])
+
+    with (
+        AtlasViewer(mesh, datoviz=FakeDatoviz()) as viewer,
+        pytest.raises(ValueError, match='region catalog'),
+    ):
+        viewer.set_probe_data(data)
+
+    unknown = ProbeSites.from_arrays([[0, 0, 0]], [1], [123456789])
+    with (
+        AtlasViewer(mesh, catalog=catalog, datoviz=FakeDatoviz()) as viewer,
+        pytest.raises(ValueError, match='absent'),
+    ):
+        viewer.set_probe_data(unknown)
 
 
 def test_region_tree_model_preserves_signed_identity_and_canonical_colors():

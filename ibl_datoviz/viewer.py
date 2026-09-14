@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
+    from .probe import ProbeSites
+
 
 class AtlasViewer:
     """Own one Datoviz scene displaying an immutable atlas mesh pack."""
@@ -65,8 +67,11 @@ class AtlasViewer:
         self.arcball = None
         self.interaction = None
         self.region_tree = None
+        self.probe_table = None
         self.gui = None
         self.probe_sites = None
+        self.probe_data: ProbeSites | None = None
+        self._probe_colors: NDArray[np.uint8] | None = None
         self._mapping_control = ctypes.c_int(mesh.mapping_names.index(mapping))
         self._mapping_items = (ctypes.c_char_p * len(mesh.mapping_names))(
             *(name.title().encode() for name in mesh.mapping_names)
@@ -218,6 +223,16 @@ class AtlasViewer:
         self._mapping_control.value = self.mesh_data.mapping_names.index(mapping)
         if self.region_tree is not None:
             self._replace_region_tree()
+        if self.probe_data is not None:
+            mapped_ids = self._mapped_probe_region_ids()
+            self._check(
+                self.dvz.dvz_visual_set_link_keys(
+                    self.probe_sites, self.link_channel, mapped_ids.view(np.uint64)
+                ),
+                'probe site mapping link keys',
+            )
+            if self.probe_table is not None:
+                self._replace_probe_table()
 
     def set_probe(
         self,
@@ -309,6 +324,50 @@ class AtlasViewer:
             'probe sites upload',
         )
 
+    def set_probe_data(
+        self,
+        data: ProbeSites,
+        *,
+        value_range: tuple[float, float] | None = None,
+        radius_um: float = 45.0,
+    ) -> None:
+        """Display a typed probe payload and link its Allen labels to atlas presentation."""
+        if self.catalog is None:
+            raise ValueError('linked probe data requires an atlas region catalog')
+        mapped_ids = self._mapped_probe_region_ids(data)
+        colors = self._probe_value_colors(data.values, value_range)
+        self.set_probe_sites(data.positions_um, colors=colors, radius_um=radius_um)
+        self.probe_data = data
+        self._probe_colors = colors
+        self._check(
+            self.dvz.dvz_visual_set_link_keys(
+                self.probe_sites, self.link_channel, mapped_ids.view(np.uint64)
+            ),
+            'probe site link keys',
+        )
+        if self.gui is not None:
+            self._replace_probe_table()
+
+    def _mapped_probe_region_ids(
+        self, data: ProbeSites | None = None
+    ) -> NDArray[np.int64]:
+        payload = self.probe_data if data is None else data
+        if payload is None or self.catalog is None:
+            return np.empty(0, dtype=np.int64)
+        allen_rows = {row.atlas_id: row for row in self.catalog.physical('allen')}
+        mapped = np.empty(len(payload.allen_region_ids), dtype=np.int64)
+        missing = []
+        for index, raw_region_id in enumerate(payload.allen_region_ids):
+            region_id = int(raw_region_id)
+            row = allen_rows.get(region_id)
+            if row is None:
+                missing.append(region_id)
+                continue
+            mapped[index] = int(row.mapped_atlas_ids[self.mapping])
+        if missing:
+            raise ValueError(f'probe Allen IDs are absent from the region catalog: {missing}')
+        return np.ascontiguousarray(mapped)
+
     @staticmethod
     def _probe_value_colors(
         values: NDArray[np.float64], value_range: tuple[float, float] | None
@@ -378,11 +437,130 @@ class AtlasViewer:
             missing = sorted({abs(region_id) for region_id in selected} - available)
             if missing:
                 raise ValueError(f'regions are not members of {self.mapping}: {missing}')
-        self._apply_selected_region_ids(selected, update_tree=True, clear_mesh=True)
+        self._apply_selected_region_ids(
+            selected, update_tree=True, update_table=True, clear_mesh=True
+        )
 
     def clear_selection(self) -> None:
         """Clear tree, surface, and highlight selection state."""
         self.set_selected_region_ids(())
+
+    def _replace_probe_table(self) -> None:
+        if self.probe_table is not None:
+            self.dvz.dvz_gui_table_destroy(self.probe_table)
+        data = self.probe_data
+        if data is None:
+            self.probe_table = None
+            return
+        columns = [
+            {
+                'column_id': 1,
+                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_TEXT,
+                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SEARCHABLE
+                | self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_STRETCH,
+                'title': 'Site',
+            },
+            {
+                'column_id': 2,
+                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_DOUBLE,
+                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SORTABLE,
+                'title': 'DV (µm)',
+                'format': '%.0f',
+            },
+            {
+                'column_id': 3,
+                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_DOUBLE,
+                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SORTABLE,
+                'title': 'Value',
+                'format': '%.3f',
+            },
+            {
+                'column_id': 4,
+                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_TEXT,
+                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SEARCHABLE
+                | self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_STRETCH,
+                'title': 'Region',
+            },
+            {'column_id': 5, 'type': self.dvz.DVZ_GUI_TABLE_COLUMN_COLOR, 'title': ''},
+        ]
+        self.probe_table = self.dvz.dvz_gui_table(
+            b'ibl_probe_sites',
+            columns,
+            self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_FILTER
+            | self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_MULTI_SELECT,
+        )
+        if not self.probe_table:
+            raise RuntimeError('dvz_gui_table() failed')
+        mapped_ids = self._mapped_probe_region_ids()
+        region_labels = tuple(
+            self.tree_model.describe(region_id) if self.tree_model else str(region_id)
+            for region_id in mapped_ids
+        )
+        setters = (
+            (
+                self.dvz.dvz_gui_table_set_rows,
+                (self.probe_table, data.site_ids, self.dvz.DVZ_GUI_DATA_SET_FLAGS_RESET_STATE),
+                'probe table rows',
+            ),
+            (
+                self.dvz.dvz_gui_table_set_column_text,
+                (self.probe_table, 1, data.labels),
+                'probe table labels',
+            ),
+            (
+                self.dvz.dvz_gui_table_set_column_double,
+                (self.probe_table, 2, data.positions_um[:, 2].astype(np.float64)),
+                'probe table depth',
+            ),
+            (
+                self.dvz.dvz_gui_table_set_column_double,
+                (self.probe_table, 3, data.values),
+                'probe table values',
+            ),
+            (
+                self.dvz.dvz_gui_table_set_column_text,
+                (self.probe_table, 4, region_labels),
+                'probe table regions',
+            ),
+            (
+                self.dvz.dvz_gui_table_set_column_color,
+                (self.probe_table, 5, self._probe_colors),
+                'probe table colors',
+            ),
+        )
+        for setter, args, action in setters:
+            self._check(setter(*args), action)
+        self._set_probe_table_selection(self._selected_region_ids)
+
+    def _probe_table_selected_region_ids(self) -> tuple[int, ...]:
+        if self.probe_table is None or self.probe_data is None:
+            return ()
+        selected_keys = set(self.dvz.dvz_gui_table_get_selection(self.probe_table))
+        mapped_ids = self._mapped_probe_region_ids()
+        return tuple(
+            dict.fromkeys(
+                int(region_id)
+                for site_id, region_id in zip(
+                    self.probe_data.site_ids, mapped_ids, strict=True
+                )
+                if int(site_id) in selected_keys and region_id
+            )
+        )
+
+    def _set_probe_table_selection(self, region_ids: Sequence[int]) -> None:
+        if self.probe_table is None or self.probe_data is None:
+            return
+        logical_ids = (
+            self.tree_model.expanded_logical_ids(tuple(region_ids))
+            if self.tree_model is not None
+            else tuple(abs(int(region_id)) for region_id in region_ids)
+        )
+        mapped_ids = self._mapped_probe_region_ids()
+        keys = self.probe_data.site_ids[np.isin(np.abs(mapped_ids), logical_ids)]
+        self._check(
+            self.dvz.dvz_gui_table_set_selection(self.probe_table, keys),
+            'probe table selection sync',
+        )
 
     def _replace_region_tree(self) -> None:
         if self.region_tree is not None:
@@ -461,7 +639,19 @@ class AtlasViewer:
                 event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED
                 for event in events
             )
-            self._sync_selection_highlight(tree_changed=tree_changed)
+            table_changed = False
+            if self.probe_table is not None:
+                self.dvz.dvz_gui_separator_text(gui, b'Probe sites')
+                _, table_events, table_dropped = self.dvz.dvz_gui_table_draw(
+                    gui, self.probe_table
+                )
+                table_changed = table_dropped > 0 or any(
+                    event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED
+                    for event in table_events
+                )
+            self._sync_selection_highlight(
+                tree_changed=tree_changed, table_changed=table_changed
+            )
             if self._selected_region_ids:
                 self.dvz.dvz_gui_separator_text(gui, b'Selection')
                 for region_id in self._selected_region_ids[:6]:
@@ -503,6 +693,7 @@ class AtlasViewer:
         region_ids: tuple[int, ...],
         *,
         update_tree: bool,
+        update_table: bool,
         clear_mesh: bool,
     ) -> None:
         if clear_mesh:
@@ -515,6 +706,8 @@ class AtlasViewer:
             self._last_mesh_region_ids = ()
         if update_tree:
             self._set_tree_selection(region_ids)
+        if update_table:
+            self._set_probe_table_selection(region_ids)
         self._selected_region_ids = region_ids
         logical_ids = (
             self.tree_model.expanded_logical_ids(region_ids)
@@ -537,10 +730,23 @@ class AtlasViewer:
         )
         self._highlight_region_ids = logical_ids
 
-    def _sync_selection_highlight(self, *, tree_changed: bool = False) -> None:
+    def _sync_selection_highlight(
+        self, *, tree_changed: bool = False, table_changed: bool = False
+    ) -> None:
+        if table_changed:
+            self._apply_selected_region_ids(
+                self._probe_table_selected_region_ids(),
+                update_tree=True,
+                update_table=False,
+                clear_mesh=True,
+            )
+            return
         if tree_changed:
             self._apply_selected_region_ids(
-                self._tree_selected_region_ids(), update_tree=False, clear_mesh=True
+                self._tree_selected_region_ids(),
+                update_tree=False,
+                update_table=True,
+                clear_mesh=True,
             )
             return
         mesh_region_ids = self._mesh_selected_region_ids()
@@ -548,7 +754,7 @@ class AtlasViewer:
             return
         self._last_mesh_region_ids = mesh_region_ids
         self._apply_selected_region_ids(
-            mesh_region_ids, update_tree=True, clear_mesh=False
+            mesh_region_ids, update_tree=True, update_table=True, clear_mesh=False
         )
 
     def _create_view(self, *, offscreen: bool, title: str) -> None:
@@ -572,6 +778,8 @@ class AtlasViewer:
         self._check(self.dvz.dvz_arcball_set(self.arcball, angles), 'arcball setup')
         if not offscreen and self.catalog is not None:
             self._replace_region_tree()
+            if self.probe_data is not None:
+                self._replace_probe_table()
             config = self.dvz.dvz_gui_config()
             config.gui_flags = self.dvz.DVZ_GUI_FLAGS_DOCKING | self.dvz.DVZ_GUI_FLAGS_DOCKSPACE
             config.default_window_width = 430
@@ -616,6 +824,9 @@ class AtlasViewer:
         if self.region_tree is not None:
             self.dvz.dvz_gui_tree_destroy(self.region_tree)
             self.region_tree = None
+        if self.probe_table is not None:
+            self.dvz.dvz_gui_table_destroy(self.probe_table)
+            self.probe_table = None
         if self.scene:
             self.dvz.dvz_scene_destroy(self.scene)
             self.scene = None

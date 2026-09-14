@@ -66,12 +66,12 @@ PYTHONPATH=.:../ibl-atlas-assets/src python examples/allen_mouse_brain.py \
   build/atlas-d070 --mapping allen
 ```
 
-Add a probe trajectory and 48 synthetic scalar-colored sites in ML/AP/DV micrometres:
+Add a fixed probe trajectory and 48 synthetic scalar-colored sites whose Allen labels were
+precomputed with `iblatlas.AllenAtlas(25)`:
 
 ```bash
 PYTHONPATH=.:../ibl-atlas-assets/src python examples/allen_mouse_brain.py \
-  build/atlas-d070 --mapping allen \
-  --probe -2200 -2500 0 1000 -2500 -6500
+  build/atlas-d070 --mapping allen --demo-probe
 ```
 
 With `--probe`, the example lowers anatomy opacity to 0.18 and renders the dense atlas mesh with
@@ -80,6 +80,14 @@ Datoviz v0.4 weighted blended order-independent transparency (WBOIT). Override t
 mapping changes and selection highlighting preserve the translucent anatomy shell. WBOIT is a
 native capability in this checkpoint; a future WebGPU version needs an explicit supported
 fallback rather than silently changing the rendering model.
+
+`ProbeSites` is the small renderer-neutral application payload exercised by this demo: immutable
+site IDs, ML/AP/DV positions, scalar values, and signed Allen IDs. The viewer derives the current
+Allen/Beryl/Cosmos presentation through the verified catalog, installs item link keys in one batch,
+and builds a searchable/sortable retained table. Selecting table rows selects their atlas regions;
+tree or surface selection selects matching sites. Custom coordinates remain available through
+`--probe ENTRY_ML ENTRY_AP ENTRY_DV TIP_ML TIP_AP TIP_DV`, without pretending they have been
+anatomically annotated.
 
 The tree is a parent-closed ontology view. Rows used only to preserve hierarchy in reduced Beryl
 or Cosmos mappings are visibly muted but remain expandable. Selecting a parent highlights all mapped descendants;
