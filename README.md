@@ -40,3 +40,21 @@ selected through either surface or tree.
 The miniature fixture is intentionally synthetic and its Beryl mapping is absent. Missing
 mapping values therefore use a neutral gray. Real atlas colors should eventually come from a
 versioned region catalog supplied as an explicit palette; they do not belong in Datoviz.
+
+## Real D070 checkpoint
+
+Materialize the pinned real surface once through `ibl-atlas-assets`, then run the same verified graph through the native adapter:
+
+```bash
+PYTHONPATH=../ibl-atlas-assets/src python - <<'PY'
+from ibl_atlas_assets import bundled_asset_set, materialize_asset_set
+materialize_asset_set(bundled_asset_set(), "build/atlas-d070")
+PY
+
+PYTHONPATH=.:../ibl-atlas-assets/src python examples/benchmark_atlas.py \
+  build/atlas-d070 --render build/atlas-d070.png --json build/atlas-d070.json
+```
+
+The EAM3 arrays are already compiled into declared ML/AP/DV micrometre coordinates. `source_to_world_um` is source provenance and must not be applied again. The shared reader owns that invariant and the vertex/face presentation classification; this package owns display normalization, palette upload, Datoviz interaction, and viewer lifecycle.
+
+See [the real D070 checkpoint](docs/REAL_D070_CHECKPOINT.md) for reproducible preparation, rendering, memory, and face-query measurements.

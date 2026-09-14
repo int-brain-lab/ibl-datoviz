@@ -1,8 +1,8 @@
 # Datoviz v0.4 atlas spike findings
 
 This note records evidence from the first `ibl-datoviz` 0.2 consumer. The tested revisions are
-Datoviz `489f7564b`, `ibl-atlas-assets` `b6fdfc3`, and the synthetic
-mesh-pack-v1 fixture.
+Datoviz `02eab5d9d`, `ibl-atlas-assets` `25845bb`, the synthetic mesh-pack-v1
+fixture, and the materialized real D070 asset-set lock.
 
 ## What works without another Datoviz API
 
@@ -49,7 +49,15 @@ keys.
 
 ## Next evidence step
 
-Run the same adapter on a representative real mesh pack and verify that every triangle belongs to
-one anatomical presentation after boundary classification. Then decide whether the dense mesh
-plus group-aware picking route is sufficient or whether the first production viewer should attach
-one visual per region/component.
+The real D070 checkpoint is complete. Every one of its 486,674 vertices and 966,645 triangles
+resolves to the same signed-presentation fingerprints in the Python and TypeScript consumers. It
+also exposed a coordinate bug hidden by the synthetic identity transform: decoded EAM3 positions
+are already compiled into declared world coordinates, so the source-provenance transform must not
+be applied again.
+
+Dense upload and mapping-only updates remain appropriate: native preparation is below 0.1 seconds
+and mapping color/identity arrays take about 7–8 milliseconds on the diagnostic host. Datoviz face
+queries resolve correctly but take roughly 85–101 milliseconds and raise peak memory materially on
+this mesh because indexed query geometry is expanded per request. Click selection is viable;
+unthrottled hover is not. The next renderer evidence task is to cache or retain query geometry in
+Datoviz and repeat this benchmark before choosing a multi-visual atlas layout.
