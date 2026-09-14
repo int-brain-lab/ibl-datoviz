@@ -1,7 +1,7 @@
 [project]
 name = "ibl_datoviz"
-version = "0.1.0"
-description = "IBL datoviz package for visualizing data"
+version = "0.2.0.dev0"
+description = "Datoviz v0.4 visualization components for IBL atlas data"
 authors = [
     {name = "International Brain Laboratory", email = "software-devs@internationalbrainlab.org"},
 ]
@@ -11,25 +11,10 @@ readme = "README.md"
 license = {text = "MIT"}
 
 dependencies = [
-    "datoviz<=0.3.5",
-    "numpy",
-    "iblutil",
-    "ONE-api",
-    "iblatlas",
-    "trimesh[easy]", # requires shapely
-    "rtree", # needed for splitting meshes into hemispheres using trimesh # needed for splitting meshes into hemispheres using trimesh
-    "mapbox-earcut"
+    "datoviz>=0.4.0rc2,<0.5",
+    "ibl-atlas-assets>=0.0.0",
+    "numpy>=1.24",
 ]
-
-[project.optional-dependencies]
-# Optional install instructions for PyQt6
-qt = [
-    "pyqt6>=6.10.2"
-]
-## Optional install instructions for datoviz development version
-#datoviz_dev = [
-#    "datoviz @ file://${DATOVIZ_PATH}"
-#]
 
 [build-system]
 requires = ["pdm-backend"]
@@ -38,19 +23,23 @@ build-backend = "pdm.backend"
 [tool.pdm]
 distribution = true
 
-#[tool.uv.sources]
-#datoviz = { path = "vendor/datoviz", editable = true }
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv.sources]
+# Immutable revisions define the spike. Adjacent source checkouts may override via PYTHONPATH.
+datoviz = { git = "https://github.com/datoviz/datoviz.git", rev = "6387745a1df89c6ba929a61af7a143ed7a83ce3e" }
+ibl-atlas-assets = { git = "https://github.com/int-brain-lab/ibl-atlas-assets.git", rev = "958f722f8f76ac2ae6edbe3d8f09ff1bf26f673b" }
 
 [dependency-groups]
 dev = [
+    "pytest>=8",
     "ruff>=0.12.10",
 ]
-lint = ["ruff>=0.9.2"]
 
 [tool.ruff]
 line-length = 99
-include = ["pyproject.toml", "ibl_alignment_gui/**/*.py", "tests/**/*.py"]
-exclude = ["ibl_alignment_gui/utils/qt/adapted_axis.py", "ibl_alignment_gui/plugins/*.py"]
+include = ["pyproject.toml", "ibl_datoviz/**/*.py", "examples/**/*.py", "tests/**/*.py"]
 
 [tool.ruff.format]
 quote-style = "single"
@@ -90,4 +79,4 @@ select = [
 convention = "numpy"
 
 [tool.ruff.lint.isort]
-known-first-party = ["ibl*", "one*" ]
+known-first-party = ["ibl*"]
