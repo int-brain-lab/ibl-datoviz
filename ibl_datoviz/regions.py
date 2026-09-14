@@ -20,7 +20,6 @@ class AtlasRegionValues:
     allen_region_ids: NDArray[np.int64]
     values: NDArray[np.float64]
     weights: NDArray[np.float64]
-    labels: tuple[str, ...]
     value_name: str
     weight_name: str
 
@@ -31,7 +30,6 @@ class AtlasRegionValues:
         values: Sequence[float],
         *,
         weights: Sequence[float] | None = None,
-        labels: Sequence[str] | None = None,
         value_name: str = 'Value',
         weight_name: str = 'Weight',
     ) -> AtlasRegionValues:
@@ -63,13 +61,6 @@ class AtlasRegionValues:
             raise ValueError(
                 'region weights must be finite and nonnegative, and positive for finite values'
             )
-        region_labels = (
-            tuple(str(int(region_id)) for region_id in raw_ids)
-            if labels is None
-            else tuple(str(label) for label in labels)
-        )
-        if len(region_labels) != count or any(not label for label in region_labels):
-            raise ValueError('region labels must contain one non-empty label per region')
         if not value_name or not weight_name:
             raise ValueError('region value and weight names cannot be empty')
 
@@ -80,4 +71,4 @@ class AtlasRegionValues:
         )
         for array in arrays:
             array.setflags(write=False)
-        return cls(*arrays, region_labels, str(value_name), str(weight_name))
+        return cls(*arrays, str(value_name), str(weight_name))

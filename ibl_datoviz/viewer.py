@@ -43,6 +43,7 @@ class AtlasViewer:
         catalog: AtlasRegionCatalog | None = None,
         width: int = 900,
         height: int = 720,
+        camera_angles: Sequence[float] = (-0.35, 0.25, 0.12),
         selection_dim_factor: float = 0.42,
         surface_opacity: float = 1.0,
         datoviz: ModuleType | None = None,
@@ -51,6 +52,7 @@ class AtlasViewer:
             raise ValueError('selection_dim_factor must be between zero and one')
         if not np.isfinite(surface_opacity) or not 0 <= surface_opacity <= 1:
             raise ValueError('surface_opacity must be between zero and one')
+        self.camera_angles = self._validated_camera_angles(camera_angles)
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
         self.mapping = mapping
@@ -64,9 +66,7 @@ class AtlasViewer:
         self.scene = self.dvz.dvz_scene()
         if not self.scene:
             raise RuntimeError('dvz_scene() failed')
-        self.app = None
-        self.view = None
-        self.arcball = None
+        self.app, self.view, self.arcball = None, None, None
         self.interaction = None
         self.region_tree, self.region_table = None, None
         self.probe_table = None
@@ -77,6 +77,7 @@ class AtlasViewer:
         self._probe_colors: NDArray[np.uint8] | None = None
         self._region_value_range: tuple[float, float] | None = None
         self._region_color_scheme: Literal['diverging', 'sequential'] = 'sequential'
+        self._region_opacity: float | None = None
         self._mapping_control = ctypes.c_int(mesh.mapping_names.index(mapping))
         self._mapping_items = (ctypes.c_char_p * len(mesh.mapping_names))(
             *(name.title().encode() for name in mesh.mapping_names)
@@ -130,6 +131,20 @@ class AtlasViewer:
     def _check(result: int, action: str) -> None:
         if result != 0:
             raise RuntimeError(f'Datoviz {action} failed')
+
+    @staticmethod
+    def _validated_camera_angles(angles: Sequence[float]) -> tuple[float, float, float]:
+        values = np.asarray(angles, dtype=np.float32)
+        if values.shape != (3,) or not np.isfinite(values).all():
+            raise ValueError('camera angles must contain three finite Euler angles')
+        return tuple(float(value) for value in values)
+
+    def set_camera_angles(self, angles: Sequence[float]) -> None:
+        """Set stored arcball Euler angles and update an active view immediately."""
+        self.camera_angles = self._validated_camera_angles(angles)
+        if self.arcball is not None:
+            native = (ctypes.c_float * 3)(*self.camera_angles)
+            self._check(self.dvz.dvz_arcball_set(self.arcball, native), 'arcball update')
 
     def _surface_colors(
         self,
@@ -249,15 +264,19 @@ class AtlasViewer:
         active_palette = self.palette if palette is None else palette
         if self.region_data is None:
             return self._surface_colors(active_mapping, active_palette)
-        region_ids, values, _, _, value_colors = self._mapped_region_values(active_mapping)
+        region_ids, _, _, _, value_colors = self._mapped_region_values(active_mapping)
         alpha = int(round(255 * self.surface_opacity))
-        colors = np.tile(
-            np.asarray((46, 52, 62, alpha), dtype=np.uint8), (len(self.mesh_data.positions), 1)
+        lookup = np.tile(
+            np.asarray((46, 52, 62, alpha), dtype=np.uint8),
+            (len(self.mesh_data.presentations), 1),
         )
-        vertex_ids = self.mesh_data.mapping_ids(active_mapping)
-        for region_id, color in zip(region_ids, value_colors, strict=True):
-            colors[vertex_ids == region_id] = color
-        return np.ascontiguousarray(colors)
+        by_region = dict(zip(region_ids, value_colors, strict=True))
+        for presentation in self.mesh_data.presentations:
+            mapped_id = presentation['mappings'][active_mapping]
+            color = by_region.get(mapped_id)
+            if color is not None:
+                lookup[presentation['presentation_id']] = color
+        return np.ascontiguousarray(lookup[self.mesh_data.presentation_ids])
 
     def set_region_data(
         self,
@@ -265,22 +284,33 @@ class AtlasViewer:
         *,
         value_range: tuple[float, float] | None = None,
         color_scheme: Literal['diverging', 'sequential'] = 'sequential',
+        opacity: float | None = None,
+        mapping_reduction: Literal['weighted_mean'],
     ) -> None:
-        """Color atlas surfaces from signed Allen values and expose a linked region table."""
+        """Color surfaces, explicitly reducing mapping collisions by weighted mean."""
         if self.catalog is None:
             raise ValueError('linked region data requires an atlas region catalog')
         if color_scheme not in ('diverging', 'sequential'):
             raise ValueError(f'unknown region color scheme: {color_scheme}')
+        if mapping_reduction != 'weighted_mean':
+            raise ValueError(f'unknown region mapping reduction: {mapping_reduction}')
+        if opacity is not None and (not np.isfinite(opacity) or not 0 <= opacity <= 1):
+            raise ValueError('region opacity must be between zero and one')
+        self._region_value_view(data, self.mapping, value_range, color_scheme, opacity)
         self.region_data = data
         self._region_value_range = value_range
         self._region_color_scheme = color_scheme
-        # Validate all source IDs before changing native state.
-        self._mapped_region_values()
+        self._region_opacity = opacity
         self._check(
             self.dvz.dvz_visual_set_data(self.mesh, 'color', self._display_surface_colors()),
             'region scalar color update',
         )
+        selected = self._selected_region_ids
         self._highlight_region_ids = ()
+        if selected:
+            self._apply_selected_region_ids(
+                selected, update_tree=False, update_table=False, clear_mesh=False
+            )
         if self.gui is not None:
             self._replace_region_table()
 
@@ -293,7 +323,7 @@ class AtlasViewer:
         tuple[str, ...],
         NDArray[np.uint8],
     ]:
-        """Map Allen rows and combine collisions using their declared weights."""
+        """Return the active weighted-mean regional presentation."""
         data = self.region_data
         if data is None or self.catalog is None:
             empty_i = np.empty(0, dtype=np.int64)
@@ -301,21 +331,39 @@ class AtlasViewer:
             empty_c = np.empty((0, 4), dtype=np.uint8)
             return empty_i, empty_f, empty_f, (), empty_c
         active_mapping = self.mapping if mapping is None else mapping
-        allen_rows = {row.atlas_id: row for row in self.catalog.physical('allen')}
+        return self._region_value_view(
+            data,
+            active_mapping,
+            self._region_value_range,
+            self._region_color_scheme,
+            self._region_opacity,
+        )
+
+    def _region_value_view(
+        self,
+        data: AtlasRegionValues,
+        mapping: str,
+        value_range: tuple[float, float] | None,
+        color_scheme: Literal['diverging', 'sequential'],
+        opacity: float | None,
+    ) -> tuple[
+        NDArray[np.int64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        tuple[str, ...],
+        NDArray[np.uint8],
+    ]:
+        """Build one weighted-mean mapping presentation without mutating state."""
+        assert self.catalog is not None
+        try:
+            mapped_ids = self.catalog.map_allen_ids(data.allen_region_ids, mapping)
+        except KeyError as error:
+            raise ValueError(str(error)) from error
         grouped: dict[int, list[tuple[float, float]]] = {}
-        missing = []
-        for allen_id, value, weight in zip(
-            data.allen_region_ids, data.values, data.weights, strict=True
-        ):
-            row = allen_rows.get(int(allen_id))
-            if row is None:
-                missing.append(int(allen_id))
+        for mapped_id, value, weight in zip(mapped_ids, data.values, data.weights, strict=True):
+            if mapped_id is None or mapped_id == 0:
                 continue
-            mapped_id = int(row.mapped_atlas_ids[active_mapping])
-            if mapped_id:
-                grouped.setdefault(mapped_id, []).append((float(value), float(weight)))
-        if missing:
-            raise ValueError(f'region Allen IDs are absent from the region catalog: {missing}')
+            grouped.setdefault(mapped_id, []).append((float(value), float(weight)))
         region_ids = np.ascontiguousarray(sorted(grouped), dtype=np.int64)
         values = np.empty(len(region_ids), dtype=np.float64)
         weights = np.empty(len(region_ids), dtype=np.float64)
@@ -331,18 +379,17 @@ class AtlasViewer:
             )
         model = (
             self.tree_model
-            if self.tree_model is not None and self.tree_model.mapping == active_mapping
+            if self.tree_model is not None and self.tree_model.mapping == mapping
             else None
         )
         labels = tuple(
             model.describe(int(region_id)) if model else str(region_id) for region_id in region_ids
         )
-        colors = self._probe_value_colors(
-            values, self._region_value_range, self._region_color_scheme
-        )
-        if self.surface_opacity < 1:
+        colors = self._probe_value_colors(values, value_range, color_scheme)
+        effective_opacity = self.surface_opacity if opacity is None else opacity
+        if effective_opacity < 1:
             colors = colors.copy()
-            colors[:, 3] = np.rint(colors[:, 3] * self.surface_opacity).astype(np.uint8)
+            colors[:, 3] = np.rint(colors[:, 3] * effective_opacity).astype(np.uint8)
         return region_ids, values, weights, labels, colors
 
     def set_probe(
@@ -465,19 +512,13 @@ class AtlasViewer:
         payload = self.probe_data if data is None else data
         if payload is None or self.catalog is None:
             return np.empty(0, dtype=np.int64)
-        allen_rows = {row.atlas_id: row for row in self.catalog.physical('allen')}
-        mapped = np.empty(len(payload.allen_region_ids), dtype=np.int64)
-        missing = []
-        for index, raw_region_id in enumerate(payload.allen_region_ids):
-            region_id = int(raw_region_id)
-            row = allen_rows.get(region_id)
-            if row is None:
-                missing.append(region_id)
-                continue
-            mapped[index] = int(row.mapped_atlas_ids[self.mapping])
-        if missing:
-            raise ValueError(f'probe Allen IDs are absent from the region catalog: {missing}')
-        return np.ascontiguousarray(mapped)
+        try:
+            mapped = self.catalog.map_allen_ids(payload.allen_region_ids, self.mapping)
+        except KeyError as error:
+            raise ValueError(str(error)) from error
+        return np.ascontiguousarray(
+            [0 if region_id is None else region_id for region_id in mapped], dtype=np.int64
+        )
 
     @staticmethod
     def _probe_value_colors(
@@ -1011,7 +1052,7 @@ class AtlasViewer:
         self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, None)
         if not self.arcball:
             raise RuntimeError('dvz_view_arcball() failed')
-        angles = (ctypes.c_float * 3)(-0.35, 0.25, 0.12)
+        angles = (ctypes.c_float * 3)(*self.camera_angles)
         self._check(self.dvz.dvz_arcball_set(self.arcball, angles), 'arcball setup')
         if not offscreen and self.catalog is not None:
             self._replace_region_tree()

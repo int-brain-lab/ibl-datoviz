@@ -102,6 +102,8 @@ PYTHONPATH=.:../ibl-atlas-assets/src python examples/bwm_probe.py \
   build/atlas-d070 --mapping beryl
 ```
 
+![Real BWM probe sites in the D070 atlas](docs/images/bwm-probe.png)
+
 The demo uses a sequential color scheme and clips its display range to the finite 5th–95th
 percentiles. This is a robust visualization choice, not a statistical analysis or a change to the
 recorded values. Missing values remain explicit and gray. The GUI table exposes the raw mean firing
@@ -116,9 +118,20 @@ PYTHONPATH=.:../ibl-atlas-assets/src python examples/bwm_region_activity.py \
   build/atlas-d070 --mapping beryl
 ```
 
-`AtlasRegionValues` deliberately contains only signed Allen IDs, one scalar, weights, and display
-labels. Mapping-aware reduction and rendering belong here; scientific derivation remains explicit
-in the example, while asset decoding and ontology metadata remain in `ibl-atlas-assets`.
+![Mapping-aware BWM regional activity](docs/images/bwm-region-activity.png)
+
+`AtlasRegionValues` deliberately contains only signed Allen IDs, one scalar, weights, and column
+names; ontology labels remain catalog-owned. The caller must explicitly request
+`mapping_reduction="weighted_mean"`, because that reduction is scientifically valid for this
+site-mean/count example but not for arbitrary statistics. Rows absent from a reduced mapping are
+omitted rather than misrepresented as root. Rendering belongs here; scientific derivation remains
+explicit in the example, while asset decoding and ontology metadata remain in `ibl-atlas-assets`.
+The example also gives valued regions higher opacity than the surrounding anatomical context; both
+opacities remain explicit viewer settings.
+
+`AtlasViewer(camera_angles=(x, y, z))` selects a reproducible initial arcball view, and
+`set_camera_angles()` updates an active view. These calls require Datoviz commit `1114b65fa` or
+later; earlier v0.4 snapshots retained the angles but skipped them on camera-less panels.
 
 To reproduce the committed fixture from the local BWM dataset, run the optional Pandas-based build
 tool; Pandas is deliberately not an `ibl-datoviz` runtime dependency:

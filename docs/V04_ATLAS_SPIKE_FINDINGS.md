@@ -101,10 +101,11 @@ sites from flattening the rest; it does not alter raw table values. The fixture 
 count as evidence, but the renderer payload does not absorb it speculatively. Multiple simultaneous
 metrics and feature switching should be designed from another real use case.
 
-The exercise also exposed a Datoviz integration issue: setting substantially different Euler angles
-through `dvz_arcball_set()` after `dvz_view_arcball()` produced byte-identical initial offscreen
-captures. Interactive pointer updates and programmatic initial-state propagation need a focused
-Datoviz regression before `ibl-datoviz` exposes a camera-preset API.
+The exercise exposed and then closed a Datoviz integration issue: camera-less panels returned from
+MVP composition before applying their retained arcball. Datoviz `1114b65fa` adds an exact
+high-level offscreen regression and applies the arcball without changing the API or ABI. Distinct
+Euler angles now produce distinct real D070 captures, so `AtlasViewer` exposes reproducible initial
+angles and active-view updates.
 
 ## Next evidence step
 
@@ -125,9 +126,13 @@ require an indexed picking shader/data path rather than this deliberately smalle
 The real-record slice shows one scalar is enough for a single-feature probe view and that co-located
 channel grouping belongs in source adaptation, not rendering. The follow-up regional view supplies
 that second use case without introducing metric switching. `AtlasRegionValues` retains signed Allen
-identity and explicit aggregation weights; the viewer combines values only when Beryl or Cosmos
-collapses multiple Allen rows. One authoritative selection now links regional surface color,
-individual probe sites, the ontology tree, a regional summary table, and the site table. This is
-evidence for a small typed region-scalar boundary, but not for a shared dashboard abstraction.
+identity and explicit aggregation weights; the caller must explicitly choose weighted-mean
+reduction when Beryl or Cosmos collapses multiple valid Allen rows. Parent-closure rows absent from
+the target mapping are omitted rather than collapsed into the legacy root placeholder. Surface
+recoloring uses a presentation lookup, avoiding one full vertex scan per region; twenty complete
+D070 color preparations took about 69 milliseconds on the diagnostic host. One authoritative
+selection now links regional surface color, individual probe sites, the ontology tree, a regional
+summary table, and the site table. This is evidence for a small typed region-scalar boundary, but
+not for a shared dashboard abstraction.
 
 Volume rendering should wait until a pinned annotation/template volume contract exists.

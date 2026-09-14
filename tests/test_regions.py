@@ -14,14 +14,12 @@ def test_region_values_validate_and_freeze_arrays():
         [-8, 315],
         [2.5, np.nan],
         weights=[3, 4],
-        labels=['left grey', 'right isocortex'],
         value_name='Mean FR (Hz)',
         weight_name='Sites',
     )
     assert data.allen_region_ids.dtype == np.int64
     assert data.values.dtype == np.float64
     assert data.weights.dtype == np.float64
-    assert data.labels == ('left grey', 'right isocortex')
     assert data.value_name == 'Mean FR (Hz)'
     assert data.weight_name == 'Sites'
     assert not data.values.flags.writeable
@@ -35,7 +33,6 @@ def test_region_values_validate_and_freeze_arrays():
         (([0], [1]), {}, 'unique nonzero'),
         (([1], [np.inf]), {}, 'infinities'),
         (([1], [1]), {'weights': [0]}, 'positive for finite'),
-        (([1], [1]), {'labels': ['']}, 'non-empty label'),
     ],
 )
 def test_region_values_reject_invalid_payload(args, kwargs, message):

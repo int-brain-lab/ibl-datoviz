@@ -240,6 +240,10 @@ class FakeDatoviz:
     def dvz_path_set_join(self, *_args):
         return 0
 
+    def dvz_arcball_set(self, _arcball, angles):
+        self.calls.append(('arcball_set', tuple(float(value) for value in angles)))
+        return 0
+
     def dvz_app_destroy(self, *_args):
         self.calls.append(('destroy_app',))
 
@@ -301,6 +305,17 @@ def test_viewer_switches_mapping_without_geometry_upload(mesh):
     assert viewer.selected_region_ids() == ()
     viewer.close()
     assert fake.calls[-1] == ('destroy_scene',)
+
+
+def test_camera_angles_are_validated_stored_and_applied(mesh):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake, camera_angles=(0.1, 0.2, 0.3)) as viewer:
+        np.testing.assert_allclose(viewer.camera_angles, (0.1, 0.2, 0.3))
+        viewer.arcball = SimpleNamespace(name='arcball')
+        viewer.set_camera_angles((-0.4, 0.5, 0.6))
+        np.testing.assert_allclose(fake.calls[-1][1], (-0.4, 0.5, 0.6))
+        with pytest.raises(ValueError, match='three finite'):
+            viewer.set_camera_angles((0, np.nan, 0))
 
     with pytest.raises(ValueError, match='selection_dim_factor'):
         AtlasViewer(mesh, datoviz=FakeDatoviz(), selection_dim_factor=1.1)
@@ -370,9 +385,9 @@ def test_probe_sites_use_world_transform_and_scalar_colors(mesh):
             value_range=(0, 1),
             color_scheme='sequential',
         )
-        sequential = [
-            call for call in second_fake.calls if call[:2] == ('data_many', 'sphere')
-        ][-1][3]
+        sequential = [call for call in second_fake.calls if call[:2] == ('data_many', 'sphere')][
+            -1
+        ][3]
         np.testing.assert_array_equal(sequential['color'][0], [88, 70, 180, 255])
         np.testing.assert_array_equal(sequential['color'][1], [253, 231, 73, 255])
 
@@ -406,7 +421,7 @@ def test_typed_probe_sites_link_table_and_mapping(mesh):
 
         viewer.set_mapping('beryl')
         item_keys = [call for call in fake.calls if call[0] == 'item_link_keys'][-1][1]
-        np.testing.assert_array_equal(item_keys.view(np.int64), [997, 997, 0])
+        np.testing.assert_array_equal(item_keys.view(np.int64), [0, 0, 0])
 
     with (
         AtlasViewer(mesh, datoviz=FakeDatoviz()) as viewer,
@@ -417,7 +432,7 @@ def test_typed_probe_sites_link_table_and_mapping(mesh):
     unknown = ProbeSites.from_arrays([[0, 0, 0]], [1], [123456789])
     with (
         AtlasViewer(mesh, catalog=catalog, datoviz=FakeDatoviz()) as viewer,
-        pytest.raises(ValueError, match='absent'),
+        pytest.raises(ValueError, match='unknown signed Allen'),
     ):
         viewer.set_probe_data(unknown)
 
@@ -425,21 +440,24 @@ def test_typed_probe_sites_link_table_and_mapping(mesh):
 def test_region_values_color_surface_and_follow_mapping(mesh):
     catalog = open_region_catalog(REGIONS)
     data = AtlasRegionValues.from_arrays(
-        [-8],
-        [2.5],
-        weights=[3],
+        [-997, -8],
+        [1.0, 2.5],
+        weights=[1, 3],
         value_name='Mean FR (Hz)',
         weight_name='Sites',
     )
     fake = FakeDatoviz()
     with AtlasViewer(mesh, catalog=catalog, datoviz=fake) as viewer:
-        viewer.set_region_data(data, value_range=(0, 5))
+        viewer.set_selected_region_ids([-8])
+        viewer.set_region_data(data, value_range=(0, 5), mapping_reduction='weighted_mean')
+        assert viewer.selected_region_ids() == (-8,)
+        assert viewer._highlight_region_ids == (8,)
         assert [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')]
 
         viewer._replace_region_tree()
         viewer._replace_region_table()
         row_call = [call for call in fake.calls if call[0] == 'table_rows'][-1]
-        np.testing.assert_array_equal(row_call[1].view(np.int64), [-8])
+        np.testing.assert_array_equal(row_call[1].view(np.int64), [-997, -8])
         fake.table_selection = [encode_region_key(-8)]
         viewer._sync_selection_highlight(region_table_changed=True)
         assert viewer.selected_region_ids() == (-8,)
@@ -452,7 +470,28 @@ def test_region_values_color_surface_and_follow_mapping(mesh):
         AtlasViewer(mesh, datoviz=FakeDatoviz()) as viewer,
         pytest.raises(ValueError, match='region catalog'),
     ):
-        viewer.set_region_data(data)
+        viewer.set_region_data(data, mapping_reduction='weighted_mean')
+
+    fake = FakeDatoviz()
+    unknown = AtlasRegionValues.from_arrays([123456], [1])
+    with AtlasViewer(mesh, catalog=catalog, datoviz=fake) as viewer:
+        with pytest.raises(ValueError, match='unknown signed Allen'):
+            viewer.set_region_data(unknown, mapping_reduction='weighted_mean')
+        assert viewer.region_data is None
+        with pytest.raises(ValueError, match='region opacity'):
+            viewer.set_region_data(
+                data,
+                opacity=1.1,
+                mapping_reduction='weighted_mean',
+            )
+        assert viewer.region_data is None
+        with pytest.raises(ValueError, match='value range'):
+            viewer.set_region_data(
+                data,
+                value_range=(1, 1),
+                mapping_reduction='weighted_mean',
+            )
+        assert viewer.region_data is None
 
 
 def test_region_tree_model_preserves_signed_identity_and_canonical_colors():

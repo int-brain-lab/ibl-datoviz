@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 
 import numpy as np
-from bwm_probe import FIXTURE, _load_fixture
+from bwm_probe import BWM_CAMERA_ANGLES, FIXTURE, _load_fixture
 
 from ibl_datoviz import AtlasRegionValues, AtlasViewer, ProbeSites
 
@@ -46,7 +46,10 @@ def main() -> int:
     finite = sites.values[np.isfinite(sites.values)]
     value_range = tuple(float(value) for value in np.quantile(finite, (0.05, 0.95)))
     with AtlasViewer.from_asset_set(
-        args.asset_root, mapping=args.mapping, surface_opacity=0.32
+        args.asset_root,
+        mapping=args.mapping,
+        surface_opacity=0.08,
+        camera_angles=BWM_CAMERA_ANGLES,
     ) as viewer:
         viewer.set_probe((sites.positions_um[0], sites.positions_um[-1]), width_px=2)
         viewer.set_probe_data(
@@ -59,6 +62,8 @@ def main() -> int:
             regions,
             value_range=value_range,
             color_scheme='sequential',
+            opacity=0.78,
+            mapping_reduction='weighted_mean',
         )
         if args.offscreen:
             rgba = viewer.render_offscreen(args.offscreen)

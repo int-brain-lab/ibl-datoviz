@@ -14,6 +14,7 @@ import numpy as np
 from ibl_datoviz import AtlasViewer, ProbeSites
 
 FIXTURE = Path(__file__).with_name('data') / 'bwm-ephys-1.1.0-a21bade7-probe.csv'
+BWM_CAMERA_ANGLES = (0.15, 0.75, -0.25)
 
 
 def _sha256(path: Path) -> str:
@@ -36,8 +37,7 @@ def _load_fixture(path: Path) -> tuple[ProbeSites, dict]:
     if len(rows) != provenance['site_count']:
         raise ValueError('probe fixture row count does not match provenance')
     values = [
-        float(row['mean_firing_rate_hz']) if row['mean_firing_rate_hz'] else np.nan
-        for row in rows
+        float(row['mean_firing_rate_hz']) if row['mean_firing_rate_hz'] else np.nan for row in rows
     ]
     return (
         ProbeSites.from_arrays(
@@ -66,7 +66,10 @@ def main() -> int:
     finite = data.values[np.isfinite(data.values)]
     value_range = tuple(float(value) for value in np.quantile(finite, (0.05, 0.95)))
     with AtlasViewer.from_asset_set(
-        args.asset_root, mapping=args.mapping, surface_opacity=0.16
+        args.asset_root,
+        mapping=args.mapping,
+        surface_opacity=0.16,
+        camera_angles=BWM_CAMERA_ANGLES,
     ) as viewer:
         viewer.set_probe((data.positions_um[0], data.positions_um[-1]), width_px=2)
         viewer.set_probe_data(
@@ -80,7 +83,7 @@ def main() -> int:
             print(f'wrote {args.offscreen} ({rgba.shape[1]}x{rgba.shape[0]})')
         else:
             insertion = provenance['insertion']
-            title = f"BWM {insertion['subject']} {insertion['probe_name']}"
+            title = f'BWM {insertion["subject"]} {insertion["probe_name"]}'
             viewer.show(title=title, frame_count=args.frames)
     return 0
 
