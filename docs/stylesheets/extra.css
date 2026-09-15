@@ -1,0 +1,60 @@
+:root {
+  --ibl-cyan: #42c7d9;
+  --ibl-blue: #6ea8fe;
+  --ibl-panel: rgba(25, 34, 45, 0.78);
+}
+
+.md-typeset .capability-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.8rem 0 1.2rem;
+}
+
+.md-typeset .capability {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.025em;
+  margin: 0.15rem 0.2rem 0.15rem 0;
+  padding: 0.18rem 0.52rem;
+}
+
+.md-typeset .capability--native {
+  background: rgba(66, 199, 217, 0.13);
+  color: var(--ibl-cyan);
+}
+
+.md-typeset .capability--webgpu {
+  background: rgba(110, 168, 254, 0.11);
+  color: var(--ibl-blue);
+}
+
+.md-typeset .capability--data {
+  background: rgba(255, 255, 255, 0.07);
+  color: #c7d0da;
+}
+
+.md-typeset .gallery-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  margin: 1.2rem 0 1.8rem;
+}
+
+.md-typeset .gallery-card {
+  background: var(--ibl-panel);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.45rem;
+  overflow: hidden;
+  padding: 0 1rem 0.8rem;
+}
+
+.md-typeset .gallery-card img {
+  aspect-ratio: 5 / 4;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}

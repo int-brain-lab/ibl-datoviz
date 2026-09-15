@@ -1,5 +1,8 @@
 # ibl-datoviz
 
+**[Documentation](docs/index.md) · [Gallery](docs/gallery/index.md) ·
+[API reference](docs/api/index.md)**
+
 `ibl-datoviz` 0.2 is a deliberately breaking Datoviz v0.4-based atlas viewer. The first
 vertical slice reads the renderer-neutral mesh-pack contract from `ibl-atlas-assets`, uploads
 its dense NumPy arrays, retains signed Allen/Beryl/Cosmos presentation identity, and adds
@@ -10,6 +13,10 @@ colors and per-face link keys, so switching ontology mappings does not reload ge
 indexed-mesh item queries identify triangle primitives; the adapter therefore classifies each
 face at the declared hemispheric boundary rather than incorrectly treating query IDs as vertex
 IDs.
+
+Build the local documentation site with `mkdocs build --strict`. Gallery commands and capability
+labels are kept in `docs/gallery/manifest.json`; `python tools/build_gallery.py --dry-run` shows the
+reproducible native screenshot pipeline without modifying tracked images.
 
 ## Development checkout
 

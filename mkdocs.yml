@@ -1,0 +1,64 @@
+site_name: IBL Datoviz
+site_description: Native Datoviz v0.4 visualization components for IBL atlas data
+repo_url: https://github.com/int-brain-lab/ibl-datoviz
+repo_name: int-brain-lab/ibl-datoviz
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: blue grey
+    accent: cyan
+  features:
+    - content.code.copy
+    - navigation.footer
+    - navigation.indexes
+    - navigation.sections
+    - toc.follow
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: numpy
+            heading_level: 2
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            show_root_heading: true
+            show_source: false
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - tables
+  - toc:
+      permalink: true
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Gallery: gallery/index.md
+  - API:
+      - api/index.md
+      - Atlas viewer: api/viewer.md
+      - Data models: api/data-models.md
+  - Development: development.md
+  - Evidence:
+      - Real D070 checkpoint: REAL_D070_CHECKPOINT.md
+      - Datoviz v0.4 findings: V04_ATLAS_SPIKE_FINDINGS.md
+
+exclude_docs: |
+  gallery/manifest.json

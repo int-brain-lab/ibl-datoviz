@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "examples": [
+    {
+      "id": "atlas-spike",
+      "title": "Offline contract smoke test",
+      "script": "examples/atlas_spike.py",
+      "asset": "synthetic",
+      "native": "available",
+      "webgpu": "candidate",
+      "output": "atlas-spike.png",
+      "arguments": [
+        "{fixture_root}/mesh-pack-v1/pack",
+        "--regions",
+        "{fixture_root}/atlas-regions-v1/regions.json",
+        "--offscreen",
+        "{output}"
+      ]
+    },
+    {
+      "id": "allen-mouse-brain",
+      "title": "Allen atlas explorer",
+      "script": "examples/allen_mouse_brain.py",
+      "asset": "d070",
+      "native": "available",
+      "webgpu": "candidate",
+      "output": "allen-mouse-brain.png",
+      "arguments": [
+        "{asset_root}",
+        "--mapping",
+        "allen",
+        "--demo-probe",
+        "--offscreen",
+        "{output}"
+      ]
+    },
+    {
+      "id": "bwm-probe",
+      "title": "BWM probe sites",
+      "script": "examples/bwm_probe.py",
+      "asset": "d070",
+      "native": "available",
+      "webgpu": "candidate",
+      "output": "bwm-probe.png",
+      "published_image": "docs/images/bwm-probe.png",
+      "arguments": [
+        "{asset_root}",
+        "--mapping",
+        "beryl",
+        "--offscreen",
+        "{output}"
+      ]
+    },
+    {
+      "id": "bwm-region-activity",
+      "title": "Regional BWM activity",
+      "script": "examples/bwm_region_activity.py",
+      "asset": "d070",
+      "native": "available",
+      "webgpu": "candidate",
+      "output": "bwm-region-activity.png",
+      "published_image": "docs/images/bwm-region-activity.png",
+      "arguments": [
+        "{asset_root}",
+        "--mapping",
+        "beryl",
+        "--offscreen",
+        "{output}"
+      ]
+    },
+    {
+      "id": "benchmark-atlas",
+      "title": "D070 diagnostic benchmark",
+      "script": "examples/benchmark_atlas.py",
+      "asset": "d070",
+      "native": "diagnostic",
+      "webgpu": "not-applicable",
+      "output": "benchmark-atlas.png",
+      "arguments": [
+        "{asset_root}",
+        "--render",
+        "{output}",
+        "--json",
+        "{report}"
+      ]
+    }
+  ]
+}
