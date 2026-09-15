@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out ibl-datoviz
+        uses: actions/checkout@v4
+
+      # The synthetic mesh and region fixtures are versioned with the matching
+      # ibl-atlas-assets revision, while the large D070 asset set is deliberately
+      # not part of CI.
+      - name: Check out synthetic atlas fixtures
+        uses: actions/checkout@v4
+        with:
+          repository: int-brain-lab/ibl-atlas-assets
+          ref: a3ab4a7809b90a9657fdffeba4a6d03a00eae23b
+          path: ibl-atlas-assets
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.x'
+          enable-cache: true
+
+      - name: Install project and development tools
+        run: uv pip install --system --editable . pytest ruff
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Unit and synthetic fixture tests
+        run: pytest -q
+
+      - name: Install documentation tools
+        run: uv pip install --system --requirement docs/requirements.txt
+
+      - name: Build documentation in strict mode
+        run: mkdocs build --strict
+
+      - name: Run synthetic gallery smoke
+        shell: bash
+        run: |
+          set +e
+          output=$(mktemp)
+          python tools/build_gallery.py \
+            --example atlas-spike \
+            --fixture-root "$GITHUB_WORKSPACE/ibl-atlas-assets/tests/fixtures" \
+            --output-root "$GITHUB_WORKSPACE/build/ci-gallery" \
+            >"$output" 2>&1
+          status=$?
+          cat "$output"
+          if [ "$status" -eq 0 ]; then
+            test -s "$GITHUB_WORKSPACE/build/ci-gallery/atlas-spike.png"
+          elif grep -q 'dvz_app() failed' "$output"; then
+            echo '::warning::Datoviz GPU context unavailable; gallery smoke skipped.'
+          else
+            exit "$status"
+          fi
