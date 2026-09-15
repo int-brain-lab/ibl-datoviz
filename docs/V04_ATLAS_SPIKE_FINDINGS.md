@@ -1,7 +1,7 @@
 # Datoviz v0.4 atlas spike findings
 
-This note records evidence from the first `ibl-datoviz` 0.2 consumer. The tested revisions are
-Datoviz `2274ca3c3`, `ibl-atlas-assets` `25845bb`, the synthetic mesh-pack-v1
+This note records evidence from the first `ibl-datoviz` 0.2 consumer. The current tested revisions are
+Datoviz `5c796bbc8`, `ibl-atlas-assets` `f5096c3a9`, the synthetic mesh-pack-v1
 fixture, and the materialized real D070 asset-set lock.
 
 ## What works without another Datoviz API
@@ -136,4 +136,12 @@ diagnostic host. One authoritative selection now links regional surface color, i
 sites, the ontology tree, a regional summary table, and the site table. This is evidence for a small
 typed region-scalar boundary, but not for a shared dashboard abstraction.
 
-Volume rendering should wait until a pinned annotation/template volume contract exists.
+The linked navigator now consumes the pinned annotation/template volume contract. It keeps linearly sampled anatomy, nearest-neighbour region color, and mapping-aware vector boundaries as separate layers so each can be controlled and rendered with the appropriate sampling policy.
+
+## Slice-boundary evidence
+
+The first native boundary implementation derives merged vector segments from each oriented annotation slice after Allen-to-presentation remapping. This is important: an Allen boundary disappears when both sides map to the same Beryl or Cosmos identity. The result is cached by mapping, axis, and section, remains crisp under viewport zoom, and is rendered between the slice textures and cursor overlays.
+
+`ephys-atlas-web-v2` already contains a substantially richer production pipeline for slice geometry. Its indexed `.isvg.gz` packs concatenate per-section SVG fragments behind a fixed binary index, retain Allen/Beryl/Cosmos IDs on every path, declare plane/world transforms, and record topology, adjacency, simplification, and boundary-error validation. The assets are reusable, but the web repository and its SVG transport should not become a dependency of this native package.
+
+The clean shared follow-up is to move or adapt that builder and its validated slice-geometry contract into `ibl-atlas-assets`. Consumers should request a projection and section and receive renderer-neutral region rings or boundary polylines plus signed mapping identities and transforms. The web app may encode those records as indexed SVG; `ibl-datoviz` may upload them as retained segments or paths. Until that contract exists, the local voxel-exact boundary derivation provides correct interaction semantics without prematurely freezing the web transport as the shared API.

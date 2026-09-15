@@ -69,6 +69,15 @@ def mapped_region(volumes: AtlasVolumes, source_index: int, mapping: str) -> Atl
     return by_id[mapped_id]
 
 
+def _true_runs(values: NDArray[np.bool_]) -> tuple[tuple[int, int], ...]:
+    """Return half-open runs of true values in one Boolean row."""
+    padded = np.pad(values.astype(np.int8, copy=False), (1, 1))
+    transitions = np.diff(padded)
+    starts = np.flatnonzero(transitions == 1)
+    stops = np.flatnonzero(transitions == -1)
+    return tuple(zip(starts.tolist(), stops.tolist(), strict=True))
+
+
 class AtlasSliceComposer:
     """Cache volume-wide contrast and mapping lookup state for fast slice updates."""
 
@@ -81,6 +90,7 @@ class AtlasSliceComposer:
         self._colors = np.empty((0, 3), dtype=np.uint8)
         self._mapped_ids = np.empty(0, dtype=np.int64)
         self._valid = np.empty(0, dtype=bool)
+        self._boundary_cache: dict[tuple[str, str, int], tuple[NDArray, NDArray]] = {}
         self.set_mapping(mapping)
 
     def set_mapping(self, mapping: str) -> None:
@@ -103,6 +113,64 @@ class AtlasSliceComposer:
         self._colors = colors
         self._mapped_ids = mapped_ids
         self._valid = valid
+        self._boundary_cache.clear()
+
+    def boundary_segments(
+        self, axis: str, index: int
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+        """Return merged mapping-aware boundaries in normalized slice coordinates.
+
+        Boundaries follow target-mapping identities rather than raw Allen source
+        labels, so borders disappear when Allen regions collapse into one Beryl
+        or Cosmos region. Adjacent boundary cells are merged into longer vector
+        segments for efficient retained rendering.
+        """
+        key = (self.mapping, axis, int(index))
+        cached = self._boundary_cache.get(key)
+        if cached is not None:
+            return cached
+        annotation_slice = self.volumes.slice('annotation', axis, index)
+        annotation = oriented_slice(
+            annotation_slice.values, annotation_slice.array_axes, axis, grid=self.volumes.grid
+        )
+        if int(annotation.max(initial=0)) >= len(self._valid):
+            raise ValueError('annotation contains an unknown source index')
+        labels = self._mapped_ids[annotation]
+        valid = self._valid[annotation]
+        height, width = labels.shape
+        segments: list[tuple[float, float, float, float]] = []
+
+        vertical = (labels[:, :-1] != labels[:, 1:]) & (valid[:, :-1] | valid[:, 1:])
+        for column in range(width - 1):
+            for start, stop in _true_runs(vertical[:, column]):
+                x = (column + 1) / width
+                segments.append((x, start / height, x, stop / height))
+
+        horizontal = (labels[:-1, :] != labels[1:, :]) & (valid[:-1, :] | valid[1:, :])
+        for row in range(height - 1):
+            for start, stop in _true_runs(horizontal[row, :]):
+                y = (row + 1) / height
+                segments.append((start / width, y, stop / width, y))
+
+        for start, stop in _true_runs(valid[:, 0]):
+            segments.append((0.0, start / height, 0.0, stop / height))
+        for start, stop in _true_runs(valid[:, -1]):
+            segments.append((1.0, start / height, 1.0, stop / height))
+        for start, stop in _true_runs(valid[0, :]):
+            segments.append((start / width, 0.0, stop / width, 0.0))
+        for start, stop in _true_runs(valid[-1, :]):
+            segments.append((start / width, 1.0, stop / width, 1.0))
+
+        if segments:
+            values = np.asarray(segments, dtype=np.float32)
+            starts = np.ascontiguousarray(values[:, :2])
+            ends = np.ascontiguousarray(values[:, 2:])
+        else:
+            starts = np.empty((0, 2), dtype=np.float32)
+            ends = np.empty((0, 2), dtype=np.float32)
+        result = (starts, ends)
+        self._boundary_cache[key] = result
+        return result
 
     def compose(
         self,

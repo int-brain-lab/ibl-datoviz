@@ -70,7 +70,7 @@ def volume_render_geometry(
 class LinkedAtlasNavigator(AtlasViewer):
     """Link orthogonal atlas slices, the ontology, and native 3-D anatomy."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0915
         self,
         mesh: AtlasMesh,
         volumes: AtlasVolumes,
@@ -80,6 +80,9 @@ class LinkedAtlasNavigator(AtlasViewer):
         height: int = 900,
         annotation_opacity: float = 0.58,
         volume_opacity: float = 0.24,
+        boundary_opacity: float = 0.82,
+        boundary_width_px: float = 1.4,
+        boundary_color: tuple[int, int, int] = (238, 242, 247),
         slice_background: tuple[int, int, int] = (29, 33, 39),
         surface_opacity: float = 0.22,
         palette=None,
@@ -108,6 +111,14 @@ class LinkedAtlasNavigator(AtlasViewer):
             raise ValueError('annotation_opacity must be between zero and one')
         if not np.isfinite(volume_opacity) or not 0 <= volume_opacity <= 1:
             raise ValueError('volume_opacity must be between zero and one')
+        if not np.isfinite(boundary_opacity) or not 0 <= boundary_opacity <= 1:
+            raise ValueError('boundary_opacity must be between zero and one')
+        if not np.isfinite(boundary_width_px) or boundary_width_px <= 0:
+            raise ValueError('boundary_width_px must be finite and positive')
+        if len(boundary_color) != 3 or any(
+            int(value) != value or not 0 <= value <= 255 for value in boundary_color
+        ):
+            raise ValueError('boundary_color must contain three 8-bit values')
         if len(slice_background) != 3 or any(
             int(value) != value or not 0 <= value <= 255 for value in slice_background
         ):
@@ -117,13 +128,18 @@ class LinkedAtlasNavigator(AtlasViewer):
         self.slice_composer = AtlasSliceComposer(volumes, mapping)
         self.annotation_opacity = float(annotation_opacity)
         self.volume_opacity = float(volume_opacity)
+        self.boundary_opacity = float(boundary_opacity)
+        self.boundary_width_px = float(boundary_width_px)
+        self.boundary_color = tuple(int(value) for value in boundary_color)
         self.slice_background = tuple(int(value) for value in slice_background)
         self.anatomy_visible = True
         self.annotation_visible = True
+        self.boundaries_visible = True
         self._slice_fields: dict[str, object] = {}
         self._annotation_fields: dict[str, object] = {}
         self._slice_images: dict[str, object] = {}
         self._annotation_images: dict[str, object] = {}
+        self._boundary_visuals: dict[str, object] = {}
         self._crosshairs: dict[str, object] = {}
         self._hover_markers: dict[str, object] = {}
         self._cursor_controls = {
@@ -134,6 +150,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._volume_opacity_control = ctypes.c_float(self.volume_opacity)
         self._anatomy_visible_control = ctypes.c_bool(self.anatomy_visible)
         self._annotation_visible_control = ctypes.c_bool(self.annotation_visible)
+        self._boundaries_visible_control = ctypes.c_bool(self.boundaries_visible)
+        self._boundary_opacity_control = ctypes.c_float(self.boundary_opacity)
         self._input_router = None
         self._input_subscription = 0
         self._input_callback = None
@@ -305,6 +323,37 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._annotation_fields[axis] = annotation_field
             self._annotation_images[axis] = annotation_image
 
+            boundaries = self.dvz.dvz_segment(self.scene, 0)
+            if not boundaries:
+                raise RuntimeError('slice boundary segment creation failed')
+            boundary_starts, boundary_ends = self._boundary_positions(axis)
+            boundary_count = len(boundary_starts)
+            self._check(
+                self.dvz.dvz_visual_set_data_many(
+                    boundaries,
+                    {
+                        'position_start': boundary_starts,
+                        'position_end': boundary_ends,
+                        'color': np.tile(self._boundary_rgba(), (boundary_count, 1)),
+                        'stroke_width_px': np.full(
+                            boundary_count, self.boundary_width_px, dtype=np.float32
+                        ),
+                    },
+                ),
+                'slice boundaries upload',
+            )
+            self._check(self.dvz.dvz_visual_set_depth_test(boundaries, False), 'boundary depth')
+            self._check(
+                self.dvz.dvz_visual_set_alpha_mode(boundaries, self.dvz.DVZ_ALPHA_BLENDED),
+                'boundary alpha mode',
+            )
+            attach.z_layer = 2
+            self._check(
+                self.dvz.dvz_panel_add_visual(panel, boundaries, ctypes.byref(attach)),
+                'slice boundaries attach',
+            )
+            self._boundary_visuals[axis] = boundaries
+
             crosshair = self.dvz.dvz_segment(self.scene, 0)
             if not crosshair:
                 raise RuntimeError('dvz_segment() failed')
@@ -404,6 +453,45 @@ class LinkedAtlasNavigator(AtlasViewer):
         starts = np.array([[x, y0, 0.02], [x0, y, 0.02]], dtype=np.float32)
         ends = np.array([[x, y1, 0.02], [x1, y, 0.02]], dtype=np.float32)
         return starts, ends
+
+    def _boundary_rgba(self) -> NDArray[np.uint8]:
+        """Return the current boundary color, including visibility and opacity."""
+        alpha = round(255 * self.boundary_opacity) if self.boundaries_visible else 0
+        return np.asarray((*self.boundary_color, alpha), dtype=np.uint8)
+
+    def _boundary_positions(self, axis: str) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+        """Map normalized atlas boundary segments onto one displayed slice quad."""
+        index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
+        starts, ends = self.slice_composer.boundary_segments(axis, index)
+        positions, _ = self._slice_quad(axis)
+        x0, y0 = positions[0, :2]
+        x1, y1 = positions[3, :2]
+
+        def transform(values):
+            result = np.zeros((len(values), 3), dtype=np.float32)
+            result[:, 0] = x0 + values[:, 0] * (x1 - x0)
+            result[:, 1] = y0 + values[:, 1] * (y1 - y0)
+            result[:, 2] = 0.01
+            return np.ascontiguousarray(result)
+
+        return transform(starts), transform(ends)
+
+    def _refresh_boundaries(self, axis: str) -> None:
+        """Upload the current slice's cached, mapping-aware boundary segments."""
+        starts, ends = self._boundary_positions(axis)
+        count = len(starts)
+        self._check(
+            self.dvz.dvz_visual_set_data_many(
+                self._boundary_visuals[axis],
+                {
+                    'position_start': starts,
+                    'position_end': ends,
+                    'color': np.tile(self._boundary_rgba(), (count, 1)),
+                    'stroke_width_px': np.full(count, self.boundary_width_px, dtype=np.float32),
+                },
+            ),
+            f'{axis} slice boundaries update',
+        )
 
     def _create_anatomical_volume(self) -> None:
         self.volume_field = self.dvz.dvz_sampled_field_from_array(
@@ -582,6 +670,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                 semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
                 dim=self.dvz.DVZ_FIELD_DIM_2D,
             )
+            self._refresh_boundaries(axis)
             starts, ends = self._crosshair_positions(axis)
             self._check(
                 self.dvz.dvz_visual_set_data_many(
@@ -600,6 +689,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                 self.dvz.dvz_visual_set_data(visual, 'position', positions),
                 f'{axis} slice zoom',
             )
+        self._refresh_boundaries(axis)
         starts, ends = self._crosshair_positions(axis)
         self._check(
             self.dvz.dvz_visual_set_data_many(
@@ -752,6 +842,22 @@ class LinkedAtlasNavigator(AtlasViewer):
         ):
             self.annotation_visible = bool(self._annotation_visible_control.value)
             self._refresh_slices()
+        if self.dvz.dvz_gui_checkbox(
+            gui, b'Region boundaries', ctypes.byref(self._boundaries_visible_control)
+        ):
+            self.boundaries_visible = bool(self._boundaries_visible_control.value)
+            for axis in self._boundary_visuals:
+                self._refresh_boundaries(axis)
+        if self.dvz.dvz_gui_slider_float(
+            gui,
+            b'Boundary opacity',
+            ctypes.byref(self._boundary_opacity_control),
+            0.0,
+            1.0,
+        ):
+            self.boundary_opacity = float(self._boundary_opacity_control.value)
+            for axis in self._boundary_visuals:
+                self._refresh_boundaries(axis)
         if self.dvz.dvz_gui_slider_float(
             gui,
             b'Volume opacity',

@@ -21,7 +21,8 @@ sliders update every panel; Allen, Beryl, and Cosmos retain their official color
 ```bash
 python examples/linked_atlas_navigator.py \
   ../ibl-atlas-assets/build/d070-published/mesh-pack \
-  ../ibl-atlas-assets/build/allen-ccf-2017-50um
+  ../ibl-atlas-assets/build/allen-ccf-2017-50um \
+  --ui-scale 1.5
 ```
 
 </div>

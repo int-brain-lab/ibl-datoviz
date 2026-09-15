@@ -148,6 +148,23 @@ def test_slice_layers_keep_anatomy_and_annotation_independent(volumes):
     assert anatomy[0, 0, 3] == 0
 
 
+def test_slice_boundaries_are_vectorized_cached_and_mapping_aware(volumes):
+    composer = AtlasSliceComposer(volumes)
+    allen_starts, allen_ends = composer.boundary_segments('dv', 1)
+    cached_starts, cached_ends = composer.boundary_segments('dv', 1)
+    assert cached_starts is allen_starts
+    assert cached_ends is allen_ends
+    assert allen_starts.shape == allen_ends.shape
+    assert allen_starts.shape[1] == 2
+    assert allen_starts.dtype == allen_ends.dtype == np.float32
+    assert np.all((allen_starts >= 0) & (allen_starts <= 1))
+    assert np.all((allen_ends >= 0) & (allen_ends <= 1))
+
+    composer.set_mapping('beryl')
+    beryl_starts, _ = composer.boundary_segments('dv', 1)
+    assert len(beryl_starts) < len(allen_starts)
+
+
 def test_selection_dims_only_other_mapped_regions(volumes):
     all_regions = compose_atlas_slice(volumes, 'dv', 1, annotation_opacity=1.0)
     selected = compose_atlas_slice(

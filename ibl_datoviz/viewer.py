@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 class AtlasViewer:
     """Own one Datoviz scene displaying an immutable atlas mesh pack."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0915
         self,
         mesh: AtlasMesh,
         *,
@@ -46,12 +46,15 @@ class AtlasViewer:
         camera_angles: Sequence[float] = (-0.35, 0.25, 0.12),
         selection_dim_factor: float = 0.42,
         surface_opacity: float = 1.0,
+        ui_scale: float = 1.0,
         datoviz: ModuleType | None = None,
     ) -> None:
         if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
             raise ValueError('selection_dim_factor must be between zero and one')
         if not np.isfinite(surface_opacity) or not 0 <= surface_opacity <= 1:
             raise ValueError('surface_opacity must be between zero and one')
+        if not np.isfinite(ui_scale) or ui_scale <= 0:
+            raise ValueError('ui_scale must be finite and positive')
         self.camera_angles = self._validated_camera_angles(camera_angles)
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
@@ -63,6 +66,7 @@ class AtlasViewer:
         self.height = height
         self.selection_dim_factor = selection_dim_factor
         self.surface_opacity = surface_opacity
+        self.ui_scale = float(ui_scale)
         self.scene = self.dvz.dvz_scene()
         if not self.scene:
             raise RuntimeError('dvz_scene() failed')
@@ -1134,6 +1138,10 @@ class AtlasViewer:
             )
         if not self.view:
             raise RuntimeError('Datoviz view creation failed')
+        self._check(
+            self.dvz.dvz_view_set_user_scale(self.view, self.ui_scale),
+            'view user scale',
+        )
         if not offscreen and self.catalog is not None:
             self._replace_region_tree()
             if self.probe_data is not None:

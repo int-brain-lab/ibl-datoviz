@@ -17,6 +17,9 @@ def main() -> int:
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
     parser.add_argument('--annotation-opacity', type=float, default=0.58)
     parser.add_argument('--volume-opacity', type=float, default=0.24)
+    parser.add_argument(
+        '--ui-scale', type=float, default=1.0, help='additional UI/accessibility scale'
+    )
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
     parser.add_argument(
         '--frames', type=int, default=0, help='interactive frame limit; zero runs until closed'
@@ -29,6 +32,7 @@ def main() -> int:
         mapping=args.mapping,
         annotation_opacity=args.annotation_opacity,
         volume_opacity=args.volume_opacity,
+        ui_scale=args.ui_scale,
     ) as navigator:
         if args.offscreen:
             rgba = navigator.render_offscreen(args.offscreen)

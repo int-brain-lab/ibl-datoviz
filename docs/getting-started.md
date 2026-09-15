@@ -45,7 +45,8 @@ pack roots:
 ```bash
 python examples/linked_atlas_navigator.py \
   ../ibl-atlas-assets/build/d070-published/mesh-pack \
-  ../ibl-atlas-assets/build/allen-ccf-2017-50um
+  ../ibl-atlas-assets/build/allen-ccf-2017-50um \
+  --ui-scale 1.5
 ```
 
 The atlas dock and visualization area resize as sibling panels. Hover a slice to preview its mapped
@@ -53,8 +54,7 @@ region, and click to move the shared AP/ML/DV cursor without changing selection.
 Select cursor region button to commit that location, or select directly from the ontology tree or
 3-D surface. Over a slice, the wheel steps five sections and Shift+wheel steps 25; the bracket/Page
 Up/Page Down keys provide single-section steps. Ctrl+wheel zooms a slice, and double-click resets
-its zoom. Separate controls toggle the anatomy and annotation layers and adjust annotation or volume
-opacity. The template is linearly sampled,
+its zoom. Separate controls toggle the anatomy, annotation, and mapping-aware vector boundary layers and adjust annotation, boundary, or volume opacity. The template is linearly sampled,
 while the discrete labels retain nearest-neighbour sampling and transparent atlas margins reveal
 the neutral panel background.
 

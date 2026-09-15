@@ -323,6 +323,8 @@ def test_camera_angles_are_validated_stored_and_applied(mesh):
         AtlasViewer(mesh, datoviz=FakeDatoviz(), surface_opacity=-0.1)
     with pytest.raises(ValueError, match='surface_opacity'):
         AtlasViewer(mesh, datoviz=FakeDatoviz(), surface_opacity=np.nan)
+    with pytest.raises(ValueError, match='ui_scale'):
+        AtlasViewer(mesh, datoviz=FakeDatoviz(), ui_scale=0)
 
 
 def test_translucent_surface_uses_wboit_and_preserves_alpha(mesh):
