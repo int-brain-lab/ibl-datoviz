@@ -116,7 +116,12 @@ def parse_svg_path(  # noqa: PLR0915
 
 
 def _rasterize(rings, height, width, view):
-    """Even-odd scanline fill, visiting only rows intersecting each ring."""
+    """Even-odd scanline fill, visiting only rows intersecting each ring.
+
+    Intersections are evaluated for all affected rows at once. This keeps the
+    exact pixel-centre and half-open interval rules of the scalar
+    implementation while avoiding a Python loop over every edge on every row.
+    """
     out = np.zeros((height, width), dtype=bool)
     x0, y0, vw, vh = view
     sx, sy = width / vw, height / vh
@@ -126,14 +131,30 @@ def _rasterize(rings, height, width, view):
         points[:, 1] = (points[:, 1] - y0) * sy
         ymin = max(0, int(np.ceil(points[:, 1].min() - 0.5)))
         ymax = min(height - 1, int(np.floor(points[:, 1].max() - 0.5)))
-        for row in range(ymin, ymax + 1):
-            y = row + 0.5
-            intersections = []
-            for (xa, ya), (xb, yb) in zip(points, np.roll(points, -1, axis=0), strict=True):
-                if (ya > y) != (yb > y):
-                    intersections.append(xa + (y - ya) * (xb - xa) / (yb - ya))
-            intersections.sort()
-            for left, right in zip(intersections[::2], intersections[1::2], strict=True):
+        if ymax < ymin:
+            continue
+
+        # Include an edge at its lower endpoint and exclude it at its upper
+        # endpoint, matching the original scalar scanline test. NaNs mark
+        # non-crossing edges and sort after all valid intersections.
+        next_points = np.roll(points, -1, axis=0)
+        rows = np.arange(ymin, ymax + 1)
+        scanlines = rows[:, None] + 0.5
+        ya, yb = points[:, 1], next_points[:, 1]
+        crossing = ((ya > scanlines) & (yb <= scanlines)) | ((yb > scanlines) & (ya <= scanlines))
+        denominator = yb - ya
+        intersections = points[:, 0] + (
+            (scanlines - ya)
+            * (next_points[:, 0] - points[:, 0])
+            / np.where(denominator == 0, 1, denominator)
+        )
+        intersections[~crossing] = np.nan
+        intersections.sort(axis=1)
+
+        for offset, row in enumerate(rows):
+            row_intersections = intersections[offset]
+            row_intersections = row_intersections[np.isfinite(row_intersections)]
+            for left, right in zip(row_intersections[::2], row_intersections[1::2], strict=True):
                 lo = max(0, int(np.ceil(left - 0.5)))
                 hi = min(width, int(np.ceil(right - 0.5)))
                 if hi > lo:
@@ -231,6 +252,8 @@ class AtlasSliceSource:
         screen_axes = _DISPLAY_AXES[axis]
         shape = projection.slice_shape
         slice_count = self.grid.shape[self.grid.array_axes.index(axis)]
+        grid_matrix = np.asarray(self.grid.index_to_world_um_matrix).reshape(4, 4)
+        projection_matrix = np.asarray(projection.plane_index_to_world_um).reshape(4, 4)
         for u, v, s in (
             (0, 0, 0),
             (shape[0] - 1, shape[1] - 1, 0),
@@ -239,9 +262,20 @@ class AtlasSliceSource:
         ):
             idx = np.zeros(3)
             idx[self.grid.array_axes.index(axis)] = s
-            for anatomical_axis, screen_value in ((screen_axes[0], u), (screen_axes[1], v)):
+            for plane_column, anatomical_axis, screen_value, screen_size in (
+                (1, screen_axes[0], u, shape[0]),
+                (2, screen_axes[1], v, shape[1]),
+            ):
                 array_index = self.grid.array_axes.index(anatomical_axis)
-                idx[array_index] = screen_value
+                world_index = self.grid.world_axes.index(anatomical_axis)
+                same_direction = (
+                    grid_matrix[world_index, array_index]
+                    * projection_matrix[world_index, plane_column]
+                    > 0
+                )
+                idx[array_index] = (
+                    screen_value if same_direction else screen_size - 1 - screen_value
+                )
             if not np.allclose(
                 projection.index_to_world((s, u, v)), self.grid.index_to_world(idx), atol=1e-5
             ):
@@ -266,9 +300,24 @@ class AtlasSliceSource:
                 raise KeyError(f'unknown Allen atlas ID: {item.atlas_ids["allen"]}')
             result[_rasterize(rings, height, width, view)] = row.index
         # SVG is plane (row=v, column=u); transport sections use raw atlas
-        # array axes. The registered affine already carries all axis signs.
+        # array axes. Compare both affines to recover any projection-specific
+        # reversal (notably AP in the canonical sagittal projection).
         section_axes = tuple(item for item in self.grid.array_axes if item != axis)
         x_axis, y_axis = _DISPLAY_AXES[axis]
+        grid_matrix = np.asarray(self.grid.index_to_world_um_matrix).reshape(4, 4)
+        projection_matrix = np.asarray(projection.plane_index_to_world_um).reshape(4, 4)
+        for screen_axis, plane_column, anatomical_axis in (
+            (1, 1, x_axis),
+            (0, 2, y_axis),
+        ):
+            world_index = self.grid.world_axes.index(anatomical_axis)
+            array_index = self.grid.array_axes.index(anatomical_axis)
+            if (
+                grid_matrix[world_index, array_index]
+                * projection_matrix[world_index, plane_column]
+                < 0
+            ):
+                result = np.flip(result, axis=screen_axis)
         screen_permutation = (section_axes.index(y_axis), section_axes.index(x_axis))
         result = np.ascontiguousarray(np.transpose(result, np.argsort(screen_permutation)))
         with self._cache_lock:

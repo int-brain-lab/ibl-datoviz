@@ -8,6 +8,7 @@ import pytest
 
 from ibl_atlas_assets import RegisteredSlice, RegisteredSlicePath
 from ibl_datoviz import AtlasSliceSource, parse_svg_path
+from ibl_datoviz.atlas_slice_source import _rasterize
 from ibl_datoviz.navigator import oriented_slice
 
 
@@ -80,13 +81,23 @@ class _Projection:
     def __init__(self, axis):
         self.world_slice_axis = axis
         self.slice_count = _Grid.shape[_Grid.array_axes.index(axis)]
+        display_axes = {
+            'ap': ('ml', 'dv'),
+            'ml': ('ap', 'dv'),
+            'dv': ('ml', 'ap'),
+        }[axis]
         self.slice_shape = tuple(
             _Grid.shape[_Grid.array_axes.index(anatomical_axis)]
-            for anatomical_axis in {'ap': ('ml', 'dv'), 'ml': ('ap', 'dv'), 'dv': ('ml', 'ap')}[
-                axis
-            ]
+            for anatomical_axis in display_axes
         )
         self.manifest = {'view_box': (-0.5, -0.5, *self.slice_shape)}
+        grid_matrix = np.asarray(_Grid.index_to_world_um_matrix).reshape(4, 4)
+        plane_matrix = np.zeros((4, 4))
+        plane_matrix[3, 3] = 1
+        for column, anatomical_axis in enumerate((axis, *display_axes)):
+            plane_matrix[:3, column] = grid_matrix[:3, _Grid.array_axes.index(anatomical_axis)]
+        plane_matrix[:3, 3] = grid_matrix[:3, 3]
+        self.plane_index_to_world_um = tuple(plane_matrix.reshape(-1))
 
     def index_to_world(self, values):
         section, x, y = values
@@ -134,6 +145,46 @@ def test_svg_parser_preserves_relative_hole_rings_and_rejects_bad_input():
         parse_svg_path('M0 0@L1 0L1 1z')
     with pytest.raises(ValueError, match='closed'):
         parse_svg_path('M0 0L1 0L1 1')
+
+
+@pytest.mark.parametrize(
+    'rings',
+    (
+        (((0.25, 0.5), (7.75, 1.25), (6.5, 6.75), (1.0, 7.5)),),
+        (
+            ((-0.5, -0.5), (8.5, -0.5), (8.5, 8.5), (-0.5, 8.5)),
+            ((1.25, 1.5), (6.75, 1.25), (6.5, 6.5), (1.5, 6.75)),
+        ),
+    ),
+)
+def test_rasterize_matches_scalar_even_odd_reference(rings):
+    """Vectorized rasterization preserves pixel-centre and hole semantics."""
+    height, width = 9, 11
+    view = (-0.5, -0.5, 9.0, 9.0)
+
+    expected = np.zeros((height, width), dtype=bool)
+    x0, y0, vw, vh = view
+    sx, sy = width / vw, height / vh
+    for ring in rings:
+        points = np.asarray(ring, dtype=float)
+        points[:, 0] = (points[:, 0] - x0) * sx
+        points[:, 1] = (points[:, 1] - y0) * sy
+        ymin = max(0, int(np.ceil(points[:, 1].min() - 0.5)))
+        ymax = min(height - 1, int(np.floor(points[:, 1].max() - 0.5)))
+        for row in range(ymin, ymax + 1):
+            y = row + 0.5
+            intersections = []
+            for (xa, ya), (xb, yb) in zip(points, np.roll(points, -1, axis=0), strict=True):
+                if (ya > y) != (yb > y):
+                    intersections.append(xa + (y - ya) * (xb - xa) / (yb - ya))
+            intersections.sort()
+            for left, right in zip(intersections[::2], intersections[1::2], strict=True):
+                lo = max(0, int(np.ceil(left - 0.5)))
+                hi = min(width, int(np.ceil(right - 0.5)))
+                if hi > lo:
+                    expected[row, lo:hi] ^= True
+
+    np.testing.assert_array_equal(_rasterize(rings, height, width, view), expected)
 
 
 @pytest.mark.parametrize('axis', ('ap', 'ml', 'dv'))
