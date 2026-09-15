@@ -1,7 +1,7 @@
 # Datoviz v0.4 atlas spike findings
 
 This note records evidence from the first `ibl-datoviz` 0.2 consumer. The current tested revisions are
-Datoviz `5c796bbc8`, `ibl-atlas-assets` `f5096c3a9`, the synthetic mesh-pack-v1
+Datoviz `d9064facf`, `ibl-atlas-assets` `f5096c3a9`, the synthetic mesh-pack-v1
 fixture, and the materialized real D070 asset-set lock.
 
 ## What works without another Datoviz API
@@ -145,3 +145,5 @@ The first native boundary implementation derives merged vector segments from eac
 `ephys-atlas-web-v2` already contains a substantially richer production pipeline for slice geometry. Its indexed `.isvg.gz` packs concatenate per-section SVG fragments behind a fixed binary index, retain Allen/Beryl/Cosmos IDs on every path, declare plane/world transforms, and record topology, adjacency, simplification, and boundary-error validation. The assets are reusable, but the web repository and its SVG transport should not become a dependency of this native package.
 
 The clean shared follow-up is to move or adapt that builder and its validated slice-geometry contract into `ibl-atlas-assets`. Consumers should request a projection and section and receive renderer-neutral region rings or boundary polylines plus signed mapping identities and transforms. The web app may encode those records as indexed SVG; `ibl-datoviz` may upload them as retained segments or paths. Until that contract exists, the local voxel-exact boundary derivation provides correct interaction semantics without prematurely freezing the web transport as the shared API.
+
+`iblatlas.AllenAtlas` supports 10, 25, and 50 µm isotropic volumes. The current linked navigator pack is 50 µm (`264 × 228 × 160`), while `ephys-atlas-web-v2` already carries exact bilateral 10 µm slice geometry (`1320 × 1140 × 800` source grid) and a compact display-oriented derivative. A complete pair of uint16 10 µm template and annotation volumes would decode to roughly 4.8 GB, 125 times the 50 µm pair. Resolution should therefore be explicit and independently selectable by role: high-resolution or vector geometry for visible 2-D slices and boundaries, with a lower-resolution scalar volume for interactive 3-D ray marching. The pack graph must record their common reference space and transforms so the cursor and ontology remain exact across mixed resolutions.

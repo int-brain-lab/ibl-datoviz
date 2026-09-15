@@ -52,11 +52,13 @@ python examples/linked_atlas_navigator.py \
 The atlas dock and visualization area resize as sibling panels. Hover a slice to preview its mapped
 region, and click to move the shared AP/ML/DV cursor without changing selection. Use the prominent
 Select cursor region button to commit that location, or select directly from the ontology tree or
-3-D surface. Over a slice, the wheel steps five sections and Shift+wheel steps 25; the bracket/Page
+3-D surface. Left-drag over the 3-D quadrant to orbit it. Over a slice, the wheel accumulates
+fractional input and steps two sections per standard notch; Shift+wheel steps ten. The bracket/Page
 Up/Page Down keys provide single-section steps. Ctrl+wheel zooms a slice, and double-click resets
-its zoom. Separate controls toggle the anatomy, annotation, and mapping-aware vector boundary layers and adjust annotation, boundary, or volume opacity. The template is linearly sampled,
-while the discrete labels retain nearest-neighbour sampling and transparent atlas margins reveal
-the neutral panel background.
+its zoom. Separate controls toggle the anatomy, annotation, and mapping-aware vector boundary
+layers and adjust annotation, boundary, or volume opacity. The template is linearly sampled, while
+the discrete labels retain nearest-neighbour sampling and transparent atlas margins reveal the
+neutral panel background.
 
 The same committed mapped identity drives the official slice colors, 3-D cursor, surface highlight,
 ontology tree, and any attached probe or regional tables. The scalar anatomical template is

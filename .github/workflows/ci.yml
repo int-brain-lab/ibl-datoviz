@@ -46,7 +46,7 @@ jobs:
         run: |
           uv pip install --system --editable ../ibl-atlas-assets
           uv pip install --system \
-            'datoviz @ git+https://github.com/datoviz/datoviz.git@1114b65fa1b7c4be088d7546adf6ae3830a04fab' \
+            'datoviz @ git+https://github.com/datoviz/datoviz.git@d9064facf6da9de5df7df1503f99479413b56eeb' \
             'numpy>=1.24' pytest ruff
           uv pip install --system --no-deps --editable .
 

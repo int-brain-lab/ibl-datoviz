@@ -344,6 +344,22 @@ def test_translucent_surface_uses_wboit_and_preserves_alpha(mesh):
         np.testing.assert_array_equal(selected_colors[3][:, 3], [64] * len(mesh.positions))
 
 
+def test_hover_emphasis_is_transient_and_restores_selection(mesh):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake) as viewer:
+        viewer.set_selected_region_ids([-315])
+        viewer._set_hovered_region_ids((997,))
+
+        assert viewer.selected_region_ids() == (-315,)
+        assert viewer._emphasis_region_ids() == (997,)
+        assert viewer._highlight_region_ids == (997,)
+
+        viewer._set_hovered_region_ids(())
+        assert viewer.selected_region_ids() == (-315,)
+        assert viewer._emphasis_region_ids() == (-315,)
+        assert viewer._highlight_region_ids == (315,)
+
+
 def test_probe_uses_same_display_transform(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake) as viewer:

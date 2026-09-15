@@ -92,6 +92,7 @@ class AtlasViewer:
             *(name.title().encode() for name in mesh.mapping_names)
         )
         self._selected_region_ids: tuple[int, ...] = ()
+        self._hovered_region_ids: tuple[int, ...] = ()
         self._highlight_region_ids: tuple[int, ...] = ()
         self._last_mesh_region_ids: tuple[int, ...] = ()
         self._closed = False
@@ -249,6 +250,7 @@ class AtlasViewer:
         self.mapping = mapping
         self.palette = effective_palette
         self._selected_region_ids = ()
+        self._hovered_region_ids = ()
         self._highlight_region_ids = ()
         self._last_mesh_region_ids = ()
         self._mapping_control.value = self.mesh_data.mapping_names.index(mapping)
@@ -592,6 +594,34 @@ class AtlasViewer:
     def selected_region_ids(self) -> tuple[int, ...]:
         """Return the authoritative signed region selection."""
         return self._selected_region_ids
+
+    def _emphasis_region_ids(self) -> tuple[int, ...]:
+        """Return transient hover identity, falling back to committed selection."""
+        return self._hovered_region_ids or self._selected_region_ids
+
+    def _mesh_hovered_region_ids(self) -> tuple[int, ...]:
+        """Return the signed region identity under the retained 3-D hover query."""
+        state_ptr = self.dvz.dvz_scene_hover(self.scene, self.panel)
+        if not state_ptr:
+            return ()
+        state = state_ptr.contents
+        if not state.active or not state.query.hit or not state.query.link_key:
+            return ()
+        signed = np.asarray(state.query.link_key, dtype=np.uint64).view(np.int64).item()
+        return (int(signed),) if signed else ()
+
+    def _set_hovered_region_ids(self, region_ids: Sequence[int]) -> bool:
+        """Set transient hover emphasis without changing committed selection."""
+        hovered = tuple(dict.fromkeys(int(region_id) for region_id in region_ids if region_id))
+        if hovered == self._hovered_region_ids:
+            return False
+        self._hovered_region_ids = hovered
+        self._update_surface_emphasis()
+        return True
+
+    def _sync_viewport_hover(self, hovered: bool) -> None:
+        """Synchronize transient hover from a plain 3-D viewport."""
+        self._set_hovered_region_ids(self._mesh_hovered_region_ids() if hovered else ())
 
     def _mesh_selected_region_ids(self) -> tuple[int, ...]:
         selection = self.dvz.dvz_item_interaction_selection(self.interaction)
@@ -990,13 +1020,11 @@ class AtlasViewer:
             hovered = ctypes.c_bool()
             mouse_pos = (ctypes.c_float * 2)()
             viewport_size = (ctypes.c_float * 2)()
-            if (
-                self.dvz.dvz_gui_viewport_mouse(
-                    self.viewport, mouse_pos, viewport_size, ctypes.byref(hovered)
-                )
-                and hovered.value
-                and getattr(self, '_hovered_region_label', None)
+            if self.dvz.dvz_gui_viewport_mouse(
+                self.viewport, mouse_pos, viewport_size, ctypes.byref(hovered)
             ):
+                self._sync_viewport_hover(bool(hovered.value))
+            if hovered.value and getattr(self, '_hovered_region_label', None):
                 self.dvz.dvz_gui_tooltip(gui, self._hovered_region_label.encode())
 
     def _draw_extra_gui(self, _gui) -> None:
@@ -1046,6 +1074,11 @@ class AtlasViewer:
             self._set_probe_table_selection(region_ids)
             self._set_region_table_selection(region_ids)
         self._selected_region_ids = region_ids
+        self._update_surface_emphasis()
+
+    def _update_surface_emphasis(self) -> None:
+        """Apply transient hover or committed selection emphasis to the 3-D surface."""
+        region_ids = self._emphasis_region_ids()
         logical_ids = (
             self.tree_model.expanded_logical_ids(region_ids)
             if self.tree_model is not None

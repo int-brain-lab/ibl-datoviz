@@ -81,7 +81,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         annotation_opacity: float = 0.58,
         volume_opacity: float = 0.24,
         boundary_opacity: float = 0.82,
-        boundary_width_px: float = 1.4,
+        boundary_width_px: float = 0.7,
         boundary_color: tuple[int, int, int] = (238, 242, 247),
         slice_background: tuple[int, int, int] = (29, 33, 39),
         surface_opacity: float = 0.22,
@@ -161,6 +161,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             None,
         )
         self._slice_zoom = {axis: 1.0 for axis in ('ap', 'ml', 'dv')}
+        self._slice_wheel_accumulator = {axis: 0.0 for axis in ('ap', 'ml', 'dv')}
         super().__init__(
             mesh,
             mapping=mapping,
@@ -421,7 +422,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             axis,
             index,
             annotation_opacity=self.annotation_opacity,
-            selected_region_ids=self._selected_region_ids,
+            selected_region_ids=self._emphasis_region_ids(),
             selection_dim_factor=self.selection_dim_factor,
         )
 
@@ -431,7 +432,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             axis,
             index,
             annotation_opacity=self.annotation_opacity,
-            selected_region_ids=self._selected_region_ids,
+            selected_region_ids=self._emphasis_region_ids(),
             selection_dim_factor=self.selection_dim_factor,
         )
         if not self.anatomy_visible:
@@ -751,10 +752,12 @@ class LinkedAtlasNavigator(AtlasViewer):
     def _set_slice_hover(self, axis: str | None, x: float = 0.0, y: float = 0.0) -> bool:
         """Update the transient slice marker and region readout."""
         cursor = self._cursor_at_slice_data(axis, x, y) if axis is not None else None
+        row = None
         label = None
         if cursor is not None:
             row = cursor.region(self.volumes, self.mapping)
             label = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
+        region_ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
         position = (x, y) if cursor is not None else None
         changed = (
             axis != self._hovered_slice_axis
@@ -764,6 +767,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._hovered_slice_axis = axis
         self._hovered_slice_position = position
         self._hovered_region_label = label
+        self._set_hovered_region_ids(region_ids)
         for marker_axis, marker in self._hover_markers.items():
             visible = marker_axis == axis and cursor is not None
             position = np.array([[x, y, 0.04]], dtype=np.float32)
@@ -806,11 +810,33 @@ class LinkedAtlasNavigator(AtlasViewer):
         if hasattr(self, '_slice_fields'):
             self._refresh_slices()
 
+    def _set_hovered_region_ids(self, region_ids) -> bool:
+        """Apply transient hover emphasis to every linked visual panel."""
+        changed = super()._set_hovered_region_ids(region_ids)
+        if changed and self._slice_fields:
+            self._refresh_slices()
+        return changed
+
+    def _sync_viewport_hover(self, hovered: bool) -> None:
+        """Prefer direct slice hover, otherwise synchronize the retained 3-D query."""
+        if not hovered:
+            self._set_slice_hover(None)
+            return
+        if self._hovered_slice_axis is not None:
+            return
+        region_ids = self._mesh_hovered_region_ids()
+        self._set_hovered_region_ids(region_ids)
+        if region_ids and self.tree_model is not None:
+            self._hovered_region_label = self.tree_model.describe(region_ids[0])
+        else:
+            self._hovered_region_label = None
+
     def _draw_extra_gui(self, gui) -> None:
         self.dvz.dvz_gui_separator_text(gui, b'Linked atlas cursor')
         self.dvz.dvz_gui_text(gui, b'AP: ML -> right, dorsal up')
         self.dvz.dvz_gui_text(gui, b'ML: AP -> right, dorsal up')
         self.dvz.dvz_gui_text(gui, b'DV: ML -> right, anterior up')
+        self.dvz.dvz_gui_text(gui, b'3-D: left-drag to orbit; wheel to zoom')
         changed = False
         for axis, size in zip(('ap', 'ml', 'dv'), self.volumes.grid.shape, strict=True):
             changed |= self.dvz.dvz_gui_slider_int(
@@ -879,14 +905,9 @@ class LinkedAtlasNavigator(AtlasViewer):
             f'ML {world[0]:.0f} · AP {world[1]:.0f} · DV {world[2]:.0f} um'.encode(),
         )
         self.dvz.dvz_gui_text(gui, region.encode())
-        if self._hovered_region_label is not None:
-            hover_text = (
-                f'Hover ({self._hovered_slice_axis.upper()}): {self._hovered_region_label}'
-            )
-            self.dvz.dvz_gui_text(
-                gui,
-                hover_text.encode(),
-            )
+        hover_source = self._hovered_slice_axis.upper() if self._hovered_slice_axis else '3-D'
+        hover_label = self._hovered_region_label or '—'
+        self.dvz.dvz_gui_text(gui, f'Hover ({hover_source}): {hover_label}'.encode())
 
     def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0915
         super()._create_view(offscreen=offscreen, title=title)
@@ -967,7 +988,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                 amount = float(pointer.content.w.dir[1])
                 if pointer.mods & self.dvz.DVZ_KEY_MODIFIER_CONTROL:
                     if amount:
-                        factor = 1.12 if amount > 0 else 1 / 1.12
+                        factor = 1.08**amount
                         self._slice_zoom[axis] = float(
                             np.clip(self._slice_zoom[axis] * factor, 1.0, 8.0)
                         )
@@ -975,10 +996,11 @@ class LinkedAtlasNavigator(AtlasViewer):
                         self.dvz.dvz_view_request_frame(self.view)
                     return
                 if amount:
-                    step = 5 if amount > 0 else -5
-                    if pointer.mods & self.dvz.DVZ_KEY_MODIFIER_SHIFT:
-                        step *= 5
-                    if self.step_slice(axis, step):
+                    sensitivity = 10.0 if pointer.mods & self.dvz.DVZ_KEY_MODIFIER_SHIFT else 2.0
+                    self._slice_wheel_accumulator[axis] += amount * sensitivity
+                    step = int(np.trunc(self._slice_wheel_accumulator[axis]))
+                    self._slice_wheel_accumulator[axis] -= step
+                    if step and self.step_slice(axis, step):
                         self.dvz.dvz_view_request_frame(self.view)
                 return
             if pointer.type == self.dvz.DVZ_POINTER_EVENT_DOUBLE_CLICK:
