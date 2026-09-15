@@ -44,6 +44,7 @@ class AtlasViewer:
         width: int = 900,
         height: int = 720,
         camera_angles: Sequence[float] = (-0.35, 0.25, 0.12),
+        explode: float = 0.0,
         selection_dim_factor: float = 0.42,
         surface_opacity: float = 1.0,
         ui_scale: float = 1.0,
@@ -53,6 +54,8 @@ class AtlasViewer:
     ) -> None:
         if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
             raise ValueError('selection_dim_factor must be between zero and one')
+        if not np.isfinite(explode) or not 0 <= explode <= 1:
+            raise ValueError('explode must be between zero and one')
         if not np.isfinite(surface_opacity) or not 0 <= surface_opacity <= 1:
             raise ValueError('surface_opacity must be between zero and one')
         if not np.isfinite(ui_scale) or ui_scale <= 0:
@@ -68,6 +71,7 @@ class AtlasViewer:
         self.palette = self.tree_model.palette if palette is None and self.tree_model else palette
         self.width = width
         self.height = height
+        self.explode = float(explode)
         self.selection_dim_factor = selection_dim_factor
         self.surface_opacity = surface_opacity
         self.ui_scale = float(ui_scale)
@@ -94,6 +98,7 @@ class AtlasViewer:
             ctypes.c_int(mesh.mapping_names.index(mapping)),
             ctypes.create_string_buffer(256),
         )
+        self._explode_control = ctypes.c_float(self.explode)
         self._mapping_items = (ctypes.c_char_p * len(mesh.mapping_names))(
             *(name.title().encode() for name in mesh.mapping_names)
         )
@@ -205,7 +210,7 @@ class AtlasViewer:
             self.dvz.dvz_visual_set_data_many(
                 self.mesh,
                 {
-                    'position': self.mesh_data.positions,
+                    'position': self.mesh_data.exploded_positions(self.explode),
                     'normal': self.mesh_data.normals,
                     'color': self._display_surface_colors(),
                 },
@@ -239,6 +244,24 @@ class AtlasViewer:
             'mesh region link keys',
         )
         self._check(self.dvz.dvz_panel_add_visual(self.panel, self.mesh, None), 'mesh attach')
+
+    def set_explode(self, amount: float) -> None:
+        """Explode mesh components along their canonical centroid displacement vectors."""
+        if self._closed:
+            raise RuntimeError('viewer is closed')
+        if not np.isfinite(amount) or not 0 <= amount <= 1:
+            raise ValueError('explode must be between zero and one')
+        amount = float(amount)
+        self._explode_control.value = amount
+        if amount == self.explode:
+            return
+        self._check(
+            self.dvz.dvz_visual_set_data(
+                self.mesh, 'position', self.mesh_data.exploded_positions(amount)
+            ),
+            'mesh explode position update',
+        )
+        self.explode = amount
 
     def set_mapping(
         self, mapping: str, palette: Mapping[int, Sequence[int]] | None = None
@@ -969,6 +992,14 @@ class AtlasViewer:
             )
         if self.dvz.dvz_gui_begin(gui, b'Allen mouse brain atlas', None, 0):
             self.dvz.dvz_gui_text(gui, b'CCF 2017 anatomy')
+            if self.catalog is not None and self.dvz.dvz_gui_slider_float(
+                gui,
+                b'Explode regions',
+                ctypes.byref(self._explode_control),
+                0.0,
+                1.0,
+            ):
+                self.set_explode(self._explode_control.value)
             if self.dvz.dvz_gui_combo(
                 gui,
                 b'Mapping##ibl_atlas_mapping',

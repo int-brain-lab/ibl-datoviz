@@ -89,8 +89,9 @@ python examples/allen_mouse_brain.py build/atlas-d070 --demo-probe
 <span class="capability capability--webgpu">WebGPU · portability spike</span>
 <span class="capability capability--data">Synthetic fixture</span>
 
-A small network-free mesh and region catalog for fast rendering and lifecycle checks. It carries
-no scientific claim.
+A small network-free mesh and region catalog for fast rendering and lifecycle checks. Its second
+rung includes the retained ontology, linked selection, and the same centroid-based region explosion
+used by ephys-atlas-web-v2. It carries no scientific claim.
 
 ```bash
 python examples/atlas_spike.py \

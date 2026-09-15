@@ -49,6 +49,10 @@ uv run python examples/atlas_spike.py \
   --regions ../ibl-atlas-assets/build/d070-published/regions.json
 ```
 
+This second rung also exposes an **Explode regions** slider. It follows the shared mesh contract:
+at amount `t`, every component is translated by `t * (component centroid - whole-brain centroid)`.
+Pass `--explode 0.5` to start at a nonzero value. The baseline without `--regions` remains unchanged.
+
 The full asset-set entry point follows:
 
 ```bash

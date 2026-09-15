@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stress-test one opaque atlas surface with a perspective camera and arcball."""
+"""Stress-test an opaque atlas surface, then opt into ontology and explosion UI."""
 
 from __future__ import annotations
 
@@ -24,7 +24,16 @@ def main() -> int:
     parser.add_argument(
         '--frames', type=int, default=0, help='interactive frame limit; zero runs until closed'
     )
+    parser.add_argument(
+        '--explode',
+        type=float,
+        default=0.0,
+        help='initial region explosion in [0, 1]; requires --regions',
+    )
     args = parser.parse_args()
+
+    if args.explode and args.regions is None:
+        parser.error('--explode requires --regions')
 
     catalog = open_region_catalog(args.regions) if args.regions else None
     with AtlasViewer.from_pack(
@@ -32,6 +41,7 @@ def main() -> int:
         mapping=args.mapping,
         catalog=catalog,
         enable_interaction=catalog is not None,
+        explode=args.explode,
     ) as viewer:
         if args.offscreen:
             rgba = viewer.render_offscreen(args.offscreen)

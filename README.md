@@ -40,9 +40,10 @@ python examples/atlas_spike.py \
 
 Omit `--offscreen` for the interactive view. With `--regions`, the viewer uses official ontology
 colors and adds a native retained region browser with Allen/Beryl/Cosmos switching, search,
-color swatches, collapse/expand controls, and signed-ID selection. Drag to orbit the arcball and
-click a mesh face to exercise picking. `AtlasViewer.selected_region_ids()` returns signed IDs
-selected through either surface or tree.
+color swatches, collapse/expand controls, signed-ID selection, and a region explosion slider.
+Explosion uses the mesh pack's canonical component-centroid displacement vectors, matching the
+ephys-atlas-web-v2 definition. Drag to orbit the arcball and click a mesh face to exercise picking.
+`AtlasViewer.selected_region_ids()` returns signed IDs selected through either surface or tree.
 
 Use the real D070 mesh without `--regions` as the first performance and interaction baseline. This
 path creates one direct native view containing only an opaque mesh, perspective camera, and
@@ -55,7 +56,7 @@ uv run python examples/atlas_spike.py \
 ```
 
 Only after that baseline is healthy, add the region catalog to test the separate embedded-GUI,
-hover, and linked-selection rung:
+hover, linked-selection, and explosion rung:
 
 ```bash
 PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz \
@@ -63,6 +64,10 @@ uv run python examples/atlas_spike.py \
   ../ibl-atlas-assets/build/d070-published/mesh-pack \
   --regions ../ibl-atlas-assets/build/d070-published/regions.json
 ```
+
+Use `--explode 0.5` to set an initial value. The slider currently updates only the mesh position
+buffer; the benchmark ladder will measure this path before a Datoviz GPU-deformation API is
+considered.
 
 The miniature fixture is intentionally synthetic and its Beryl mapping is absent. Missing
 mapping values therefore use a neutral gray. Real atlas colors should eventually come from a

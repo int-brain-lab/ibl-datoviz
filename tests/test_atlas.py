@@ -294,6 +294,12 @@ def test_mesh_pack_preserves_signed_presentation_identity(mesh):
     assert mesh.positions.dtype == np.float32
     assert mesh.normals.shape == (10, 3)
     assert mesh.normals.dtype == np.float32
+    assert mesh.explode_offsets.shape == (10, 3)
+    np.testing.assert_allclose(mesh.explode_offsets[:6], 0)
+    np.testing.assert_allclose(
+        mesh.explode_offsets[6:],
+        np.tile(np.asarray([2.0, -0.125, 0.125]) * mesh.display_scale, (4, 1)),
+    )
     assert mesh.indices.shape == (36,)
     assert mesh.indices.dtype == np.uint32
     assert mesh.mapping_names == ('allen', 'beryl', 'cosmos')
@@ -309,6 +315,16 @@ def test_mesh_pack_preserves_signed_presentation_identity(mesh):
     np.testing.assert_array_equal(
         mesh.link_keys('allen').view(np.int64), mesh.face_mapping_ids('allen')
     )
+
+
+def test_explode_uses_canonical_component_displacements(mesh):
+    assert mesh.exploded_positions(0) is mesh.positions
+    np.testing.assert_allclose(
+        mesh.exploded_positions(0.5), mesh.positions + 0.5 * mesh.explode_offsets
+    )
+    assert mesh.exploded_positions(0.5).dtype == np.float32
+    with pytest.raises(ValueError, match='between zero and one'):
+        mesh.exploded_positions(1.1)
 
 
 def test_mapping_palette_accepts_signed_and_unsigned_region_keys(mesh):
@@ -346,6 +362,28 @@ def test_minimal_surface_viewer_can_disable_item_interaction(mesh):
         assert ('interaction',) not in fake.calls
         assert viewer._mesh_hovered_region_ids() == ()
         assert viewer._mesh_selected_region_ids() == ()
+
+
+def test_viewer_explode_updates_only_positions(mesh):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake, explode=0.25) as viewer:
+        initial = next(call for call in fake.calls if call[:2] == ('data_many', 'mesh'))[3]
+        np.testing.assert_allclose(initial['position'], mesh.exploded_positions(0.25))
+        before = len(fake.calls)
+
+        viewer.set_explode(0.75)
+
+        updates = fake.calls[before:]
+        assert len(updates) == 1
+        assert updates[0][:3] == ('data', 'mesh', 'position')
+        np.testing.assert_allclose(updates[0][3], mesh.exploded_positions(0.75))
+        assert viewer.explode == 0.75
+        assert viewer._explode_control.value == pytest.approx(0.75)
+
+        viewer.set_explode(0.75)
+        assert fake.calls[before:] == updates
+        with pytest.raises(ValueError, match='between zero and one'):
+            viewer.set_explode(-0.1)
 
 
 def test_camera_angles_are_validated_stored_and_applied(mesh):

@@ -46,6 +46,7 @@ class AtlasMesh:
 
     positions_um: NDArray[np.float32]
     positions: NDArray[np.float32]
+    explode_offsets: NDArray[np.float32]
     normals: NDArray[np.float32]
     indices: NDArray[np.uint32]
     component_ids: NDArray[np.uint16]
@@ -66,9 +67,19 @@ class AtlasMesh:
         positions_um = geometry.world_positions()
         normals = geometry.world_normals()
         positions, display_scale = _display_positions(positions_um)
+        components = {int(item['component_id']): item for item in geometry.components}
+        explode_offsets = np.empty_like(positions)
+        for item in geometry.ranges:
+            component = components[int(item.component_id)]
+            start = int(item.vertex_start)
+            stop = start + int(item.vertex_count)
+            explode_offsets[start:stop] = (
+                np.asarray(component['explode_displacement_um'], dtype=np.float32) * display_scale
+            )
         return cls(
             positions_um=positions_um,
             positions=positions,
+            explode_offsets=np.ascontiguousarray(explode_offsets),
             normals=normals,
             indices=geometry.indices,
             component_ids=geometry.component_ids,
@@ -77,6 +88,17 @@ class AtlasMesh:
             presentations=geometry.presentations,
             reference_space=geometry.reference_space,
             display_scale=display_scale,
+        )
+
+    def exploded_positions(self, amount: float) -> NDArray[np.float32]:
+        """Return display positions using the mesh pack's canonical explosion vectors."""
+        if not np.isfinite(amount) or not 0 <= amount <= 1:
+            raise ValueError('explode amount must be between zero and one')
+        if amount == 0:
+            return self.positions
+        return np.ascontiguousarray(
+            self.positions + np.float32(amount) * self.explode_offsets,
+            dtype=np.float32,
         )
 
     @property
