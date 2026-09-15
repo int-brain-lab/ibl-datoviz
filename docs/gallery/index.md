@@ -62,7 +62,7 @@ python examples/allen_mouse_brain.py build/atlas-d070 --demo-probe
 ## Offline contract smoke test
 
 <span class="capability capability--native">Native · available</span>
-<span class="capability capability--webgpu">WebGPU · candidate</span>
+<span class="capability capability--webgpu">WebGPU · portability spike</span>
 <span class="capability capability--data">Synthetic fixture</span>
 
 A small network-free mesh and region catalog for fast rendering and lifecycle checks. It carries
@@ -84,11 +84,19 @@ python examples/atlas_spike.py \
 preparation, optionally renders a frame, and records face-query timings. Its generated PNG and JSON
 remain build-local because timing and pixels depend on the host.
 
+`tools/benchmark_region_updates.py` isolates the retained update path used when a complete regional
+payload changes. For example:
+
+```bash
+python tools/benchmark_region_updates.py build/atlas-d070 \
+  --mapping allen --iterations 20 --json build/region-update-benchmark.json
+```
+
 ## Capability matrix
 
 | Entry | Native | Offscreen | WebGPU |
 | --- | --- | --- | --- |
-| Offline contract smoke test | Available | Available | Candidate semantic fixture |
+| Offline contract smoke test | Available | Available | C/WASM portability spike |
 | Allen atlas explorer | Available | Available | Candidate; not exported |
 | BWM probe sites | Available | Available | Candidate; not exported |
 | Regional BWM activity | Available | Available | Candidate; not exported |
@@ -96,9 +104,20 @@ remain build-local because timing and pixels depend on the host.
 
 ## WebGPU status
 
-No example is currently claimed as a WebGPU export. The two BWM scenes are good first candidates
-because their data contracts and expected interactions are now concrete. A browser implementation
-must state how it replaces native WBOIT before its output is presented as equivalent. The offline
-smoke fixture should be the first automated cross-renderer semantic test.
+Datoviz now has a deliberately narrow `lab_ibl_atlas_webgpu_spike` scenario built from the same
+miniature renderer-neutral fixture semantics as the offline smoke test. One C scene supplies both
+the native runner and the WebGPU/WASM route. Automated checks cover its opaque indexed mesh, four
+probe sites colored from signed identities, and arcball updates.
+
+This is a portability proof, not an export of the Python application. It deliberately does not
+claim parity for the retained atlas tree and tables, dataset transport, picking, or WBOIT. The two
+BWM scenes remain useful next candidates, but a browser implementation must state how it replaces
+native WBOIT before its output is presented as equivalent.
+
+From an adjacent Datoviz checkout, the development route is:
+
+```text
+examples/webgpu/examples.html?demo=wasm-ibl-atlas-spike
+```
 
 See [Development](../development.md#regenerate-the-gallery) for the single-command gallery pipeline.

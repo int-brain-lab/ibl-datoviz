@@ -45,3 +45,18 @@ python tools/build_gallery.py \
 `--publish` is deliberately explicit. Ordinary runs never modify tracked documentation assets.
 GPU screenshots and benchmark timings are host-dependent; scientific identity remains fixed by
 the atlas asset-set lock and the BWM fixture provenance.
+
+## Check retained regional updates
+
+The linked mesh/tree/table path is designed to update regional values without rebuilding the atlas
+catalog or scanning every region for every mesh update. Exercise it against a materialized asset
+set with:
+
+```bash
+python tools/benchmark_region_updates.py \
+  ../ibl-atlas-assets/build/d070-published \
+  --mapping allen --iterations 20 --json build/region-update-benchmark.json
+```
+
+The report is build-local because timings depend on the machine. The region and vertex counts make
+the measured workload explicit.

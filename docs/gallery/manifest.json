@@ -7,7 +7,8 @@
       "script": "examples/atlas_spike.py",
       "asset": "synthetic",
       "native": "available",
-      "webgpu": "candidate",
+      "webgpu": "portable-scenario",
+      "webgpu_scenario": "lab_ibl_atlas_webgpu_spike",
       "output": "atlas-spike.png",
       "arguments": [
         "{fixture_root}/mesh-pack-v1/pack",
