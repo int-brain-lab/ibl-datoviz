@@ -823,17 +823,21 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._update_surface_alpha_mode()
 
     def _update_surface_alpha_mode(self) -> None:
+        selection_active = bool(getattr(self, '_selected_region_ids', ()))
         mode = (
             self.dvz.DVZ_ALPHA_BLENDED
             if self.volume_opacity > 0
             else self.dvz.DVZ_ALPHA_WBOIT
-            if self.surface_opacity < 1
+            if self.surface_opacity < 1 or selection_active
             else self.dvz.DVZ_ALPHA_OPAQUE
         )
+        if mode == self._surface_alpha_mode:
+            return
         self._check(
             self.dvz.dvz_visual_set_alpha_mode(self.mesh, mode),
             'surface transparency mode',
         )
+        self._surface_alpha_mode = mode
 
     def _create_cursor_marker(self) -> None:
         self.cursor_marker = self.dvz.dvz_segment(self.scene, 0)

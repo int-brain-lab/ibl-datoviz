@@ -57,6 +57,7 @@ class FakeDatoviz:
     DVZ_GUI_DATA_SET_FLAGS_RESET_STATE = 1
     DVZ_SEGMENT_CAP_ROUND = 1
     DVZ_PATH_JOIN_ROUND = 1
+    DVZ_ALPHA_OPAQUE = 0
     DVZ_ALPHA_WBOIT = 2
     DVZ_GUI_TABLE_COLUMN_TEXT = 0
     DVZ_GUI_TABLE_COLUMN_DOUBLE = 2
@@ -478,10 +479,13 @@ def test_selection_dims_every_nonselected_surface_region(mesh):
             selected_colors[~selected, :3],
             np.rint(base[~selected, :3].astype(np.float32) * 0.25).astype(np.uint8),
         )
-        np.testing.assert_array_equal(
-            selected_colors[~selected, 3],
-            np.rint(base[~selected, 3].astype(np.float32) * 0.25).astype(np.uint8),
-        )
+        np.testing.assert_array_equal(selected_colors[~selected, 3], 0)
+        alpha_modes = [call[2] for call in fake.calls if call[:2] == ('alpha_mode', 'mesh')]
+        assert alpha_modes == [fake.DVZ_ALPHA_OPAQUE, fake.DVZ_ALPHA_WBOIT]
+
+        viewer.clear_selection()
+        alpha_modes = [call[2] for call in fake.calls if call[:2] == ('alpha_mode', 'mesh')]
+        assert alpha_modes[-1] == fake.DVZ_ALPHA_OPAQUE
 
 
 def test_surface_emphasis_reuses_and_invalidates_derived_arrays(mesh):
@@ -795,7 +799,7 @@ def test_viewer_uploads_catalog_to_one_retained_tree_batch(mesh):
             fake.DVZ_GUI_DATA_SET_FLAGS_RESET_STATE,
         )
         np.testing.assert_array_equal(row_call[2], [2**32 - 1])
-        assert ('alpha_mode', 'mesh', fake.DVZ_ALPHA_WBOIT) in fake.calls
+        assert ('alpha_mode', 'mesh', fake.DVZ_ALPHA_OPAQUE) in fake.calls
         assert sum(call[0] == 'tree_rows' for call in fake.calls) == 1
 
 

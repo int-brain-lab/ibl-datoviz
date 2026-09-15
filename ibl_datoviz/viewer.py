@@ -114,6 +114,7 @@ class AtlasViewer:
         self._surface_mapping_ids_cache: NDArray[np.int64] | None = None
         self._surface_dimmed_colors_cache: NDArray[np.uint8] | None = None
         self._surface_emphasis_work: NDArray[np.uint8] | None = None
+        self._surface_alpha_mode: int | None = None
         self._last_mesh_region_ids: tuple[int, ...] = ()
         self._closed = False
         try:
@@ -227,11 +228,7 @@ class AtlasViewer:
             'dense mesh upload',
         )
         self._invalidate_surface_emphasis_cache(surface_colors)
-        if self.surface_opacity < 1 or self.catalog is not None:
-            self._check(
-                self.dvz.dvz_visual_set_alpha_mode(self.mesh, self.dvz.DVZ_ALPHA_WBOIT),
-                'surface weighted transparency',
-            )
+        self._update_surface_alpha_mode()
         self._check(
             self.dvz.dvz_visual_set_index_data(self.mesh, self.mesh_data.indices),
             'mesh index upload',
@@ -1186,6 +1183,7 @@ class AtlasViewer:
         state = (selected_ids, hovered_ids)
         if state == self._last_surface_emphasis:
             return
+        self._update_surface_alpha_mode()
         base_colors, mapping_ids = self._surface_emphasis_inputs()
         if self._surface_emphasis_work is None:
             self._surface_emphasis_work = np.empty_like(base_colors)
@@ -1196,7 +1194,7 @@ class AtlasViewer:
             if self._surface_dimmed_colors_cache is None:
                 dimmed = base_colors.astype(np.float32)
                 dimmed[:, :3] *= self.selection_dim_factor
-                dimmed[:, 3] *= self.selection_dim_factor
+                dimmed[:, 3] = 0
                 self._surface_dimmed_colors_cache = np.ascontiguousarray(
                     np.rint(dimmed), dtype=np.uint8
                 )
@@ -1214,6 +1212,22 @@ class AtlasViewer:
         )
         self._highlight_region_ids = selected_ids
         self._last_surface_emphasis = state
+
+    def _update_surface_alpha_mode(self) -> None:
+        """Use transparency only when requested explicitly or required by selection."""
+        selection_active = bool(getattr(self, '_selected_region_ids', ()))
+        mode = (
+            self.dvz.DVZ_ALPHA_WBOIT
+            if self.surface_opacity < 1 or selection_active
+            else self.dvz.DVZ_ALPHA_OPAQUE
+        )
+        if mode == self._surface_alpha_mode:
+            return
+        self._check(
+            self.dvz.dvz_visual_set_alpha_mode(self.mesh, mode),
+            'surface transparency mode',
+        )
+        self._surface_alpha_mode = mode
 
     def _invalidate_surface_emphasis_cache(
         self, base_colors: NDArray[np.uint8] | None = None
