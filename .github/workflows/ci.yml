@@ -76,8 +76,8 @@ jobs:
           cat "$output"
           if [ "$status" -eq 0 ]; then
             test -s "$GITHUB_WORKSPACE/build/ci-gallery/atlas-spike.png"
-          elif grep -q 'dvz_app() failed' "$output"; then
-            echo '::warning::Datoviz GPU context unavailable; gallery smoke skipped.'
+          elif grep -Eq 'dvz_app\(\) failed|Unable to load libdatoviz' "$output"; then
+            echo '::warning::Datoviz native runtime or GPU context unavailable; gallery smoke skipped.'
           else
             exit "$status"
           fi

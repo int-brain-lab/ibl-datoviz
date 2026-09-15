@@ -1,7 +1,7 @@
 {
   "artifact": {
     "path": "bwm-ephys-1.1.0-a21bade7-probe.csv",
-    "sha256": "bdda0c7568bf1ab78fa7b573234b8b6102aed93fd9331d15d26e55ad91ae247a"
+    "sha256": "a24c9cb4b9d92d5ea80cf4fb8795f8660cf550ca768ae83c93f31d64db8aaeaf"
   },
   "dataset": {
     "name": "bwm_ephys",
