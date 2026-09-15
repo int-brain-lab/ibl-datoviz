@@ -34,7 +34,8 @@ def main() -> int:
     parser.add_argument(
         '--surface-opacity',
         type=float,
-        help='anatomy opacity; defaults to 0.18 with --probe and 1 otherwise',
+        default=1.0,
+        help='brain-surface opacity; defaults to opaque',
     )
     parser.add_argument(
         '--frames', type=int, default=0, help='interactive frame limit; zero runs until closed'
@@ -55,11 +56,8 @@ def main() -> int:
     if args.probe and args.demo_probe:
         parser.error('--probe and --demo-probe are mutually exclusive')
 
-    surface_opacity = args.surface_opacity
-    if surface_opacity is None:
-        surface_opacity = 0.18 if args.probe or args.demo_probe else 1.0
     with AtlasViewer.from_asset_set(
-        args.asset_root, mapping=args.mapping, surface_opacity=surface_opacity
+        args.asset_root, mapping=args.mapping, surface_opacity=args.surface_opacity
     ) as viewer:
         if args.probe or args.demo_probe:
             entry = (
