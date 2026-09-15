@@ -48,6 +48,7 @@ class AtlasViewer:
         surface_opacity: float = 1.0,
         ui_scale: float = 1.0,
         sidebar_width: float = 340.0,
+        enable_interaction: bool = True,
         datoviz: ModuleType | None = None,
     ) -> None:
         if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
@@ -71,6 +72,7 @@ class AtlasViewer:
         self.surface_opacity = surface_opacity
         self.ui_scale = float(ui_scale)
         self.sidebar_width = float(sidebar_width)
+        self.enable_interaction = bool(enable_interaction)
         self.scene = self.dvz.dvz_scene()
         if not self.scene:
             raise RuntimeError('dvz_scene() failed')
@@ -104,13 +106,14 @@ class AtlasViewer:
         try:
             self._create_layout()
             self._create_surface()
-            interaction_desc = self.dvz.dvz_item_interaction_desc()
-            interaction_desc.target = self.dvz.DVZ_SCENE_TARGET_FACE
-            self.interaction = self.dvz.dvz_item_interaction(
-                self.panel, ctypes.byref(interaction_desc)
-            )
-            if not self.interaction:
-                raise RuntimeError('dvz_item_interaction() failed')
+            if self.enable_interaction:
+                interaction_desc = self.dvz.dvz_item_interaction_desc()
+                interaction_desc.target = self.dvz.DVZ_SCENE_TARGET_FACE
+                self.interaction = self.dvz.dvz_item_interaction(
+                    self.panel, ctypes.byref(interaction_desc)
+                )
+                if not self.interaction:
+                    raise RuntimeError('dvz_item_interaction() failed')
             self.probe = None
         except Exception:
             self.close()
@@ -218,12 +221,13 @@ class AtlasViewer:
             self.dvz.dvz_visual_set_index_data(self.mesh, self.mesh_data.indices),
             'mesh index upload',
         )
-        self._check(
-            self.dvz.dvz_visual_set_query_capabilities(
-                self.mesh, self.dvz.DVZ_QUERY_CAPABILITY_FACE
-            ),
-            'mesh picking capability',
-        )
+        if self.enable_interaction:
+            self._check(
+                self.dvz.dvz_visual_set_query_capabilities(
+                    self.mesh, self.dvz.DVZ_QUERY_CAPABILITY_FACE
+                ),
+                'mesh picking capability',
+            )
         self.link_channel = self.dvz.dvz_link_channel(self.scene, b'atlas-region')
         self._check(
             self.dvz.dvz_visual_set_target_link_keys(
@@ -261,12 +265,13 @@ class AtlasViewer:
             ),
             'mapping link-key update',
         )
-        self._check(
-            self.dvz.dvz_selection_clear(
-                self.dvz.dvz_item_interaction_selection(self.interaction)
-            ),
-            'mapping selection reset',
-        )
+        if self.interaction is not None:
+            self._check(
+                self.dvz.dvz_selection_clear(
+                    self.dvz.dvz_item_interaction_selection(self.interaction)
+                ),
+                'mapping selection reset',
+            )
         self.mapping = mapping
         self.palette = effective_palette
         self._selected_region_ids = ()
@@ -623,6 +628,8 @@ class AtlasViewer:
 
     def _mesh_hovered_region_ids(self) -> tuple[int, ...]:
         """Return the signed region identity under the retained 3-D hover query."""
+        if self.interaction is None:
+            return ()
         hover = self.dvz.dvz_item_interaction_hover(self.interaction)
         if not hover:
             return ()
@@ -646,6 +653,8 @@ class AtlasViewer:
         self._set_hovered_region_ids(self._mesh_hovered_region_ids() if hovered else ())
 
     def _mesh_selected_region_ids(self) -> tuple[int, ...]:
+        if self.interaction is None:
+            return ()
         selection = self.dvz.dvz_item_interaction_selection(self.interaction)
         count = self.dvz.dvz_selection_count(selection)
         if count == 0:
@@ -1085,7 +1094,7 @@ class AtlasViewer:
         update_table: bool,
         clear_mesh: bool,
     ) -> None:
-        if clear_mesh:
+        if clear_mesh and self.interaction is not None:
             self._check(
                 self.dvz.dvz_selection_clear(
                     self.dvz.dvz_item_interaction_selection(self.interaction)

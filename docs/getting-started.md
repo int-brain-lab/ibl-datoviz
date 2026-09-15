@@ -31,6 +31,26 @@ PY
 
 ## Open the atlas browser
 
+Start with the isolated 3-D surface baseline. It contains one opaque mesh, one perspective camera,
+and one arcball in a direct native window—no ImGui, ontology, hover query, volume, or slices:
+
+```bash
+PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz \
+uv run python examples/atlas_spike.py \
+  ../ibl-atlas-assets/build/d070-published/mesh-pack
+```
+
+Then test the ontology and linked-selection layer independently by adding the catalog:
+
+```bash
+PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz \
+uv run python examples/atlas_spike.py \
+  ../ibl-atlas-assets/build/d070-published/mesh-pack \
+  --regions ../ibl-atlas-assets/build/d070-published/regions.json
+```
+
+The full asset-set entry point follows:
+
 ```bash
 PYTHONPATH=.:../ibl-atlas-assets/src python examples/allen_mouse_brain.py \
   build/atlas-d070 --mapping allen

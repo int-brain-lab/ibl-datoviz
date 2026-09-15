@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Display a verified atlas mesh pack with Datoviz v0.4."""
+"""Stress-test one opaque atlas surface with a perspective camera and arcball."""
 
 from __future__ import annotations
 
@@ -16,17 +16,28 @@ def main() -> int:
     parser.add_argument('mesh_pack', type=Path)
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
-    parser.add_argument('--regions', type=Path, help='optional ibl-atlas-regions-v1 catalog')
+    parser.add_argument(
+        '--regions',
+        type=Path,
+        help='optional catalog enabling the separate ontology/selection test rung',
+    )
+    parser.add_argument(
+        '--frames', type=int, default=0, help='interactive frame limit; zero runs until closed'
+    )
     args = parser.parse_args()
 
     catalog = open_region_catalog(args.regions) if args.regions else None
-    with AtlasViewer.from_pack(args.mesh_pack, mapping=args.mapping, catalog=catalog) as viewer:
-        viewer.set_probe([[-1.5, -0.8, -0.8], [0.0, 0.0, 0.0], [2.5, 0.8, 0.8]])
+    with AtlasViewer.from_pack(
+        args.mesh_pack,
+        mapping=args.mapping,
+        catalog=catalog,
+        enable_interaction=catalog is not None,
+    ) as viewer:
         if args.offscreen:
             rgba = viewer.render_offscreen(args.offscreen)
             print(f'wrote {args.offscreen} ({rgba.shape[1]}x{rgba.shape[0]})')
         else:
-            viewer.show()
+            viewer.show(title='IBL 3-D brain surface baseline', frame_count=args.frames)
     return 0
 
 

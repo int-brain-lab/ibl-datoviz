@@ -339,6 +339,15 @@ def test_viewer_switches_mapping_without_geometry_upload(mesh):
     assert fake.calls[-1] == ('destroy_scene',)
 
 
+def test_minimal_surface_viewer_can_disable_item_interaction(mesh):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake, enable_interaction=False) as viewer:
+        assert viewer.interaction is None
+        assert ('interaction',) not in fake.calls
+        assert viewer._mesh_hovered_region_ids() == ()
+        assert viewer._mesh_selected_region_ids() == ()
+
+
 def test_camera_angles_are_validated_stored_and_applied(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake, camera_angles=(0.1, 0.2, 0.3)) as viewer:

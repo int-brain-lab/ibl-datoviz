@@ -44,6 +44,26 @@ color swatches, collapse/expand controls, and signed-ID selection. Drag to orbit
 click a mesh face to exercise picking. `AtlasViewer.selected_region_ids()` returns signed IDs
 selected through either surface or tree.
 
+Use the real D070 mesh without `--regions` as the first performance and interaction baseline. This
+path creates one direct native view containing only an opaque mesh, perspective camera, and
+arcball; it does not initialize ImGui, ontology widgets, picking, volumes, or slices:
+
+```bash
+PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz \
+uv run python examples/atlas_spike.py \
+  ../ibl-atlas-assets/build/d070-published/mesh-pack
+```
+
+Only after that baseline is healthy, add the region catalog to test the separate embedded-GUI,
+hover, and linked-selection rung:
+
+```bash
+PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz \
+uv run python examples/atlas_spike.py \
+  ../ibl-atlas-assets/build/d070-published/mesh-pack \
+  --regions ../ibl-atlas-assets/build/d070-published/regions.json
+```
+
 The miniature fixture is intentionally synthetic and its Beryl mapping is absent. Missing
 mapping values therefore use a neutral gray. Real atlas colors should eventually come from a
 versioned region catalog supplied as an explicit palette; they do not belong in Datoviz.
