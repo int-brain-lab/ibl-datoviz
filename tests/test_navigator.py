@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from ibl_atlas_assets import open_volume_pack
-from ibl_datoviz import AtlasMesh
+from ibl_datoviz import AtlasMesh, LinkedAtlasNavigator
 from ibl_datoviz.linked_atlas import volume_render_geometry
 from ibl_datoviz.navigator import (
     AtlasCursor,
@@ -104,6 +104,18 @@ def test_volume_geometry_uses_voxel_edges_and_numpy_texture_order(volumes):
     assert np.allclose(bounds_max, expected.max(axis=0))
     assert axis_order == (2, 0, 1)  # NumPy AP/ML/DV -> texture W/V/U -> world DV/ML/AP
     assert axis_flip == (True, False, True)
+
+
+def test_navigator_rejects_incompatible_mesh_catalog(volumes):
+    mesh = AtlasMesh.from_pack(MESH_FIXTURE)
+    with pytest.raises(ValueError, match='IDs are absent'):
+        LinkedAtlasNavigator(mesh, volumes)
+
+
+def test_navigator_rejects_palette_that_would_desynchronize_slices(volumes):
+    mesh = AtlasMesh.from_pack(MESH_FIXTURE)
+    with pytest.raises(ValueError, match='verified catalog palette'):
+        LinkedAtlasNavigator(mesh, volumes, palette={315: (1, 2, 3, 255)})
 
 
 def test_composed_slice_is_rgba_and_preserves_void_template(volumes):

@@ -80,11 +80,28 @@ class LinkedAtlasNavigator(AtlasViewer):
         annotation_opacity: float = 0.58,
         volume_opacity: float = 0.24,
         surface_opacity: float = 0.22,
+        palette=None,
         datoviz: ModuleType | None = None,
         **kwargs,
     ) -> None:
+        if palette is not None:
+            raise ValueError('linked atlas slices require the verified catalog palette')
         if mesh.reference_space != volumes.regions.reference_space_id:
             raise ValueError('mesh and volume reference spaces differ')
+        for atlas_mapping in mesh.mapping_names:
+            if atlas_mapping not in volumes.regions.mappings:
+                raise ValueError(f'mesh mapping is absent from volume catalog: {atlas_mapping}')
+            catalog_ids = {row.atlas_id for row in volumes.regions.physical(atlas_mapping)}
+            mesh_ids = {
+                int(region_id)
+                for region_id in np.unique(mesh.mapping_ids(atlas_mapping))
+                if region_id != 0
+            }
+            missing = sorted(mesh_ids - catalog_ids)
+            if missing:
+                raise ValueError(
+                    f'mesh {atlas_mapping} IDs are absent from volume catalog: {missing}'
+                )
         if not np.isfinite(annotation_opacity) or not 0 <= annotation_opacity <= 1:
             raise ValueError('annotation_opacity must be between zero and one')
         if not np.isfinite(volume_opacity) or not 0 <= volume_opacity <= 1:
@@ -148,6 +165,23 @@ class LinkedAtlasNavigator(AtlasViewer):
             raise RuntimeError('dvz_grid_panel() failed')
         for panel in panels:
             self.dvz.dvz_panel_set_background_color(panel, self.dvz.DvzColor(8, 12, 18, 255))
+        for panel in self.slice_panels.values():
+            self._check(
+                self.dvz.dvz_panel_set_domain(panel, self.dvz.DVZ_DIM_X, -1.0, 1.0),
+                'slice horizontal domain',
+            )
+            self._check(
+                self.dvz.dvz_panel_set_domain(panel, self.dvz.DVZ_DIM_Y, -1.0, 1.0),
+                'slice vertical domain',
+            )
+            view = self.dvz.dvz_panel_view2d_desc()
+            view.mode = self.dvz.DVZ_PANEL_VIEW2D_CONTAIN
+            view.aspect = self.dvz.DVZ_PANEL_VIEW2D_ASPECT_EQUAL
+            view.padding = 0.0
+            self._check(
+                self.dvz.dvz_panel_set_view2d(panel, ctypes.byref(view)),
+                'slice equal-aspect view',
+            )
 
     def _slice_quad(self, axis: str) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
         x_axis, y_axis = SLICE_DISPLAY_AXES[axis]
@@ -306,42 +340,106 @@ class LinkedAtlasNavigator(AtlasViewer):
             'volume alpha mode',
         )
         self._check(self.dvz.dvz_panel_add_visual(self.panel, self.volume, None), 'volume attach')
+        self._update_surface_alpha_mode()
+
+    def _update_surface_alpha_mode(self) -> None:
+        mode = (
+            self.dvz.DVZ_ALPHA_BLENDED
+            if self.volume_opacity > 0
+            else self.dvz.DVZ_ALPHA_WBOIT
+            if self.surface_opacity < 1
+            else self.dvz.DVZ_ALPHA_OPAQUE
+        )
+        self._check(
+            self.dvz.dvz_visual_set_alpha_mode(self.mesh, mode),
+            'surface transparency mode',
+        )
 
     def _create_cursor_marker(self) -> None:
-        self.cursor_marker = self.dvz.dvz_sphere(self.scene, 0)
-        if not self.cursor_marker:
-            raise RuntimeError('dvz_sphere() failed')
+        self.cursor_marker = self.dvz.dvz_segment(self.scene, 0)
+        self.cursor_dot = self.dvz.dvz_point(self.scene, 0)
+        if not self.cursor_marker or not self.cursor_dot:
+            raise RuntimeError('3-D cursor visual creation failed')
         self._check(
-            self.dvz.dvz_panel_add_visual(self.panel, self.cursor_marker, None),
+            self.dvz.dvz_visual_set_depth_test(self.cursor_marker, False),
+            '3-D cursor depth disable',
+        )
+        self._check(
+            self.dvz.dvz_visual_set_alpha_mode(self.cursor_marker, self.dvz.DVZ_ALPHA_BLENDED),
+            '3-D cursor alpha mode',
+        )
+        self._check(
+            self.dvz.dvz_visual_set_depth_test(self.cursor_dot, False),
+            '3-D cursor dot depth disable',
+        )
+        self._check(
+            self.dvz.dvz_visual_set_alpha_mode(self.cursor_dot, self.dvz.DVZ_ALPHA_BLENDED),
+            '3-D cursor dot alpha mode',
+        )
+        point_style = self.dvz.dvz_point_style_desc()
+        point_style.aspect = self.dvz.DVZ_SHAPE_ASPECT_FILLED
+        point_style.stroke_width_px = 0.0
+        self._check(
+            self.dvz.dvz_point_set_style(self.cursor_dot, ctypes.byref(point_style)),
+            '3-D cursor dot style',
+        )
+        attach = self.dvz.dvz_visual_attach_desc()
+        attach.z_layer = 2
+        attach.controller_mode = self.dvz.DVZ_CONTROLLER_APPLY
+        attach.coord_space = self.dvz.DVZ_VISUAL_COORD_DATA
+        self._check(
+            self.dvz.dvz_panel_add_visual(self.panel, self.cursor_marker, ctypes.byref(attach)),
             '3-D cursor attach',
+        )
+        attach.z_layer = 3
+        self._check(
+            self.dvz.dvz_panel_add_visual(self.panel, self.cursor_dot, ctypes.byref(attach)),
+            '3-D cursor dot attach',
         )
         self._update_cursor_marker()
 
     def _update_cursor_marker(self) -> None:
         world = np.asarray(self.cursor.world_um(self.volumes), dtype=np.float32).reshape(1, 3)
-        position = self.mesh_data.normalize_points(world)
-        radius = np.array([85.0 * self.mesh_data.display_scale], dtype=np.float32)
-        color = np.array([[43, 220, 255, 255]], dtype=np.uint8)
+        position = self.mesh_data.normalize_points(world)[0]
+        half_length = 600.0 * self.mesh_data.display_scale
+        starts = np.tile(position, (3, 1))
+        ends = np.tile(position, (3, 1))
+        starts[np.arange(3), np.arange(3)] -= half_length
+        ends[np.arange(3), np.arange(3)] += half_length
         self._check(
             self.dvz.dvz_visual_set_data_many(
-                self.cursor_marker, {'position': position, 'radius': radius, 'color': color}
+                self.cursor_marker,
+                {
+                    'position_start': np.ascontiguousarray(starts, dtype=np.float32),
+                    'position_end': np.ascontiguousarray(ends, dtype=np.float32),
+                    'color': np.tile(np.array([43, 220, 255, 255], dtype=np.uint8), (3, 1)),
+                    'stroke_width_px': np.full(3, 3.0, dtype=np.float32),
+                },
             ),
             '3-D cursor update',
+        )
+        self._check(
+            self.dvz.dvz_visual_set_data_many(
+                self.cursor_dot,
+                {
+                    'position': position.reshape(1, 3),
+                    'color': np.array([[43, 220, 255, 255]], dtype=np.uint8),
+                    'diameter_px': np.array([13.0], dtype=np.float32),
+                },
+            ),
+            '3-D cursor dot update',
         )
 
     def _refresh_slices(self) -> None:
         if not self._slice_fields:
             return
         for axis, field in self._slice_fields.items():
-            self._check(
-                self.dvz.dvz_sampled_field_update_from_array(
-                    field,
-                    self._slice_rgba(axis),
-                    format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                    semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                    dim=self.dvz.DVZ_FIELD_DIM_2D,
-                ),
-                f'{axis} slice update',
+            self.dvz.dvz_sampled_field_update_from_array(
+                field,
+                self._slice_rgba(axis),
+                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                dim=self.dvz.DVZ_FIELD_DIM_2D,
             )
             starts, ends = self._crosshair_positions(axis)
             self._check(
@@ -392,7 +490,9 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def set_mapping(self, mapping: str, palette=None) -> None:
         """Switch all mesh, slice, cursor, and ontology identities together."""
-        super().set_mapping(mapping, palette)
+        if palette is not None:
+            raise ValueError('linked atlas slices require the verified catalog palette')
+        super().set_mapping(mapping)
         self.slice_composer.set_mapping(mapping)
         self._refresh_slices()
 
@@ -436,6 +536,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                 self.dvz.dvz_volume_set_opacity(self.volume, self.volume_opacity),
                 'volume opacity update',
             )
+            self._update_surface_alpha_mode()
         world = self.cursor.world_um(self.volumes)
         row = self.cursor.region(self.volumes, self.mapping)
         region = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
@@ -460,8 +561,13 @@ class LinkedAtlasNavigator(AtlasViewer):
             pointer = event.content.pointer
             if pointer.type != self.dvz.DVZ_POINTER_EVENT_CLICK:
                 return
+            if pointer.button != self.dvz.DVZ_POINTER_BUTTON_LEFT:
+                return
+            figure_position = self._pointer_figure_position(pointer)
+            if figure_position is None:
+                return
             for axis, panel in self.slice_panels.items():
-                figure_pos = (ctypes.c_double * 2)(float(pointer.pos[0]), float(pointer.pos[1]))
+                figure_pos = (ctypes.c_double * 2)(*figure_position)
                 panel_pos = (ctypes.c_double * 2)()
                 inside = self.dvz.dvz_panel_transform_point(
                     panel,
@@ -487,6 +593,38 @@ class LinkedAtlasNavigator(AtlasViewer):
         )
         if self._input_subscription == 0:
             raise RuntimeError('dvz_input_subscribe_event() failed')
+
+    def _pointer_figure_position(self, pointer) -> tuple[float, float] | None:
+        """Convert raw logical-window pointer coordinates to figure layout pixels."""
+        window_width, window_height = (float(value) for value in pointer.window_size)
+        content_scale = float(pointer.content_scale)
+        content_scale_x = content_scale_y = (
+            content_scale if np.isfinite(content_scale) and content_scale > 0 else 1.0
+        )
+        resize = self.dvz.DvzInputResizeEvent()
+        if self.dvz.dvz_input_router_last_resize(self._input_router, ctypes.byref(resize)):
+            if not np.isfinite(window_width) or window_width <= 0:
+                window_width = float(resize.window_width)
+            if not np.isfinite(window_height) or window_height <= 0:
+                window_height = float(resize.window_height)
+            if resize.content_scale_x > 0:
+                content_scale_x = float(resize.content_scale_x)
+            if resize.content_scale_y > 0:
+                content_scale_y = float(resize.content_scale_y)
+        figure_x = ctypes.c_float()
+        figure_y = ctypes.c_float()
+        converted = self.dvz.dvz_figure_window_to_layout(
+            self.figure,
+            float(pointer.pos[0]),
+            float(pointer.pos[1]),
+            window_width,
+            window_height,
+            content_scale_x,
+            content_scale_y,
+            ctypes.byref(figure_x),
+            ctypes.byref(figure_y),
+        )
+        return (figure_x.value, figure_y.value) if converted else None
 
     def close(self) -> None:
         """Unsubscribe slice input before releasing the base viewer."""

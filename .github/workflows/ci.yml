@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: int-brain-lab/ibl-atlas-assets
-          ref: a3ab4a7809b90a9657fdffeba4a6d03a00eae23b
+          ref: f5096c3a9c850a3114e13dc6ba9f4d9259e89f04
           path: ibl-atlas-assets-checkout
 
       - name: Place atlas fixtures beside the repository

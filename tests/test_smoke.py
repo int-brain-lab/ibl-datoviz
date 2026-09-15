@@ -15,7 +15,7 @@ FIXTURE = (
     / 'mesh-pack-v1'
     / 'pack'
 )
-VOLUME_FIXTURE = FIXTURE.parents[1] / 'volume-pack-v1' / 'pack'
+VOLUME_FIXTURE = FIXTURE.parents[1] / 'linked-atlas-v1' / 'volume-pack'
 
 
 def test_offscreen_atlas_smoke(tmp_path):
@@ -39,6 +39,10 @@ def test_offscreen_linked_atlas_smoke(tmp_path):
     with LinkedAtlasNavigator.from_packs(
         FIXTURE, VOLUME_FIXTURE, width=320, height=240
     ) as navigator:
+        navigator.set_cursor(navigator.cursor)
+        assert navigator.cursor.region(navigator.volumes, 'allen').atlas_id == 315
+        assert navigator._selected_region_ids == (315,)
+        assert navigator._highlight_region_ids == (315,)
         try:
             rgba = navigator.render_offscreen(output)
         except RuntimeError as error:

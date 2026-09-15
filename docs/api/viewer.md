@@ -22,6 +22,22 @@ slice changes the two visible cursor coordinates while retaining the orthogonal 
 Annotation slices are precolored on the CPU so the complete Allen/Beryl/Cosmos catalog is not
 limited by the current 64-entry GPU categorical palette.
 
+## Navigator data model
+
+::: ibl_datoviz.navigator.AtlasCursor
+
+::: ibl_datoviz.navigator.AtlasSliceComposer
+    options:
+      members:
+        - set_mapping
+        - compose
+
+::: ibl_datoviz.navigator.compose_atlas_slice
+
+::: ibl_datoviz.navigator.cursor_from_slice_fraction
+
+::: ibl_datoviz.navigator.slice_index_fraction
+
 ## Surface viewer
 
 ::: ibl_datoviz.viewer.AtlasViewer
