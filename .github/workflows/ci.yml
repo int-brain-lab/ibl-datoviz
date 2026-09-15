@@ -16,13 +16,13 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Check out ibl-datoviz
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # The synthetic mesh and region fixtures are versioned with the matching
       # ibl-atlas-assets revision, while the large D070 asset set is deliberately
       # not part of CI.
       - name: Check out synthetic atlas fixtures
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: int-brain-lab/ibl-atlas-assets
           ref: f5096c3a9c850a3114e13dc6ba9f4d9259e89f04
@@ -32,12 +32,12 @@ jobs:
         run: mv "$GITHUB_WORKSPACE/ibl-atlas-assets-checkout" "$GITHUB_WORKSPACE/../ibl-atlas-assets"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.10'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v9
         with:
           version: '0.8.x'
           enable-cache: true
