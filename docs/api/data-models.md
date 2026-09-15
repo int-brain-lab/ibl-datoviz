@@ -14,6 +14,17 @@
         - link_keys
         - normalize_points
 
+## Registered atlas slices
+
+::: ibl_datoviz.atlas_slice_source.AtlasSliceSource
+    options:
+      members:
+        - slice
+        - annotation_index_at_world
+        - region_for_source_index
+        - cache_info
+        - clear_cache
+
 ## Ontology tree
 
 ::: ibl_datoviz.ontology.AtlasTreeModel

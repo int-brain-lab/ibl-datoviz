@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 import ctypes
+from threading import RLock
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ibl_atlas_assets import open_volume_pack
+from ibl_atlas_assets import (
+    open_intensity_block_pack,
+    open_registered_projection,
+    open_volume_pack,
+)
 
 from .atlas import AtlasMesh
+from .atlas_slice_source import AtlasSliceSource
+from .latest_wins import LatestWinsExecutor
 from .navigator import (
     SLICE_DISPLAY_AXES,
     AtlasCursor,
     AtlasSliceComposer,
     cursor_from_slice_fraction,
+    mapped_region,
     slice_index_fraction,
     step_slice_cursor,
 )
@@ -67,14 +75,28 @@ def volume_render_geometry(
     return bounds_min, bounds_max, axis_order, axis_flip
 
 
+def grid_resolution_um(grid) -> tuple[float, float, float]:
+    """Return AP/ML/DV voxel spacing magnitudes for an axis-aligned grid."""
+    linear = np.asarray(grid.index_to_world_um_matrix, dtype=np.float64).reshape(4, 4)[:3, :3]
+    return tuple(float(np.linalg.norm(linear[:, index])) for index in range(3))
+
+
+def _resolution_label(grid) -> str:
+    spacing = grid_resolution_um(grid)
+    if np.allclose(spacing, spacing[0]):
+        return f'{spacing[0]:g} um'
+    return ' x '.join(f'{value:g}' for value in spacing) + ' um'
+
+
 class LinkedAtlasNavigator(AtlasViewer):
     """Link orthogonal atlas slices, the ontology, and native 3-D anatomy."""
 
-    def __init__(  # noqa: PLR0915
+    def __init__(  # noqa: PLR0912, PLR0915
         self,
         mesh: AtlasMesh,
         volumes: AtlasVolumes,
         *,
+        slice_source=None,
         mapping: str = 'allen',
         width: int = 1280,
         height: int = 900,
@@ -91,8 +113,11 @@ class LinkedAtlasNavigator(AtlasViewer):
     ) -> None:
         if palette is not None:
             raise ValueError('linked atlas slices require the verified catalog palette')
+        slice_source = volumes if slice_source is None else slice_source
         if mesh.reference_space != volumes.regions.reference_space_id:
             raise ValueError('mesh and volume reference spaces differ')
+        if mesh.reference_space != slice_source.regions.reference_space_id:
+            raise ValueError('mesh and slice reference spaces differ')
         for atlas_mapping in mesh.mapping_names:
             if atlas_mapping not in volumes.regions.mappings:
                 raise ValueError(f'mesh mapping is absent from volume catalog: {atlas_mapping}')
@@ -124,8 +149,23 @@ class LinkedAtlasNavigator(AtlasViewer):
         ):
             raise ValueError('slice_background must contain three 8-bit values')
         self.volumes = volumes
-        self.cursor = AtlasCursor.centre(volumes)
-        self.slice_composer = AtlasSliceComposer(volumes, mapping)
+        self.slice_source = slice_source
+        self.slice_resolution_label = _resolution_label(slice_source.grid)
+        self.volume_resolution_label = _resolution_label(volumes.grid)
+        self.cursor = AtlasCursor.centre(slice_source)
+        self.slice_composer = AtlasSliceComposer(slice_source, mapping)
+        self._slice_prepare_lock = RLock()
+        self._slice_loader = (
+            LatestWinsExecutor(
+                self._prepare_slice,
+                notify=self._notify_slice_ready,
+                max_workers=3,
+            )
+            if slice_source is not volumes
+            else None
+        )
+        self._slice_post_callback = self._drain_prepared_slices
+        self._slice_error: Exception | None = None
         self.annotation_opacity = float(annotation_opacity)
         self.volume_opacity = float(volume_opacity)
         self.boundary_opacity = float(boundary_opacity)
@@ -188,6 +228,24 @@ class LinkedAtlasNavigator(AtlasViewer):
         volumes = open_volume_pack(volume_pack).load_volumes()
         return cls(AtlasMesh.from_pack(mesh_pack), volumes, **kwargs)
 
+    @classmethod
+    def from_multiresolution_packs(
+        cls,
+        mesh_pack: str | Path,
+        volume_pack: str | Path,
+        intensity_pack: str | Path,
+        registered_projections: dict[str, str | Path],
+        **kwargs,
+    ) -> LinkedAtlasNavigator:
+        """Use registered high-resolution slices with an independent dense 3-D volume."""
+        volumes = open_volume_pack(volume_pack).load_volumes()
+        intensity = open_intensity_block_pack(intensity_pack)
+        projections = {
+            axis: open_registered_projection(path) for axis, path in registered_projections.items()
+        }
+        slices = AtlasSliceSource(intensity, projections, volumes.regions)
+        return cls(AtlasMesh.from_pack(mesh_pack), volumes, slice_source=slices, **kwargs)
+
     def _create_layout(self) -> None:
         self.figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
         grid = self.dvz.dvz_figure_grid(self.figure, 2, 2)
@@ -226,7 +284,7 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def _slice_quad(self, axis: str) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
         x_axis, y_axis = SLICE_DISPLAY_AXES[axis]
-        sizes = dict(zip(('ap', 'ml', 'dv'), self.volumes.grid.shape, strict=True))
+        sizes = dict(zip(('ap', 'ml', 'dv'), self.slice_source.grid.shape, strict=True))
         aspect = sizes[x_axis] / sizes[y_axis]
         x_extent, y_extent = (0.94, 0.94 / aspect) if aspect >= 1 else (0.94 * aspect, 0.94)
         zoom = self._slice_zoom.get(axis, 1.0)
@@ -427,19 +485,80 @@ class LinkedAtlasNavigator(AtlasViewer):
         )
 
     def _slice_layers(self, axis: str) -> tuple[NDArray[np.uint8], NDArray[np.uint8]]:
-        index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
-        anatomy, annotation = self.slice_composer.compose_layers(
-            axis,
-            index,
-            annotation_opacity=self.annotation_opacity,
-            selected_region_ids=self._emphasis_region_ids(),
-            selection_dim_factor=self.selection_dim_factor,
-        )
-        if not self.anatomy_visible:
-            anatomy[..., 3] = 0
-        if not self.annotation_visible:
-            annotation[..., 3] = 0
-        return anatomy, annotation
+        with self._slice_prepare_lock:
+            index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
+            anatomy, annotation = self.slice_composer.compose_layers(
+                axis,
+                index,
+                annotation_opacity=self.annotation_opacity,
+                selected_region_ids=self._emphasis_region_ids(),
+                selection_dim_factor=self.selection_dim_factor,
+            )
+            if not self.anatomy_visible:
+                anatomy[..., 3] = 0
+            if not self.annotation_visible:
+                annotation[..., 3] = 0
+            return anatomy, annotation
+
+    def _prepare_slice(self, axis: str):
+        """Prepare one complete slice payload without touching Datoviz state."""
+        anatomy, annotation = self._slice_layers(axis)
+        with self._slice_prepare_lock:
+            starts, ends = self._boundary_positions(axis)
+            colors = np.tile(self._boundary_rgba(), (len(starts), 1))
+            widths = np.full(len(starts), self.boundary_width_px, dtype=np.float32)
+        return anatomy, annotation, starts, ends, colors, widths
+
+    def _notify_slice_ready(self, _axis: str) -> None:
+        """Wake the owner thread after a worker finishes a current request."""
+        if (
+            self.view is not None
+            and not self._closed
+            and self.dvz.dvz_view_post(self.view, self._slice_post_callback, None) != 0
+        ):
+            self.dvz.dvz_view_wake(self.view)
+
+    def _drain_prepared_slices(self, _view, _user_data) -> None:
+        """Apply prepared slice payloads on the Datoviz view owner thread."""
+        if self._slice_loader is None or self._closed:
+            return
+        try:
+            ready = self._slice_loader.drain_ready()
+        except Exception as error:  # callback boundaries must not leak exceptions
+            self._slice_error = error
+            return
+        for item in ready:
+            axis = item.key
+            anatomy, annotation, starts, ends, colors, widths = item.result
+            self.dvz.dvz_sampled_field_update_from_array(
+                self._slice_fields[axis],
+                anatomy,
+                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                dim=self.dvz.DVZ_FIELD_DIM_2D,
+            )
+            self.dvz.dvz_sampled_field_update_from_array(
+                self._annotation_fields[axis],
+                annotation,
+                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                dim=self.dvz.DVZ_FIELD_DIM_2D,
+            )
+            self._check(
+                self.dvz.dvz_visual_set_data_many(
+                    self._boundary_visuals[axis],
+                    {
+                        'position_start': starts,
+                        'position_end': ends,
+                        'color': colors,
+                        'stroke_width_px': widths,
+                    },
+                ),
+                f'{axis} prepared boundaries update',
+            )
+        if ready:
+            self._slice_error = None
+            self.dvz.dvz_view_request_frame(self.view)
 
     def _crosshair_positions(self, axis: str) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
         positions, _ = self._slice_quad(axis)
@@ -447,8 +566,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         x1, y1 = positions[3, :2]
         coordinates = dict(zip(('ap', 'ml', 'dv'), self.cursor.as_index(), strict=True))
         x_axis, y_axis = SLICE_DISPLAY_AXES[axis]
-        x_fraction = slice_index_fraction(self.volumes.grid, x_axis, coordinates[x_axis])
-        y_fraction = slice_index_fraction(self.volumes.grid, y_axis, coordinates[y_axis])
+        x_fraction = slice_index_fraction(self.slice_source.grid, x_axis, coordinates[x_axis])
+        y_fraction = slice_index_fraction(self.slice_source.grid, y_axis, coordinates[y_axis])
         x = x0 + x_fraction * (x1 - x0)
         y = y0 + y_fraction * (y1 - y0)
         starts = np.array([[x, y0, 0.02], [x0, y, 0.02]], dtype=np.float32)
@@ -621,7 +740,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._update_cursor_marker()
 
     def _update_cursor_marker(self) -> None:
-        world = np.asarray(self.cursor.world_um(self.volumes), dtype=np.float32).reshape(1, 3)
+        world = np.asarray(self.cursor.world_um(self.slice_source), dtype=np.float32).reshape(1, 3)
         position = self.mesh_data.normalize_points(world)[0]
         half_length = 600.0 * self.mesh_data.display_scale
         starts = np.tile(position, (3, 1))
@@ -652,26 +771,32 @@ class LinkedAtlasNavigator(AtlasViewer):
             '3-D cursor dot update',
         )
 
-    def _refresh_slices(self) -> None:
+    def _refresh_slices(self, axes=None) -> None:
         if not self._slice_fields:
             return
-        for axis, field in self._slice_fields.items():
-            anatomy, annotation = self._slice_layers(axis)
-            self.dvz.dvz_sampled_field_update_from_array(
-                field,
-                anatomy,
-                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                dim=self.dvz.DVZ_FIELD_DIM_2D,
-            )
-            self.dvz.dvz_sampled_field_update_from_array(
-                self._annotation_fields[axis],
-                annotation,
-                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                dim=self.dvz.DVZ_FIELD_DIM_2D,
-            )
-            self._refresh_boundaries(axis)
+        refresh_axes = tuple(self._slice_fields) if axes is None else tuple(axes)
+        if self._slice_loader is not None and self.view is not None:
+            for axis in refresh_axes:
+                self._slice_loader.request(axis, axis)
+        else:
+            for axis in refresh_axes:
+                anatomy, annotation = self._slice_layers(axis)
+                self.dvz.dvz_sampled_field_update_from_array(
+                    self._slice_fields[axis],
+                    anatomy,
+                    format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                    semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                    dim=self.dvz.DVZ_FIELD_DIM_2D,
+                )
+                self.dvz.dvz_sampled_field_update_from_array(
+                    self._annotation_fields[axis],
+                    annotation,
+                    format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                    semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                    dim=self.dvz.DVZ_FIELD_DIM_2D,
+                )
+                self._refresh_boundaries(axis)
+        for axis in self._slice_fields:
             starts, ends = self._crosshair_positions(axis)
             self._check(
                 self.dvz.dvz_visual_set_data_many(
@@ -706,18 +831,25 @@ class LinkedAtlasNavigator(AtlasViewer):
         selection.  Callers handling an explicit selection gesture (for
         example a click in a slice) can opt in with ``select_region=True``.
         """
-        for axis, value in zip(('ap', 'ml', 'dv'), cursor.as_index(), strict=True):
-            cursor.replace(axis, value, self.volumes.grid.shape)
+        previous = self.cursor.as_index()
+        current = cursor.as_index()
+        for axis, value in zip(('ap', 'ml', 'dv'), current, strict=True):
+            cursor.replace(axis, value, self.slice_source.grid.shape)
             self._cursor_controls[axis].value = value
         self.cursor = cursor
         if select_region:
-            row = cursor.region(self.volumes, self.mapping)
+            row = cursor.region(self.slice_source, self.mapping)
             ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
             self._apply_selected_region_ids(
                 ids, update_tree=True, update_table=True, clear_mesh=True
             )
         else:
-            self._refresh_slices()
+            changed_axes = tuple(
+                axis
+                for axis, before, after in zip(('ap', 'ml', 'dv'), previous, current, strict=True)
+                if before != after
+            )
+            self._refresh_slices(changed_axes)
 
     def set_cursor_from_slice_data(
         self, axis: str, x: float, y: float, *, select_region: bool = False
@@ -746,7 +878,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             axis,
             float((x - x0) / (x1 - x0)),
             float((y - y0) / (y1 - y0)),
-            self.volumes.grid,
+            self.slice_source.grid,
         )
 
     def _set_slice_hover(self, axis: str | None, x: float = 0.0, y: float = 0.0) -> bool:
@@ -755,8 +887,17 @@ class LinkedAtlasNavigator(AtlasViewer):
         row = None
         label = None
         if cursor is not None:
-            row = cursor.region(self.volumes, self.mapping)
-            label = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
+            cached_lookup = getattr(self.slice_source, 'cached_annotation_index_at_world', None)
+            source_index = (
+                cached_lookup(cursor.world_um(self.slice_source), preferred_axis=axis)
+                if cached_lookup is not None
+                else cursor.source_index(self.slice_source)
+            )
+            if source_index is None:
+                label = 'loading…'
+            else:
+                row = mapped_region(self.slice_source, source_index, self.mapping)
+                label = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
         region_ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
         position = (x, y) if cursor is not None else None
         changed = (
@@ -785,7 +926,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         """Step one slice plane without changing committed region selection."""
         if axis not in self.slice_panels or not delta:
             return False
-        cursor = step_slice_cursor(self.cursor, axis, int(delta), self.volumes.grid.shape)
+        cursor = step_slice_cursor(self.cursor, axis, int(delta), self.slice_source.grid.shape)
         if cursor == self.cursor:
             return False
         self.set_cursor(cursor, select_region=False)
@@ -793,7 +934,7 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def select_cursor_region(self) -> None:
         """Commit the region under the current AP/ML/DV cursor."""
-        row = self.cursor.region(self.volumes, self.mapping)
+        row = self.cursor.region(self.slice_source, self.mapping)
         ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
         self._apply_selected_region_ids(ids, update_tree=True, update_table=True, clear_mesh=True)
 
@@ -802,7 +943,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         if palette is not None:
             raise ValueError('linked atlas slices require the verified catalog palette')
         super().set_mapping(mapping)
-        self.slice_composer.set_mapping(mapping)
+        with self._slice_prepare_lock:
+            self.slice_composer.set_mapping(mapping)
         self._refresh_slices()
 
     def _apply_selected_region_ids(self, region_ids, **kwargs) -> None:
@@ -831,14 +973,20 @@ class LinkedAtlasNavigator(AtlasViewer):
         else:
             self._hovered_region_label = None
 
-    def _draw_extra_gui(self, gui) -> None:
+    def _draw_extra_gui(self, gui) -> None:  # noqa: PLR0912 - declarative GUI controls
+        if self._slice_loader is not None:
+            self._drain_prepared_slices(self.view, None)
         self.dvz.dvz_gui_separator_text(gui, b'Linked atlas cursor')
         self.dvz.dvz_gui_text(gui, b'AP: ML -> right, dorsal up')
         self.dvz.dvz_gui_text(gui, b'ML: AP -> right, dorsal up')
         self.dvz.dvz_gui_text(gui, b'DV: ML -> right, anterior up')
         self.dvz.dvz_gui_text(gui, b'3-D: left-drag to orbit; wheel to zoom')
+        self.dvz.dvz_gui_text(
+            gui,
+            f'Slices {self.slice_resolution_label} | 3-D {self.volume_resolution_label}'.encode(),
+        )
         changed = False
-        for axis, size in zip(('ap', 'ml', 'dv'), self.volumes.grid.shape, strict=True):
+        for axis, size in zip(('ap', 'ml', 'dv'), self.slice_source.grid.shape, strict=True):
             changed |= self.dvz.dvz_gui_slider_int(
                 gui, axis.upper().encode(), ctypes.byref(self._cursor_controls[axis]), 0, size - 1
             )
@@ -897,8 +1045,8 @@ class LinkedAtlasNavigator(AtlasViewer):
                 'volume opacity update',
             )
             self._update_surface_alpha_mode()
-        world = self.cursor.world_um(self.volumes)
-        row = self.cursor.region(self.volumes, self.mapping)
+        world = self.cursor.world_um(self.slice_source)
+        row = self.cursor.region(self.slice_source, self.mapping)
         region = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
         self.dvz.dvz_gui_text(
             gui,
@@ -908,6 +1056,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         hover_source = self._hovered_slice_axis.upper() if self._hovered_slice_axis else '3-D'
         hover_label = self._hovered_region_label or '—'
         self.dvz.dvz_gui_text(gui, f'Hover ({hover_source}): {hover_label}'.encode())
+        if self._slice_error is not None:
+            self.dvz.dvz_gui_text(gui, f'Slice load failed: {self._slice_error}'.encode())
 
     def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0915
         super()._create_view(offscreen=offscreen, title=title)
@@ -1056,6 +1206,9 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def close(self) -> None:
         """Unsubscribe slice input before releasing the base viewer."""
+        if getattr(self, '_slice_loader', None) is not None:
+            self._slice_loader.close()
+            self._slice_loader = None
         if getattr(self, '_input_subscription', 0) and self._input_router:
             self.dvz.dvz_input_unsubscribe(self._input_router, self._input_subscription)
             self._input_subscription = 0

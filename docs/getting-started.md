@@ -65,6 +65,20 @@ ontology tree, and any attached probe or regional tables. The scalar anatomical 
 volume-rendered in the 3-D panel on native Datoviz; volume rendering is not currently claimed for
 the WebGPU export.
 
+The slice grid and dense 3-D volume are independent. When a 10 um intensity block pack and three exact registered projections have been materialized, keep the 50 um pack as the bounded dense volume and opt into 10 um slices explicitly:
+
+```bash
+python examples/linked_atlas_navigator.py \
+  ../ibl-atlas-assets/build/d070-published/mesh-pack \
+  ../ibl-atlas-assets/build/allen-ccf-2017-50um \
+  --slice-intensity-pack build/allen-ccf-2017-10um-intensity \
+  --coronal-projection build/registered-10um/coronal \
+  --sagittal-projection build/registered-10um/sagittal \
+  --horizontal-projection build/registered-10um/horizontal
+```
+
+In this mode the authoritative cursor lives in the 10 um grid and is transformed through ML/AP/DV world micrometres to the D070 surface and 50 um volume. Anatomy blocks and exact signed Allen geometry are decoded lazily, cached within explicit bounds, and prepared through a latest-wins worker queue; only completed current slices mutate Datoviz state on the view owner thread. No complete 10 um volume is uploaded to the GPU.
+
 For a non-interactive smoke render, add an output path:
 
 ```bash

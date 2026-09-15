@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -83,14 +84,24 @@ class AtlasSliceComposer:
 
     def __init__(self, volumes: AtlasVolumes, mapping: str = 'allen') -> None:
         self.volumes = volumes
-        self.low, self.high = (float(value) for value in np.percentile(volumes.template, (1, 99)))
+        display_range = getattr(volumes, 'recommended_display_range', None)
+        if display_range is None:
+            template = getattr(volumes, 'template', None)
+            if template is None:
+                display_range = getattr(volumes, 'value_range', (0, np.iinfo(np.uint16).max))
+            else:
+                display_range = np.percentile(template, (1, 99))
+        self.low, self.high = (float(value) for value in display_range)
         if self.high <= self.low:
             self.high = self.low + 1.0
         self.mapping = ''
         self._colors = np.empty((0, 3), dtype=np.uint8)
         self._mapped_ids = np.empty(0, dtype=np.int64)
         self._valid = np.empty(0, dtype=bool)
-        self._boundary_cache: dict[tuple[str, str, int], tuple[NDArray, NDArray]] = {}
+        self._boundary_cache: OrderedDict[tuple[str, str, int], tuple[NDArray, NDArray]] = (
+            OrderedDict()
+        )
+        self._boundary_cache_size = 16
         self.set_mapping(mapping)
 
     def set_mapping(self, mapping: str) -> None:
@@ -115,7 +126,7 @@ class AtlasSliceComposer:
         self._valid = valid
         self._boundary_cache.clear()
 
-    def boundary_segments(
+    def boundary_segments(  # noqa: PLR0912
         self, axis: str, index: int
     ) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
         """Return merged mapping-aware boundaries in normalized slice coordinates.
@@ -126,8 +137,9 @@ class AtlasSliceComposer:
         segments for efficient retained rendering.
         """
         key = (self.mapping, axis, int(index))
-        cached = self._boundary_cache.get(key)
+        cached = self._boundary_cache.pop(key, None)
         if cached is not None:
+            self._boundary_cache[key] = cached
             return cached
         annotation_slice = self.volumes.slice('annotation', axis, index)
         annotation = oriented_slice(
@@ -170,6 +182,8 @@ class AtlasSliceComposer:
             ends = np.empty((0, 2), dtype=np.float32)
         result = (starts, ends)
         self._boundary_cache[key] = result
+        while len(self._boundary_cache) > self._boundary_cache_size:
+            self._boundary_cache.popitem(last=False)
         return result
 
     def compose(
@@ -389,6 +403,9 @@ class AtlasCursor:
 
     def source_index(self, volumes: AtlasVolumes) -> int:
         """Return the annotation source index at this cursor."""
+        lookup = getattr(volumes, 'annotation_index_at_world', None)
+        if lookup is not None:
+            return int(np.asarray(lookup(self.world_um(volumes))).item())
         return int(volumes.annotation[self.as_index()])
 
     def region(self, volumes: AtlasVolumes, mapping: str) -> AtlasRegion | None:

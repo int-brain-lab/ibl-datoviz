@@ -16,6 +16,8 @@ FIXTURE = (
     / 'pack'
 )
 VOLUME_FIXTURE = FIXTURE.parents[1] / 'linked-atlas-v1' / 'volume-pack'
+INTENSITY_FIXTURE = FIXTURE.parents[1] / 'intensity-blocks-v1' / 'pack'
+REGISTERED_FIXTURE = FIXTURE.parents[1] / 'linked-registered-slices-v1' / 'pack'
 
 
 def _skip_without_native_datoviz(error: RuntimeError) -> None:
@@ -50,6 +52,35 @@ def test_offscreen_linked_atlas_smoke(tmp_path):
             assert navigator.cursor.region(navigator.volumes, 'allen').atlas_id == 315
             assert navigator._selected_region_ids == (315,)
             assert navigator._highlight_region_ids == (315,)
+            rgba = navigator.render_offscreen(output)
+    except RuntimeError as error:
+        _skip_without_native_datoviz(error)
+        raise
+    assert rgba.shape == (240, 320, 4)
+    assert output.stat().st_size > 0
+    assert np.count_nonzero(np.any(rgba[..., :3] != [29, 33, 39], axis=2)) > 200
+
+
+def test_offscreen_multiresolution_atlas_smoke(tmp_path):
+    output = tmp_path / 'multiresolution-atlas.png'
+    projections = {
+        'ap': REGISTERED_FIXTURE / 'coronal.json',
+        'ml': REGISTERED_FIXTURE / 'sagittal.json',
+        'dv': REGISTERED_FIXTURE / 'horizontal.json',
+    }
+    try:
+        with LinkedAtlasNavigator.from_multiresolution_packs(
+            FIXTURE,
+            VOLUME_FIXTURE,
+            INTENSITY_FIXTURE,
+            projections,
+            width=320,
+            height=240,
+        ) as navigator:
+            assert navigator.slice_resolution_label == '10 um'
+            assert navigator.volume_resolution_label == '1 um'
+            navigator.set_cursor(navigator.cursor)
+            navigator.select_cursor_region()
             rgba = navigator.render_offscreen(output)
     except RuntimeError as error:
         _skip_without_native_datoviz(error)

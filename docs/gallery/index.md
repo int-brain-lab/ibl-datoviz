@@ -18,6 +18,8 @@ Three orthogonal anatomical/annotation slices share one AP/ML/DV cursor with the
 scalar template volume, ontology tree, mapping selector, and linked selections. Slice clicks and GUI
 sliders update every panel; Allen, Beryl, and Cosmos retain their official colors.
 
+The same entry accepts an optional exact 10 um slice source while retaining the 50 um dense 3-D volume. Those assets are deliberately not a gallery default until their immutable publication location exists; the renderer never uploads the complete 10 um volume.
+
 ```bash
 python examples/linked_atlas_navigator.py \
   ../ibl-atlas-assets/build/d070-published/mesh-pack \
@@ -113,6 +115,8 @@ payload changes. For example:
 python tools/benchmark_region_updates.py build/atlas-d070 \
   --mapping allen --iterations 20 --json build/region-update-benchmark.json
 ```
+
+`examples/benchmark_registered_slices.py` measures cold indexed-block decode, exact registered annotation rasterization, mapping-aware boundary extraction, warm cache reuse, and retained cache bytes for all three orthogonal 10 um planes. Reports remain local because source publication and host performance are independent concerns.
 
 ## Capability matrix
 
