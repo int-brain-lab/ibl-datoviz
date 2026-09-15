@@ -170,3 +170,10 @@ is bounded, stale requests are coalesced, and warm neighboring interaction is fa
 raster block transport remains a worthwhile later optimization if sub-frame uncached section
 changes or remote-only operation become requirements. It is no longer necessary to make that
 larger format decision merely to establish the 10-um consumer boundary.
+
+Manual hover testing exposed a separate Python binding lifetime bug: three workers could enqueue
+the same `dvz_view_post()` callback before the owner thread drained the first item. The generated
+ctypes wrapper replaced its stored `CFUNCTYPE` closure on every post, leaving earlier native queue
+entries with a freed function pointer. Datoviz `3bdfee4e8` reuses the live closure for an identical
+owner/callback/user-data subscription and includes both generator-level and native repeated-post
+regressions. Sustained hover no longer terminates the process.
