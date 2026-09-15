@@ -101,6 +101,21 @@ class AtlasTreeModel:
             if member
         )
 
+    def subtree_row_indices(self, root_acronym: str) -> NDArray[np.uint32]:
+        """Return packed row indices for one acronym-rooted ontology subtree."""
+        roots = [index for index, acronym in enumerate(self.acronyms) if acronym == root_acronym]
+        if len(roots) != 1:
+            raise ValueError(f'expected one {root_acronym!r} ontology row, found {len(roots)}')
+        root = roots[0]
+        included = []
+        for index in range(len(self.region_ids)):
+            ancestor = index
+            while ancestor not in (ROOT_PARENT, root):
+                ancestor = int(self.parents[ancestor])
+            if ancestor == root:
+                included.append(index)
+        return np.ascontiguousarray(included, dtype=np.uint32)
+
     def expanded_logical_ids(self, region_ids: tuple[int, ...]) -> tuple[int, ...]:
         """Expand selected ontology rows to selectable descendants, ignoring hemisphere."""
         selected = {abs(int(region_id)) for region_id in region_ids if region_id}

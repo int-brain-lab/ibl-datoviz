@@ -39,11 +39,12 @@ python examples/atlas_spike.py \
 ```
 
 Omit `--offscreen` for the interactive view. With `--regions`, the viewer uses official ontology
-colors and adds a native retained region browser with Allen/Beryl/Cosmos switching, search,
+colors and adds a native retained grey-matter browser with Allen/Beryl/Cosmos switching, search,
 color swatches, collapse/expand controls, signed-ID selection, and a region explosion slider.
 Explosion uses the mesh pack's canonical component-centroid displacement vectors, matching the
 ephys-atlas-web-v2 definition. Drag to orbit the arcball and click a mesh face to exercise picking.
-`AtlasViewer.selected_region_ids()` returns signed IDs selected through either surface or tree.
+`AtlasViewer.selected_region_ids()` returns signed IDs selected through either surface or tree;
+while a selection is active, all non-selected surface regions are rendered translucently.
 
 Use the real D070 mesh without `--regions` as the first performance and interaction baseline. This
 path creates one direct native view containing only an opaque mesh, perspective camera, and

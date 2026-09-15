@@ -18,7 +18,7 @@ from ibl_anatomy import (
 )
 
 from .atlas import AtlasMesh
-from .ontology import AtlasTreeModel, decode_region_key, encode_region_key
+from .ontology import ROOT_PARENT, AtlasTreeModel, decode_region_key, encode_region_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -49,6 +49,7 @@ class AtlasViewer:
         surface_opacity: float = 1.0,
         ui_scale: float = 1.0,
         sidebar_width: float = 340.0,
+        tree_root_acronym: str = 'grey',
         enable_interaction: bool = True,
         datoviz: ModuleType | None = None,
     ) -> None:
@@ -62,6 +63,8 @@ class AtlasViewer:
             raise ValueError('ui_scale must be finite and positive')
         if not np.isfinite(sidebar_width) or sidebar_width <= 0:
             raise ValueError('sidebar_width must be finite and positive')
+        if not tree_root_acronym:
+            raise ValueError('tree_root_acronym must not be empty')
         self.camera_angles = self._validated_camera_angles(camera_angles)
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
@@ -76,6 +79,7 @@ class AtlasViewer:
         self.surface_opacity = surface_opacity
         self.ui_scale = float(ui_scale)
         self.sidebar_width = float(sidebar_width)
+        self.tree_root_acronym = tree_root_acronym
         self.enable_interaction = bool(enable_interaction)
         self.scene = self.dvz.dvz_scene()
         if not self.scene:
@@ -223,7 +227,7 @@ class AtlasViewer:
             'dense mesh upload',
         )
         self._invalidate_surface_emphasis_cache(surface_colors)
-        if self.surface_opacity < 1:
+        if self.surface_opacity < 1 or self.catalog is not None:
             self._check(
                 self.dvz.dvz_visual_set_alpha_mode(self.mesh, self.dvz.DVZ_ALPHA_WBOIT),
                 'surface weighted transparency',
@@ -944,19 +948,33 @@ class AtlasViewer:
         )
         if not self.region_tree:
             raise RuntimeError('dvz_gui_tree() failed')
+        row_indices = model.subtree_row_indices(self.tree_root_acronym)
+        old_to_new = {int(old): new for new, old in enumerate(row_indices)}
+        parents = np.ascontiguousarray(
+            [
+                ROOT_PARENT
+                if int(model.parents[old]) == ROOT_PARENT
+                or int(model.parents[old]) not in old_to_new
+                else old_to_new[int(model.parents[old])]
+                for old in row_indices
+            ],
+            dtype=np.uint32,
+        )
+        labels = tuple(model.acronyms[index] for index in row_indices)
+        names = tuple(model.names[index] for index in row_indices)
         self._check(
             self.dvz.dvz_gui_tree_set_rows(
                 self.region_tree,
-                model.keys,
-                model.parents,
-                model.acronyms,
-                model.names,
+                model.keys[row_indices],
+                parents,
+                labels,
+                names,
                 self.dvz.DVZ_GUI_DATA_SET_FLAGS_RESET_STATE,
             ),
             'atlas ontology rows',
         )
         self._check(
-            self.dvz.dvz_gui_tree_set_swatches(self.region_tree, model.colors),
+            self.dvz.dvz_gui_tree_set_swatches(self.region_tree, model.colors[row_indices]),
             'atlas ontology colors',
         )
         if self._tree_filter.value:
@@ -965,7 +983,9 @@ class AtlasViewer:
                 'atlas ontology filter restore',
             )
         styles = []
-        for region_id, member in zip(model.region_ids, model.mapping_members, strict=True):
+        for region_id, member in zip(
+            model.region_ids[row_indices], model.mapping_members[row_indices], strict=True
+        ):
             if member:
                 continue
             style = self.dvz.dvz_gui_data_style()
@@ -1103,7 +1123,8 @@ class AtlasViewer:
     def _set_tree_selection(self, region_ids: Sequence[int]) -> None:
         if self.region_tree is None or self.tree_model is None:
             return
-        tree_ids = {int(region_id) for region_id in self.tree_model.region_ids}
+        row_indices = self.tree_model.subtree_row_indices(self.tree_root_acronym)
+        tree_ids = {int(self.tree_model.region_ids[index]) for index in row_indices}
         keys = np.asarray(
             [
                 encode_region_key(-abs(int(region_id)))
@@ -1147,7 +1168,7 @@ class AtlasViewer:
         self._update_surface_emphasis()
 
     def _update_surface_emphasis(self) -> None:
-        """Dim for selection and brighten hover without dimming unrelated regions."""
+        """Fade non-selected regions and brighten hover without affecting unrelated regions."""
         selected_ids = (
             self.tree_model.expanded_logical_ids(self._selected_region_ids)
             if self.tree_model is not None

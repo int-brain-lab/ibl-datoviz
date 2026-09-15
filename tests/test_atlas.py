@@ -478,7 +478,10 @@ def test_selection_dims_every_nonselected_surface_region(mesh):
             selected_colors[~selected, :3],
             np.rint(base[~selected, :3].astype(np.float32) * 0.25).astype(np.uint8),
         )
-        assert np.all(selected_colors[~selected, 3] < base[~selected, 3])
+        np.testing.assert_array_equal(
+            selected_colors[~selected, 3],
+            np.rint(base[~selected, 3].astype(np.float32) * 0.25).astype(np.uint8),
+        )
 
 
 def test_surface_emphasis_reuses_and_invalidates_derived_arrays(mesh):
@@ -771,6 +774,9 @@ def test_region_tree_model_preserves_signed_identity_and_canonical_colors():
     assert model.palette[-8] == (191, 218, 227, 255)
     assert model.palette[8] == (191, 218, 227, 255)
     assert model.selectable_region_ids == {-997, -8}
+    np.testing.assert_array_equal(model.subtree_row_indices('grey'), [1])
+    with pytest.raises(ValueError, match='expected one'):
+        model.subtree_row_indices('missing')
     assert model.expanded_logical_ids((-997,)) == (8, 997)
     assert model.describe(8) == 'grey — Basic cell groups and regions'
     for region_id in model.region_ids:
@@ -784,11 +790,12 @@ def test_viewer_uploads_catalog_to_one_retained_tree_batch(mesh):
         viewer._replace_region_tree()
         row_call = next(call for call in fake.calls if call[0] == 'tree_rows')
         assert row_call[3:] == (
-            ('root', 'grey'),
-            ('root', 'Basic cell groups and regions'),
+            ('grey',),
+            ('Basic cell groups and regions',),
             fake.DVZ_GUI_DATA_SET_FLAGS_RESET_STATE,
         )
-        np.testing.assert_array_equal(row_call[2], [2**32 - 1, 0])
+        np.testing.assert_array_equal(row_call[2], [2**32 - 1])
+        assert ('alpha_mode', 'mesh', fake.DVZ_ALPHA_WBOIT) in fake.calls
         assert sum(call[0] == 'tree_rows' for call in fake.calls) == 1
 
 
@@ -805,11 +812,11 @@ def test_viewer_uses_one_authoritative_selection_source(mesh):
         assert viewer.selected_region_ids() == (-8,)
         assert fake.mesh_selection == []
 
-        fake.mesh_selection = [encode_region_key(-997)]
+        fake.mesh_selection = [encode_region_key(-8)]
         viewer._sync_selection_highlight()
 
-        assert viewer.selected_region_ids() == (-997,)
-        assert fake.tree_selection == [encode_region_key(-997)]
+        assert viewer.selected_region_ids() == (-8,)
+        assert fake.tree_selection == [encode_region_key(-8)]
 
         fake.mesh_selection = []
         viewer._sync_selection_highlight()
@@ -823,11 +830,11 @@ def test_programmatic_selection_highlights_descendants(mesh):
     catalog = open_region_catalog(REGIONS)
     with AtlasViewer(mesh, datoviz=fake, catalog=catalog) as viewer:
         viewer._replace_region_tree()
-        viewer.set_selected_region_ids([-997])
+        viewer.set_selected_region_ids([-8])
 
-        assert viewer.selected_region_ids() == (-997,)
-        assert viewer._highlight_region_ids == (8, 997)
-        assert fake.tree_selection == [encode_region_key(-997)]
+        assert viewer.selected_region_ids() == (-8,)
+        assert viewer._highlight_region_ids == (8,)
+        assert fake.tree_selection == [encode_region_key(-8)]
 
         with pytest.raises(ValueError, match='not members of allen'):
             viewer.set_selected_region_ids([123456])
