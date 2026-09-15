@@ -26,7 +26,10 @@ jobs:
         with:
           repository: int-brain-lab/ibl-atlas-assets
           ref: a3ab4a7809b90a9657fdffeba4a6d03a00eae23b
-          path: ibl-atlas-assets
+          path: ibl-atlas-assets-checkout
+
+      - name: Place atlas fixtures beside the repository
+        run: mv "$GITHUB_WORKSPACE/ibl-atlas-assets-checkout" "$GITHUB_WORKSPACE/../ibl-atlas-assets"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,7 +43,12 @@ jobs:
           enable-cache: true
 
       - name: Install project and development tools
-        run: uv pip install --system --editable . pytest ruff
+        run: |
+          uv pip install --system --editable ../ibl-atlas-assets
+          uv pip install --system \
+            'datoviz @ git+https://github.com/datoviz/datoviz.git@1114b65fa1b7c4be088d7546adf6ae3830a04fab' \
+            'numpy>=1.24' pytest ruff
+          uv pip install --system --no-deps --editable .
 
       - name: Lint
         run: ruff check .
@@ -61,7 +69,7 @@ jobs:
           output=$(mktemp)
           python tools/build_gallery.py \
             --example atlas-spike \
-            --fixture-root "$GITHUB_WORKSPACE/ibl-atlas-assets/tests/fixtures" \
+            --fixture-root "$GITHUB_WORKSPACE/../ibl-atlas-assets/tests/fixtures" \
             --output-root "$GITHUB_WORKSPACE/build/ci-gallery" \
             >"$output" 2>&1
           status=$?
