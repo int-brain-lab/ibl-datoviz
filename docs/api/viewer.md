@@ -7,6 +7,7 @@
       members:
         - from_packs
         - from_multiresolution_packs
+        - from_anatomy_packs
         - set_cursor
         - set_cursor_from_slice_data
         - set_mapping
@@ -17,7 +18,12 @@
         - show
         - close
 
-`LinkedAtlasNavigator.from_multiresolution_packs()` combines an independently bounded dense volume with a registered high-resolution slice source. `ibl-atlas-assets` owns integrity, affine, and decoded geometry contracts; `ibl-datoviz` owns raster composition, latest-wins preparation, and owner-thread GPU updates.
+`LinkedAtlasNavigator.from_anatomy_packs()` combines an independently bounded dense volume with one
+complete registered high-resolution anatomy pack and its scalar intensity transport. The
+lower-level `from_multiresolution_packs()` remains available when callers intentionally manage
+three projection manifests themselves. `ibl-atlas-assets` owns integrity, affine, and decoded
+geometry contracts; `ibl-datoviz` owns raster composition, latest-wins preparation, and
+owner-thread GPU updates.
 
 The three slice panels use increasing atlas world coordinates from left to right and bottom to top:
 AP slices show ML/dorsal, ML slices show AP/dorsal, and DV slices show ML/anterior. Clicking a

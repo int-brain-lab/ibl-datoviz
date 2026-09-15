@@ -147,3 +147,26 @@ The first native boundary implementation derives merged vector segments from eac
 The clean shared follow-up is to move or adapt that builder and its validated slice-geometry contract into `ibl-atlas-assets`. Consumers should request a projection and section and receive renderer-neutral region rings or boundary polylines plus signed mapping identities and transforms. The web app may encode those records as indexed SVG; `ibl-datoviz` may upload them as retained segments or paths. Until that contract exists, the local voxel-exact boundary derivation provides correct interaction semantics without prematurely freezing the web transport as the shared API.
 
 `iblatlas.AllenAtlas` supports 10, 25, and 50 µm isotropic volumes. The current linked navigator pack is 50 µm (`264 × 228 × 160`), while `ephys-atlas-web-v2` already carries exact bilateral 10 µm slice geometry (`1320 × 1140 × 800` source grid) and a compact display-oriented derivative. A complete pair of uint16 10 µm template and annotation volumes would decode to roughly 4.8 GB, 125 times the 50 µm pair. Resolution should therefore be explicit and independently selectable by role: high-resolution or vector geometry for visible 2-D slices and boundaries, with a lower-resolution scalar volume for interactive 3-D ray marching. The pack graph must record their common reference space and transforms so the cursor and ontology remain exact across mixed resolutions.
+
+## Real 10-um slice evidence
+
+The mixed-resolution design is now exercised against the official 10-um average template and the
+complete existing anatomy-v2 graph, not only the synthetic fixture. The public
+`from_anatomy_packs()` factory takes one anatomy root instead of exposing its three transport
+manifests. It derives their AP/ML/DV roles from declared world axes and rejects any mismatch with
+the intensity pack's reference-space, grid, shape, or affine. The real run caught the sagittal AP
+reversal that the original synthetic affine had hidden.
+
+The first exact Python scanline implementation took 5.9, 6.1, and 8.3 seconds to prepare the
+central AP, ML, and DV slices. Vectorizing edge/scanline intersections in NumPy preserved every
+tested pixel, including fractional polygons and even-odd holes, without adding a dependency. On
+the same host, complete cold composition now takes 283, 231, and 451 ms; warm composition takes
+18-27 ms, and mapping-aware boundary extraction takes 32-48 ms. A four-panel offscreen render with
+the real 10-um slices, real D070 surface, and bounded 50-um 3-D volume completes in about 2.8
+seconds after process startup.
+
+This is suitable for the current latest-wins desktop interaction: one cold block/raster operation
+is bounded, stale requests are coalesced, and warm neighboring interaction is fast. A categorical
+raster block transport remains a worthwhile later optimization if sub-frame uncached section
+changes or remote-only operation become requirements. It is no longer necessary to make that
+larger format decision merely to establish the 10-um consumer boundary.

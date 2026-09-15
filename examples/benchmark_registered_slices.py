@@ -9,8 +9,8 @@ from pathlib import Path
 from time import perf_counter
 
 from ibl_atlas_assets import (
+    open_anatomy_pack,
     open_intensity_block_pack,
-    open_registered_projection,
     open_volume_pack,
 )
 from ibl_datoviz import AtlasSliceComposer, AtlasSliceSource
@@ -27,22 +27,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('volume_pack', type=Path, help='catalog-bearing volume pack')
     parser.add_argument('intensity_pack', type=Path)
-    parser.add_argument('coronal_projection', type=Path)
-    parser.add_argument('sagittal_projection', type=Path)
-    parser.add_argument('horizontal_projection', type=Path)
+    parser.add_argument('anatomy_pack', type=Path)
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
     parser.add_argument('--json', type=Path, metavar='REPORT')
     args = parser.parse_args()
 
     catalog = open_volume_pack(args.volume_pack).load_volumes().regions
     intensity = open_intensity_block_pack(args.intensity_pack)
+    anatomy = open_anatomy_pack(
+        args.anatomy_pack,
+        reference_space_id=intensity.reference_space_id,
+        grid_id=intensity.grid_id,
+    )
     source = AtlasSliceSource(
         intensity,
-        {
-            'ap': open_registered_projection(args.coronal_projection),
-            'ml': open_registered_projection(args.sagittal_projection),
-            'dv': open_registered_projection(args.horizontal_projection),
-        },
+        {projection.world_slice_axis: projection for projection in anatomy.projections.values()},
         catalog,
     )
     composer = AtlasSliceComposer(source, args.mapping)

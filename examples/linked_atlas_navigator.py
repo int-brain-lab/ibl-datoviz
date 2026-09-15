@@ -17,15 +17,8 @@ def main() -> int:
     parser.add_argument(
         '--slice-intensity-pack', type=Path, help='registered high-resolution intensity pack'
     )
-    parser.add_argument(
-        '--coronal-projection', type=Path, help='registered coronal projection manifest'
-    )
-    parser.add_argument(
-        '--sagittal-projection', type=Path, help='registered sagittal projection manifest'
-    )
-    parser.add_argument(
-        '--horizontal-projection', type=Path, help='registered horizontal projection manifest'
-    )
+    parser.add_argument('--anatomy-pack', type=Path, help='complete registered anatomy-v2 pack')
+    parser.add_argument('--slice-resolution', choices=('volume', 'registered'), default='volume')
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
     parser.add_argument('--annotation-opacity', type=float, default=0.58)
     parser.add_argument('--volume-opacity', type=float, default=0.24)
@@ -38,15 +31,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    projection_paths = {
-        'ap': args.coronal_projection,
-        'ml': args.sagittal_projection,
-        'dv': args.horizontal_projection,
-    }
-    high_resolution = args.slice_intensity_pack is not None or any(projection_paths.values())
-    missing_projection = any(path is None for path in projection_paths.values())
-    if high_resolution and (args.slice_intensity_pack is None or missing_projection):
-        parser.error('high-resolution slices require the intensity pack and all three projections')
+    high_resolution = args.slice_resolution == 'registered'
+    if high_resolution and (args.slice_intensity_pack is None or args.anatomy_pack is None):
+        parser.error('registered slices require --slice-intensity-pack and --anatomy-pack')
+    if not high_resolution and (
+        args.slice_intensity_pack is not None or args.anatomy_pack is not None
+    ):
+        parser.error('high-resolution pack options require --slice-resolution registered')
     common = {
         'mapping': args.mapping,
         'annotation_opacity': args.annotation_opacity,
@@ -54,11 +45,11 @@ def main() -> int:
         'ui_scale': args.ui_scale,
     }
     if high_resolution:
-        navigator = LinkedAtlasNavigator.from_multiresolution_packs(
+        navigator = LinkedAtlasNavigator.from_anatomy_packs(
             args.mesh_pack,
             args.volume_pack,
             args.slice_intensity_pack,
-            projection_paths,
+            args.anatomy_pack,
             **common,
         )
     else:

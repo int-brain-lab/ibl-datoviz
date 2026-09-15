@@ -63,17 +63,12 @@ def test_offscreen_linked_atlas_smoke(tmp_path):
 
 def test_offscreen_multiresolution_atlas_smoke(tmp_path):
     output = tmp_path / 'multiresolution-atlas.png'
-    projections = {
-        'ap': REGISTERED_FIXTURE / 'coronal.json',
-        'ml': REGISTERED_FIXTURE / 'sagittal.json',
-        'dv': REGISTERED_FIXTURE / 'horizontal.json',
-    }
     try:
-        with LinkedAtlasNavigator.from_multiresolution_packs(
+        with LinkedAtlasNavigator.from_anatomy_packs(
             FIXTURE,
             VOLUME_FIXTURE,
             INTENSITY_FIXTURE,
-            projections,
+            REGISTERED_FIXTURE / 'anatomy-v2.json',
             width=320,
             height=240,
         ) as navigator:

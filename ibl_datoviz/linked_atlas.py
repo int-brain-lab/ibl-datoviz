@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ibl_atlas_assets import (
+    open_anatomy_pack,
     open_intensity_block_pack,
     open_registered_projection,
     open_volume_pack,
@@ -242,6 +243,34 @@ class LinkedAtlasNavigator(AtlasViewer):
         intensity = open_intensity_block_pack(intensity_pack)
         projections = {
             axis: open_registered_projection(path) for axis, path in registered_projections.items()
+        }
+        slices = AtlasSliceSource(intensity, projections, volumes.regions)
+        return cls(AtlasMesh.from_pack(mesh_pack), volumes, slice_source=slices, **kwargs)
+
+    @classmethod
+    def from_anatomy_packs(
+        cls,
+        mesh_pack: str | Path,
+        volume_pack: str | Path,
+        intensity_pack: str | Path,
+        anatomy_pack: str | Path,
+        **kwargs,
+    ) -> LinkedAtlasNavigator:
+        """Use a complete registered anatomy pack for high-resolution slices.
+
+        The bounded dense ``volume_pack`` remains the 3-D ray-casting source. The
+        projection-native ``intensity_pack`` and ``anatomy_pack`` provide lazy slices on
+        their shared grid, so no complete high-resolution volume is uploaded to the GPU.
+        """
+        volumes = open_volume_pack(volume_pack).load_volumes()
+        intensity = open_intensity_block_pack(intensity_pack)
+        anatomy = open_anatomy_pack(
+            anatomy_pack,
+            reference_space_id=intensity.reference_space_id,
+            grid_id=intensity.grid_id,
+        )
+        projections = {
+            projection.world_slice_axis: projection for projection in anatomy.projections.values()
         }
         slices = AtlasSliceSource(intensity, projections, volumes.regions)
         return cls(AtlasMesh.from_pack(mesh_pack), volumes, slice_source=slices, **kwargs)
