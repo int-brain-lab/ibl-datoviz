@@ -47,6 +47,7 @@ class AtlasViewer:
         selection_dim_factor: float = 0.42,
         surface_opacity: float = 1.0,
         ui_scale: float = 1.0,
+        sidebar_width: float = 340.0,
         datoviz: ModuleType | None = None,
     ) -> None:
         if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
@@ -55,6 +56,8 @@ class AtlasViewer:
             raise ValueError('surface_opacity must be between zero and one')
         if not np.isfinite(ui_scale) or ui_scale <= 0:
             raise ValueError('ui_scale must be finite and positive')
+        if not np.isfinite(sidebar_width) or sidebar_width <= 0:
+            raise ValueError('sidebar_width must be finite and positive')
         self.camera_angles = self._validated_camera_angles(camera_angles)
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
@@ -67,6 +70,7 @@ class AtlasViewer:
         self.selection_dim_factor = selection_dim_factor
         self.surface_opacity = surface_opacity
         self.ui_scale = float(ui_scale)
+        self.sidebar_width = float(sidebar_width)
         self.scene = self.dvz.dvz_scene()
         if not self.scene:
             raise RuntimeError('dvz_scene() failed')
@@ -94,6 +98,7 @@ class AtlasViewer:
         self._selected_region_ids: tuple[int, ...] = ()
         self._hovered_region_ids: tuple[int, ...] = ()
         self._highlight_region_ids: tuple[int, ...] = ()
+        self._last_surface_emphasis: tuple[tuple[int, ...], tuple[int, ...]] | None = None
         self._last_mesh_region_ids: tuple[int, ...] = ()
         self._closed = False
         try:
@@ -116,6 +121,21 @@ class AtlasViewer:
         self.figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
         self.panel = self.dvz.dvz_panel_full(self.figure)
         self.dvz.dvz_panel_set_background_color(self.panel, self.dvz.DvzColor(29, 33, 39, 255))
+        self._configure_3d_camera()
+
+    def _configure_3d_camera(self) -> None:
+        """Apply an explicit perspective camera to the normalized atlas geometry."""
+        camera = self.dvz.dvz_camera_desc()
+        camera.view.eye[:] = (0.0, 0.0, 3.0)
+        camera.view.target[:] = (0.0, 0.0, 0.0)
+        camera.view.up[:] = (0.0, 1.0, 0.0)
+        camera.projection.fov_y = 0.72
+        camera.projection.near_clip = 0.01
+        camera.projection.far_clip = 100.0
+        self._check(
+            self.dvz.dvz_panel_set_camera_desc(self.panel, camera),
+            '3-D perspective camera setup',
+        )
 
     @classmethod
     def from_pack(cls, path: str | Path, **kwargs) -> AtlasViewer:
@@ -252,6 +272,7 @@ class AtlasViewer:
         self._selected_region_ids = ()
         self._hovered_region_ids = ()
         self._highlight_region_ids = ()
+        self._last_surface_emphasis = None
         self._last_mesh_region_ids = ()
         self._mapping_control.value = self.mesh_data.mapping_names.index(mapping)
         if self.region_tree is not None:
@@ -332,7 +353,8 @@ class AtlasViewer:
         self._region_opacity = opacity
         selected = self._selected_region_ids
         self._highlight_region_ids = ()
-        if selected:
+        self._last_surface_emphasis = None
+        if selected or self._hovered_region_ids:
             self._apply_selected_region_ids(
                 selected, update_tree=False, update_table=False, clear_mesh=False
             )
@@ -596,18 +618,18 @@ class AtlasViewer:
         return self._selected_region_ids
 
     def _emphasis_region_ids(self) -> tuple[int, ...]:
-        """Return transient hover identity, falling back to committed selection."""
-        return self._hovered_region_ids or self._selected_region_ids
+        """Return committed identities that may dim unselected regions."""
+        return self._selected_region_ids
 
     def _mesh_hovered_region_ids(self) -> tuple[int, ...]:
         """Return the signed region identity under the retained 3-D hover query."""
-        state_ptr = self.dvz.dvz_scene_hover(self.scene, self.panel)
-        if not state_ptr:
+        hover = self.dvz.dvz_item_interaction_hover(self.interaction)
+        if not hover:
             return ()
-        state = state_ptr.contents
-        if not state.active or not state.query.hit or not state.query.link_key:
+        item = self.dvz.DvzSelectionItem()
+        if not self.dvz.dvz_hover_copy(hover, ctypes.byref(item)) or not item.link_key:
             return ()
-        signed = np.asarray(state.query.link_key, dtype=np.uint64).view(np.int64).item()
+        signed = np.asarray(item.link_key, dtype=np.uint64).view(np.int64).item()
         return (int(signed),) if signed else ()
 
     def _set_hovered_region_ids(self, region_ids: Sequence[int]) -> bool:
@@ -927,7 +949,10 @@ class AtlasViewer:
 
     def _gui_callback(self, gui, _view, _user_data) -> None:  # noqa: PLR0912, PLR0915
         self.dvz.dvz_gui_dock_window_once(
-            gui, b'Allen mouse brain atlas', self.dvz.DVZ_GUI_DOCK_SLOT_LEFT, 430.0
+            gui,
+            b'Allen mouse brain atlas',
+            self.dvz.DVZ_GUI_DOCK_SLOT_LEFT,
+            self.sidebar_width,
         )
         if self.viewport is not None:
             self.dvz.dvz_gui_dock_window_once(
@@ -1077,28 +1102,46 @@ class AtlasViewer:
         self._update_surface_emphasis()
 
     def _update_surface_emphasis(self) -> None:
-        """Apply transient hover or committed selection emphasis to the 3-D surface."""
-        region_ids = self._emphasis_region_ids()
-        logical_ids = (
-            self.tree_model.expanded_logical_ids(region_ids)
+        """Dim for selection and brighten hover without dimming unrelated regions."""
+        selected_ids = (
+            self.tree_model.expanded_logical_ids(self._selected_region_ids)
             if self.tree_model is not None
-            else tuple(sorted({abs(region_id) for region_id in region_ids if region_id}))
+            else tuple(
+                sorted({abs(region_id) for region_id in self._selected_region_ids if region_id})
+            )
         )
-        if logical_ids == self._highlight_region_ids:
+        hovered_ids = (
+            self.tree_model.expanded_logical_ids(self._hovered_region_ids)
+            if self.tree_model is not None
+            else tuple(
+                sorted({abs(region_id) for region_id in self._hovered_region_ids if region_id})
+            )
+        )
+        state = (selected_ids, hovered_ids)
+        if state == self._last_surface_emphasis:
             return
         base_colors = self._display_surface_colors()
-        colors = base_colors
-        if logical_ids:
-            mask = np.isin(np.abs(self.mesh_data.mapping_ids(self.mapping)), logical_ids)
+        colors = base_colors.copy()
+        mapping_ids = np.abs(self.mesh_data.mapping_ids(self.mapping))
+        if selected_ids:
+            mask = np.isin(mapping_ids, selected_ids)
             dimmed = base_colors.astype(np.float32)
             dimmed[:, :3] *= self.selection_dim_factor
+            dimmed[:, 3] *= self.selection_dim_factor
             colors = np.ascontiguousarray(np.rint(dimmed), dtype=np.uint8)
             colors[mask] = base_colors[mask]
+            colors[mask, 3] = np.maximum(colors[mask, 3], 220)
+        if hovered_ids:
+            hover_mask = np.isin(mapping_ids, hovered_ids)
+            hovered_rgb = 0.72 * base_colors[hover_mask, :3].astype(np.float32) + 0.28 * 255
+            colors[hover_mask, :3] = np.rint(hovered_rgb).astype(np.uint8)
+            colors[hover_mask, 3] = np.maximum(base_colors[hover_mask, 3], 235)
         self._check(
             self.dvz.dvz_visual_set_data(self.mesh, 'color', colors),
-            'selection color update',
+            'selection and hover color update',
         )
-        self._highlight_region_ids = logical_ids
+        self._highlight_region_ids = selected_ids
+        self._last_surface_emphasis = state
 
     def _sync_selection_highlight(
         self,
@@ -1176,6 +1219,12 @@ class AtlasViewer:
             'view user scale',
         )
         if not offscreen and self.catalog is not None:
+            if not hasattr(self.dvz, 'dvz_hover_copy'):
+                raise RuntimeError(
+                    'interactive atlas hover requires current Datoviz v0.4 Python bindings; '
+                    'put the Datoviz source checkout on PYTHONPATH when using a development '
+                    'libdatoviz build'
+                )
             self._replace_region_tree()
             if self.probe_data is not None:
                 self._replace_probe_table()

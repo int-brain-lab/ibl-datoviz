@@ -277,6 +277,19 @@ class AtlasSliceComposer:
         )
         return np.ascontiguousarray(anatomy), np.ascontiguousarray(annotation_rgba)
 
+    def region_mask(self, axis: str, index: int, region_ids: Sequence[int]) -> NDArray[np.bool_]:
+        """Return a mapping-aware mask for logical atlas region identities."""
+        annotation_slice = self.volumes.slice('annotation', axis, index)
+        annotation = oriented_slice(
+            annotation_slice.values, annotation_slice.array_axes, axis, grid=self.volumes.grid
+        )
+        if int(annotation.max(initial=0)) >= len(self._valid):
+            raise ValueError('annotation contains an unknown source index')
+        logical_ids = tuple({abs(int(region_id)) for region_id in region_ids if region_id})
+        if not logical_ids:
+            return np.zeros(annotation.shape, dtype=bool)
+        return self._valid[annotation] & np.isin(np.abs(self._mapped_ids[annotation]), logical_ids)
+
 
 def cursor_from_slice_fraction(
     cursor: AtlasCursor,

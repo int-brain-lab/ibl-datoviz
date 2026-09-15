@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -67,6 +68,7 @@ class FakeDatoviz:
     def __init__(self):
         self.calls = []
         self.mesh_selection = []
+        self.mesh_hover = None
         self.tree_selection = []
         self.table_selection = []
 
@@ -89,6 +91,27 @@ class FakeDatoviz:
         return self._handle('panel')
 
     def dvz_panel_set_background_color(self, *_args):
+        return 0
+
+    @staticmethod
+    def dvz_camera_desc():
+        return SimpleNamespace(
+            view=SimpleNamespace(eye=[0.0] * 3, target=[0.0] * 3, up=[0.0] * 3),
+            projection=SimpleNamespace(fov_y=0.0, near_clip=0.0, far_clip=0.0),
+        )
+
+    def dvz_panel_set_camera_desc(self, _panel, camera):
+        self.calls.append(
+            (
+                'camera',
+                tuple(camera.view.eye),
+                tuple(camera.view.target),
+                tuple(camera.view.up),
+                camera.projection.fov_y,
+                camera.projection.near_clip,
+                camera.projection.far_clip,
+            )
+        )
         return 0
 
     def dvz_mesh(self, *_args):
@@ -221,6 +244,15 @@ class FakeDatoviz:
     def dvz_item_interaction_selection(self, *_args):
         return self._handle('selection')
 
+    def dvz_item_interaction_hover(self, *_args):
+        return self._handle('hover')
+
+    def dvz_hover_copy(self, _hover, out_item):
+        if self.mesh_hover is None:
+            return False
+        out_item._obj.link_key = self.mesh_hover
+        return True
+
     def dvz_selection_count(self, _selection):
         return len(self.mesh_selection)
 
@@ -310,6 +342,9 @@ def test_viewer_switches_mapping_without_geometry_upload(mesh):
 def test_camera_angles_are_validated_stored_and_applied(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake, camera_angles=(0.1, 0.2, 0.3)) as viewer:
+        camera = next(call for call in fake.calls if call[0] == 'camera')
+        assert camera[1:4] == ((0.0, 0.0, 3.0), (0.0, 0.0, 0.0), (0.0, 1.0, 0.0))
+        np.testing.assert_allclose(camera[4:], (0.72, 0.01, 100.0))
         np.testing.assert_allclose(viewer.camera_angles, (0.1, 0.2, 0.3))
         viewer.arcball = SimpleNamespace(name='arcball')
         viewer.set_camera_angles((-0.4, 0.5, 0.6))
@@ -325,6 +360,8 @@ def test_camera_angles_are_validated_stored_and_applied(mesh):
         AtlasViewer(mesh, datoviz=FakeDatoviz(), surface_opacity=np.nan)
     with pytest.raises(ValueError, match='ui_scale'):
         AtlasViewer(mesh, datoviz=FakeDatoviz(), ui_scale=0)
+    with pytest.raises(ValueError, match='sidebar_width'):
+        AtlasViewer(mesh, datoviz=FakeDatoviz(), sidebar_width=0)
 
 
 def test_translucent_surface_uses_wboit_and_preserves_alpha(mesh):
@@ -338,26 +375,71 @@ def test_translucent_surface_uses_wboit_and_preserves_alpha(mesh):
         mapping_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][-1]
         np.testing.assert_array_equal(mapping_colors[3][:, 3], [64] * len(mesh.positions))
 
+        viewer.set_mapping('allen')
         viewer.set_selected_region_ids([-315])
         color_calls = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')]
         selected_colors = color_calls[-1]
-        np.testing.assert_array_equal(selected_colors[3][:, 3], [64] * len(mesh.positions))
+        np.testing.assert_array_equal(selected_colors[3][:, 3], [220] * len(mesh.positions))
 
 
-def test_hover_emphasis_is_transient_and_restores_selection(mesh):
+def test_hover_brightens_only_hovered_region_without_selection_dimming(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake) as viewer:
-        viewer.set_selected_region_ids([-315])
+        base = viewer._display_surface_colors()
         viewer._set_hovered_region_ids((997,))
+        hover_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][-1][
+            3
+        ]
+        hovered = np.abs(mesh.mapping_ids('allen')) == 997
 
-        assert viewer.selected_region_ids() == (-315,)
-        assert viewer._emphasis_region_ids() == (997,)
-        assert viewer._highlight_region_ids == (997,)
+        assert viewer.selected_region_ids() == ()
+        assert viewer._emphasis_region_ids() == ()
+        assert viewer._highlight_region_ids == ()
+        np.testing.assert_array_equal(hover_colors[~hovered], base[~hovered])
+        assert np.all(hover_colors[hovered, :3] >= base[hovered, :3])
 
+        viewer.set_selected_region_ids([-315])
         viewer._set_hovered_region_ids(())
         assert viewer.selected_region_ids() == (-315,)
         assert viewer._emphasis_region_ids() == (-315,)
         assert viewer._highlight_region_ids == (315,)
+
+
+def test_selection_dims_every_nonselected_surface_region(mesh):
+    presentations = tuple(
+        {
+            **presentation,
+            'mappings': {
+                **presentation['mappings'],
+                'allen': -315 if presentation['presentation_id'] == 0 else 997,
+            },
+        }
+        for presentation in mesh.presentations
+    )
+    multi_region_mesh = replace(mesh, presentations=presentations)
+    fake = FakeDatoviz()
+    with AtlasViewer(multi_region_mesh, datoviz=fake, selection_dim_factor=0.25) as viewer:
+        base = viewer._display_surface_colors()
+        viewer.set_selected_region_ids((-315,))
+        selected_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][
+            -1
+        ][3]
+        selected = np.abs(multi_region_mesh.mapping_ids('allen')) == 315
+
+        np.testing.assert_array_equal(selected_colors[selected, :3], base[selected, :3])
+        np.testing.assert_array_equal(
+            selected_colors[~selected, :3],
+            np.rint(base[~selected, :3].astype(np.float32) * 0.25).astype(np.uint8),
+        )
+        assert np.all(selected_colors[~selected, 3] < base[~selected, 3])
+
+
+def test_mesh_hover_reads_item_interaction_hover_identity(mesh):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake) as viewer:
+        assert viewer._mesh_hovered_region_ids() == ()
+        fake.mesh_hover = encode_region_key(-315)
+        assert viewer._mesh_hovered_region_ids() == (-315,)
 
 
 def test_probe_uses_same_display_transform(mesh):

@@ -52,6 +52,9 @@ def test_offscreen_linked_atlas_smoke(tmp_path):
             assert navigator.cursor.region(navigator.volumes, 'allen').atlas_id == 315
             assert navigator._selected_region_ids == (315,)
             assert navigator._highlight_region_ids == (315,)
+            navigator.select_cursor_region()
+            assert navigator._selected_region_ids == ()
+            navigator.select_cursor_region()
             rgba = navigator.render_offscreen(output)
     except RuntimeError as error:
         _skip_without_native_datoviz(error)

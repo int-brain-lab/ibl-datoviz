@@ -178,3 +178,13 @@ def test_selection_dims_only_other_mapped_regions(volumes):
     assert np.array_equal(selected[1, 2], all_regions[1, 2])
     assert np.all(selected[2, 1, :3] < all_regions[2, 1, :3])
     assert np.array_equal(selected[0, 0], all_regions[0, 0])  # void is anatomical grayscale
+
+
+def test_region_mask_uses_current_mapping_without_selecting_other_regions(volumes):
+    composer = AtlasSliceComposer(volumes, 'allen')
+    mask = composer.region_mask('dv', 1, (997,))
+    assert mask.shape == (4, 5)
+    assert mask.dtype == np.bool_
+    assert mask.any()
+    assert not mask.all()
+    assert not composer.region_mask('dv', 1, ()).any()

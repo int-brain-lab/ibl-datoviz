@@ -23,7 +23,7 @@ def main() -> int:
     parser.add_argument('--annotation-opacity', type=float, default=0.58)
     parser.add_argument('--volume-opacity', type=float, default=0.24)
     parser.add_argument(
-        '--ui-scale', type=float, default=1.5, help='additional UI/accessibility scale'
+        '--ui-scale', type=float, default=1.125, help='additional UI/accessibility scale'
     )
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
     parser.add_argument(

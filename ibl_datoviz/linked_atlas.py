@@ -17,7 +17,6 @@ from ibl_atlas_assets import (
 
 from .atlas import AtlasMesh
 from .atlas_slice_source import AtlasSliceSource
-from .latest_wins import LatestWinsExecutor
 from .navigator import (
     SLICE_DISPLAY_AXES,
     AtlasCursor,
@@ -27,6 +26,7 @@ from .navigator import (
     slice_index_fraction,
     step_slice_cursor,
 )
+from .slice_scheduler import SliceRequest, SliceScheduler
 from .viewer import AtlasViewer
 
 if TYPE_CHECKING:
@@ -107,7 +107,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         boundary_width_px: float = 0.7,
         boundary_color: tuple[int, int, int] = (238, 242, 247),
         slice_background: tuple[int, int, int] = (29, 33, 39),
-        surface_opacity: float = 0.22,
+        surface_opacity: float = 1.0,
         palette=None,
         datoviz: ModuleType | None = None,
         **kwargs,
@@ -155,9 +155,16 @@ class LinkedAtlasNavigator(AtlasViewer):
         self.volume_resolution_label = _resolution_label(volumes.grid)
         self.cursor = AtlasCursor.centre(slice_source)
         self.slice_composer = AtlasSliceComposer(slice_source, mapping)
-        self._slice_prepare_lock = RLock()
+        self._slice_worker_composers = {
+            axis: AtlasSliceComposer(slice_source, mapping) for axis in ('ap', 'ml', 'dv')
+        }
+        self._slice_worker_locks = {axis: RLock() for axis in ('ap', 'ml', 'dv')}
+        self._slice_revisions = {axis: 0 for axis in ('ap', 'ml', 'dv')}
+        self._slice_source_id = str(
+            getattr(slice_source, 'grid_id', getattr(slice_source.grid, 'grid_id', 'atlas-grid'))
+        )
         self._slice_loader = (
-            LatestWinsExecutor(
+            SliceScheduler(
                 self._prepare_slice,
                 notify=self._notify_slice_ready,
                 max_workers=3,
@@ -177,9 +184,12 @@ class LinkedAtlasNavigator(AtlasViewer):
         self.annotation_visible = True
         self.boundaries_visible = True
         self._slice_fields: dict[str, object] = {}
+        self._slice_shapes: dict[str, tuple[int, ...]] = {}
         self._annotation_fields: dict[str, object] = {}
         self._slice_images: dict[str, object] = {}
         self._annotation_images: dict[str, object] = {}
+        self._hover_fields: dict[str, object] = {}
+        self._hover_images: dict[str, object] = {}
         self._boundary_visuals: dict[str, object] = {}
         self._crosshairs: dict[str, object] = {}
         self._hover_markers: dict[str, object] = {}
@@ -293,6 +303,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             self.dvz.dvz_panel_set_background_color(
                 panel, self.dvz.DvzColor(*self.slice_background, 255)
             )
+        self._configure_3d_camera()
         for panel in self.slice_panels.values():
             self._check(
                 self.dvz.dvz_panel_set_domain(panel, self.dvz.DVZ_DIM_X, -1.0, 1.0),
@@ -367,6 +378,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                 self.dvz.dvz_panel_add_visual(panel, image, ctypes.byref(attach)), 'slice attach'
             )
             self._slice_fields[axis] = field
+            self._slice_shapes[axis] = anatomy_data.shape
             self._slice_images[axis] = image
 
             annotation_field = self.dvz.dvz_sampled_field_from_array(
@@ -411,6 +423,44 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._annotation_fields[axis] = annotation_field
             self._annotation_images[axis] = annotation_image
 
+            hover_data = np.zeros_like(annotation_data)
+            hover_field = self.dvz.dvz_sampled_field_from_array(
+                self.scene,
+                hover_data,
+                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                dim=self.dvz.DVZ_FIELD_DIM_2D,
+            )
+            hover_image = self.dvz.dvz_image(self.scene, 0)
+            if not hover_image:
+                raise RuntimeError('dvz hover image() failed')
+            self._check(
+                self.dvz.dvz_visual_set_data_many(
+                    hover_image, {'position': positions, 'texcoords': texcoords}
+                ),
+                f'{axis} hover geometry upload',
+            )
+            self._check(
+                self.dvz.dvz_visual_set_field(hover_image, b'field', hover_field),
+                'hover field bind',
+            )
+            self._check(
+                self.dvz.dvz_image_set_sampling(hover_image, self.dvz.DVZ_IMAGE_SAMPLING_NEAREST),
+                'hover nearest sampling',
+            )
+            self._check(self.dvz.dvz_visual_set_depth_test(hover_image, False), 'hover depth')
+            self._check(
+                self.dvz.dvz_visual_set_alpha_mode(hover_image, self.dvz.DVZ_ALPHA_BLENDED),
+                'hover alpha mode',
+            )
+            attach.z_layer = 2
+            self._check(
+                self.dvz.dvz_panel_add_visual(panel, hover_image, ctypes.byref(attach)),
+                'hover attach',
+            )
+            self._hover_fields[axis] = hover_field
+            self._hover_images[axis] = hover_image
+
             boundaries = self.dvz.dvz_segment(self.scene, 0)
             if not boundaries:
                 raise RuntimeError('slice boundary segment creation failed')
@@ -435,7 +485,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                 self.dvz.dvz_visual_set_alpha_mode(boundaries, self.dvz.DVZ_ALPHA_BLENDED),
                 'boundary alpha mode',
             )
-            attach.z_layer = 2
+            attach.z_layer = 3
             self._check(
                 self.dvz.dvz_panel_add_visual(panel, boundaries, ctypes.byref(attach)),
                 'slice boundaries attach',
@@ -509,34 +559,47 @@ class LinkedAtlasNavigator(AtlasViewer):
             axis,
             index,
             annotation_opacity=self.annotation_opacity,
-            selected_region_ids=self._emphasis_region_ids(),
+            selected_region_ids=self._selected_region_ids,
             selection_dim_factor=self.selection_dim_factor,
         )
 
-    def _slice_layers(self, axis: str) -> tuple[NDArray[np.uint8], NDArray[np.uint8]]:
-        with self._slice_prepare_lock:
+    def _slice_layers(
+        self, axis: str, index: int | None = None
+    ) -> tuple[NDArray[np.uint8], NDArray[np.uint8]]:
+        if index is None:
             index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
-            anatomy, annotation = self.slice_composer.compose_layers(
-                axis,
-                index,
-                annotation_opacity=self.annotation_opacity,
-                selected_region_ids=self._emphasis_region_ids(),
-                selection_dim_factor=self.selection_dim_factor,
-            )
-            if not self.anatomy_visible:
-                anatomy[..., 3] = 0
-            if not self.annotation_visible:
-                annotation[..., 3] = 0
-            return anatomy, annotation
+        anatomy, annotation = self.slice_composer.compose_layers(
+            axis,
+            index,
+            annotation_opacity=self.annotation_opacity,
+            selected_region_ids=self._selected_region_ids,
+            selection_dim_factor=self.selection_dim_factor,
+        )
+        if not self.anatomy_visible:
+            anatomy[..., 3] = 0
+        if not self.annotation_visible:
+            annotation[..., 3] = 0
+        return anatomy, annotation
 
-    def _prepare_slice(self, axis: str):
+    def _prepare_slice(self, request: SliceRequest):
         """Prepare one complete slice payload without touching Datoviz state."""
-        anatomy, annotation = self._slice_layers(axis)
-        with self._slice_prepare_lock:
-            starts, ends = self._boundary_positions(axis)
-            colors = np.tile(self._boundary_rgba(), (len(starts), 1))
-            widths = np.full(len(starts), self.boundary_width_px, dtype=np.float32)
-        return anatomy, annotation, starts, ends, colors, widths
+        composer = self._slice_worker_composers[request.axis]
+        with self._slice_worker_locks[request.axis]:
+            if composer.mapping != request.mapping:
+                composer.set_mapping(request.mapping)
+            anatomy, annotation = composer.compose_layers(
+                request.axis,
+                request.index,
+                annotation_opacity=request.annotation_opacity,
+                selected_region_ids=request.selected_region_ids,
+                selection_dim_factor=request.selection_dim_factor,
+            )
+            starts, ends = composer.boundary_segments(request.axis, request.index)
+        if not request.anatomy_visible:
+            anatomy[..., 3] = 0
+        if not request.annotation_visible:
+            annotation[..., 3] = 0
+        return anatomy, annotation, starts, ends
 
     def _notify_slice_ready(self, _axis: str) -> None:
         """Wake the owner thread after a worker finishes a current request."""
@@ -546,6 +609,64 @@ class LinkedAtlasNavigator(AtlasViewer):
             and self.dvz.dvz_view_post(self.view, self._slice_post_callback, None) != 0
         ):
             self.dvz.dvz_view_wake(self.view)
+
+    def _upload_slice_payload(self, request: SliceRequest, payload) -> None:
+        """Upload one fully prepared slice payload on the view owner thread."""
+        axis = request.axis
+        anatomy, annotation, starts_normalized, ends_normalized = payload
+        expected = self._slice_shapes[axis]
+        if anatomy.shape != expected or annotation.shape != expected:
+            raise RuntimeError(
+                f'{axis} slice payload extent changed: expected {expected}, '
+                f'got anatomy {anatomy.shape} and annotation {annotation.shape}'
+            )
+        self.dvz.dvz_sampled_field_update_from_array(
+            self._slice_fields[axis],
+            anatomy,
+            format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+            semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+            dim=self.dvz.DVZ_FIELD_DIM_2D,
+        )
+        self.dvz.dvz_sampled_field_update_from_array(
+            self._annotation_fields[axis],
+            annotation,
+            format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+            semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+            dim=self.dvz.DVZ_FIELD_DIM_2D,
+        )
+        starts, ends = self._map_boundary_segments(axis, starts_normalized, ends_normalized)
+        colors = np.tile(self._boundary_rgba(), (len(starts), 1))
+        widths = np.full(len(starts), self.boundary_width_px, dtype=np.float32)
+        self._check(
+            self.dvz.dvz_visual_set_data_many(
+                self._boundary_visuals[axis],
+                {
+                    'position_start': starts,
+                    'position_end': ends,
+                    'color': colors,
+                    'stroke_width_px': widths,
+                },
+            ),
+            f'{axis} prepared boundaries update',
+        )
+
+    def _refresh_hover_overlays(self, axes=None) -> None:
+        """Update lightweight region-tint layers without recomposing base slices."""
+        if not self._hover_fields:
+            return
+        refresh_axes = tuple(self._hover_fields) if axes is None else tuple(axes)
+        indices = dict(zip(('ap', 'ml', 'dv'), self.cursor.as_index(), strict=True))
+        for axis in refresh_axes:
+            mask = self.slice_composer.region_mask(axis, indices[axis], self._hovered_region_ids)
+            overlay = np.zeros((*mask.shape, 4), dtype=np.uint8)
+            overlay[mask] = (255, 222, 92, 104)
+            self.dvz.dvz_sampled_field_update_from_array(
+                self._hover_fields[axis],
+                overlay,
+                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                dim=self.dvz.DVZ_FIELD_DIM_2D,
+            )
 
     def _drain_prepared_slices(self, _view, _user_data) -> None:
         """Apply prepared slice payloads on the Datoviz view owner thread."""
@@ -557,34 +678,9 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._slice_error = error
             return
         for item in ready:
-            axis = item.key
-            anatomy, annotation, starts, ends, colors, widths = item.result
-            self.dvz.dvz_sampled_field_update_from_array(
-                self._slice_fields[axis],
-                anatomy,
-                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                dim=self.dvz.DVZ_FIELD_DIM_2D,
-            )
-            self.dvz.dvz_sampled_field_update_from_array(
-                self._annotation_fields[axis],
-                annotation,
-                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                dim=self.dvz.DVZ_FIELD_DIM_2D,
-            )
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
-                    self._boundary_visuals[axis],
-                    {
-                        'position_start': starts,
-                        'position_end': ends,
-                        'color': colors,
-                        'stroke_width_px': widths,
-                    },
-                ),
-                f'{axis} prepared boundaries update',
-            )
+            self._upload_slice_payload(item.request, item.payload)
+            if self._hovered_region_ids:
+                self._refresh_hover_overlays((item.request.axis,))
         if ready:
             self._slice_error = None
             self.dvz.dvz_view_request_frame(self.view)
@@ -608,10 +704,24 @@ class LinkedAtlasNavigator(AtlasViewer):
         alpha = round(255 * self.boundary_opacity) if self.boundaries_visible else 0
         return np.asarray((*self.boundary_color, alpha), dtype=np.uint8)
 
-    def _boundary_positions(self, axis: str) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+    def _boundary_positions(
+        self,
+        axis: str,
+        *,
+        composer: AtlasSliceComposer | None = None,
+        index: int | None = None,
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
         """Map normalized atlas boundary segments onto one displayed slice quad."""
-        index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
-        starts, ends = self.slice_composer.boundary_segments(axis, index)
+        composer = self.slice_composer if composer is None else composer
+        if index is None:
+            index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
+        starts, ends = composer.boundary_segments(axis, index)
+        return self._map_boundary_segments(axis, starts, ends)
+
+    def _map_boundary_segments(
+        self, axis: str, starts: NDArray[np.float32], ends: NDArray[np.float32]
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+        """Map normalized boundary segments using the current displayed quad."""
         positions, _ = self._slice_quad(axis)
         x0, y0 = positions[0, :2]
         x1, y1 = positions[3, :2]
@@ -806,7 +916,22 @@ class LinkedAtlasNavigator(AtlasViewer):
         refresh_axes = tuple(self._slice_fields) if axes is None else tuple(axes)
         if self._slice_loader is not None and self.view is not None:
             for axis in refresh_axes:
-                self._slice_loader.request(axis, axis)
+                index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
+                self._slice_revisions[axis] += 1
+                self._slice_loader.submit(
+                    SliceRequest(
+                        axis=axis,
+                        index=index,
+                        revision=self._slice_revisions[axis],
+                        source_id=self._slice_source_id,
+                        mapping=self.mapping,
+                        annotation_opacity=self.annotation_opacity,
+                        anatomy_visible=self.anatomy_visible,
+                        annotation_visible=self.annotation_visible,
+                        selected_region_ids=self._selected_region_ids,
+                        selection_dim_factor=self.selection_dim_factor,
+                    )
+                )
         else:
             for axis in refresh_axes:
                 anatomy, annotation = self._slice_layers(axis)
@@ -839,7 +964,11 @@ class LinkedAtlasNavigator(AtlasViewer):
     def _update_slice_geometry(self, axis: str) -> None:
         """Upload one slice's zoomed quad and aligned overlays."""
         positions, _ = self._slice_quad(axis)
-        for visual in (self._slice_images[axis], self._annotation_images[axis]):
+        for visual in (
+            self._slice_images[axis],
+            self._annotation_images[axis],
+            self._hover_images[axis],
+        ):
             self._check(
                 self.dvz.dvz_visual_set_data(visual, 'position', positions),
                 f'{axis} slice zoom',
@@ -961,19 +1090,24 @@ class LinkedAtlasNavigator(AtlasViewer):
         self.set_cursor(cursor, select_region=False)
         return True
 
-    def select_cursor_region(self) -> None:
-        """Commit the region under the current AP/ML/DV cursor."""
+    def toggle_cursor_region_selection(self) -> None:
+        """Toggle the region under the current AP/ML/DV cursor."""
         row = self.cursor.region(self.slice_source, self.mapping)
         ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
+        if ids == self._selected_region_ids:
+            ids = ()
         self._apply_selected_region_ids(ids, update_tree=True, update_table=True, clear_mesh=True)
+
+    def select_cursor_region(self) -> None:
+        """Toggle the cursor region; retained as the public convenience name."""
+        self.toggle_cursor_region_selection()
 
     def set_mapping(self, mapping: str, palette=None) -> None:
         """Switch all mesh, slice, cursor, and ontology identities together."""
         if palette is not None:
             raise ValueError('linked atlas slices require the verified catalog palette')
         super().set_mapping(mapping)
-        with self._slice_prepare_lock:
-            self.slice_composer.set_mapping(mapping)
+        self.slice_composer.set_mapping(mapping)
         self._refresh_slices()
 
     def _apply_selected_region_ids(self, region_ids, **kwargs) -> None:
@@ -982,10 +1116,10 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._refresh_slices()
 
     def _set_hovered_region_ids(self, region_ids) -> bool:
-        """Apply transient hover emphasis to every linked visual panel."""
+        """Brighten transient hover across 3-D and lightweight slice overlays."""
         changed = super()._set_hovered_region_ids(region_ids)
-        if changed and self._slice_fields:
-            self._refresh_slices()
+        if changed:
+            self._refresh_hover_overlays()
         return changed
 
     def _sync_viewport_hover(self, hovered: bool) -> None:
@@ -1002,18 +1136,21 @@ class LinkedAtlasNavigator(AtlasViewer):
         else:
             self._hovered_region_label = None
 
-    def _draw_extra_gui(self, gui) -> None:  # noqa: PLR0912 - declarative GUI controls
-        if self._slice_loader is not None:
-            self._drain_prepared_slices(self.view, None)
-        self.dvz.dvz_gui_separator_text(gui, b'Linked atlas cursor')
-        self.dvz.dvz_gui_text(gui, b'AP: ML -> right, dorsal up')
-        self.dvz.dvz_gui_text(gui, b'ML: AP -> right, dorsal up')
-        self.dvz.dvz_gui_text(gui, b'DV: ML -> right, anterior up')
-        self.dvz.dvz_gui_text(gui, b'3-D: left-drag to orbit; wheel to zoom')
+    def _draw_cursor_gui(self, gui) -> None:
+        """Draw compact, always-visible cursor and selection controls."""
+        world = self.cursor.world_um(self.slice_source)
+        row = self.cursor.region(self.slice_source, self.mapping)
+        region = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
+        self.dvz.dvz_gui_separator_text(gui, b'Cursor and selection')
         self.dvz.dvz_gui_text(
             gui,
             f'Slices {self.slice_resolution_label} | 3-D {self.volume_resolution_label}'.encode(),
         )
+        self.dvz.dvz_gui_text(
+            gui,
+            f'ML {world[0]:.0f} · AP {world[1]:.0f} · DV {world[2]:.0f} um'.encode(),
+        )
+        self.dvz.dvz_gui_text(gui, region.encode())
         changed = False
         for axis, size in zip(('ap', 'ml', 'dv'), self.slice_source.grid.shape, strict=True):
             changed |= self.dvz.dvz_gui_slider_int(
@@ -1024,8 +1161,18 @@ class LinkedAtlasNavigator(AtlasViewer):
                 AtlasCursor(*(self._cursor_controls[axis].value for axis in ('ap', 'ml', 'dv'))),
                 select_region=False,
             )
-        if self.dvz.dvz_gui_button(gui, b'Select cursor region'):
-            self.select_cursor_region()
+        if row is not None and row.atlas_id != 0:
+            selected = self._selected_region_ids == (row.atlas_id,)
+            action = 'Deselect' if selected else 'Select'
+            label = f'{action} {row.acronym}##cursor_region_selection'.encode()
+            if self.dvz.dvz_gui_button(gui, label):
+                self.toggle_cursor_region_selection()
+        hover_source = self._hovered_slice_axis.upper() if self._hovered_slice_axis else '3-D'
+        hover_label = self._hovered_region_label or '—'
+        self.dvz.dvz_gui_text(gui, f'Hover ({hover_source}): {hover_label}'.encode())
+
+    def _draw_layer_gui(self, gui) -> None:  # noqa: PLR0912 - declarative GUI controls
+        """Draw optional layer controls in a compact collapsible section."""
         if self.dvz.dvz_gui_slider_float(
             gui,
             b'Annotation opacity',
@@ -1074,17 +1221,19 @@ class LinkedAtlasNavigator(AtlasViewer):
                 'volume opacity update',
             )
             self._update_surface_alpha_mode()
-        world = self.cursor.world_um(self.slice_source)
-        row = self.cursor.region(self.slice_source, self.mapping)
-        region = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
-        self.dvz.dvz_gui_text(
-            gui,
-            f'ML {world[0]:.0f} · AP {world[1]:.0f} · DV {world[2]:.0f} um'.encode(),
-        )
-        self.dvz.dvz_gui_text(gui, region.encode())
-        hover_source = self._hovered_slice_axis.upper() if self._hovered_slice_axis else '3-D'
-        hover_label = self._hovered_region_label or '—'
-        self.dvz.dvz_gui_text(gui, f'Hover ({hover_source}): {hover_label}'.encode())
+
+    def _draw_extra_gui(self, gui) -> None:
+        if self._slice_loader is not None:
+            self._drain_prepared_slices(self.view, None)
+        self._draw_cursor_gui(gui)
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Slices and 3-D layers', 0):
+            self._draw_layer_gui(gui)
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Controls and orientation', 0):
+            self.dvz.dvz_gui_text(gui, b'AP: ML -> right, dorsal up')
+            self.dvz.dvz_gui_text(gui, b'ML: AP -> right, dorsal up')
+            self.dvz.dvz_gui_text(gui, b'DV: ML -> right, anterior up')
+            self.dvz.dvz_gui_text(gui, b'Slices: wheel moves; Ctrl+wheel zooms')
+            self.dvz.dvz_gui_text(gui, b'3-D: left-drag orbits; wheel zooms')
         if self._slice_error is not None:
             self.dvz.dvz_gui_text(gui, f'Slice load failed: {self._slice_error}'.encode())
 
