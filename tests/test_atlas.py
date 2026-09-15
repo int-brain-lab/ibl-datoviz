@@ -481,6 +481,57 @@ def test_selection_dims_every_nonselected_surface_region(mesh):
         assert np.all(selected_colors[~selected, 3] < base[~selected, 3])
 
 
+def test_surface_emphasis_reuses_and_invalidates_derived_arrays(mesh):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake, selection_dim_factor=0.25) as viewer:
+        initial_base = viewer._surface_base_colors_cache
+        assert initial_base is not None
+        assert viewer._surface_mapping_ids_cache is None
+
+        viewer._set_hovered_region_ids((997,))
+        initial_mapping_ids = viewer._surface_mapping_ids_cache
+        initial_work = viewer._surface_emphasis_work
+        assert initial_mapping_ids is not None
+        assert initial_work is not None
+
+        viewer._set_hovered_region_ids((-315,))
+        assert viewer._surface_base_colors_cache is initial_base
+        assert viewer._surface_mapping_ids_cache is initial_mapping_ids
+        assert viewer._surface_emphasis_work is initial_work
+
+        viewer.set_selected_region_ids((-315,))
+        initial_dimmed = viewer._surface_dimmed_colors_cache
+        assert initial_dimmed is not None
+        viewer.set_selected_region_ids((997,))
+        assert viewer._surface_dimmed_colors_cache is initial_dimmed
+
+        viewer.set_mapping('beryl')
+        assert viewer._surface_base_colors_cache is not initial_base
+        assert viewer._surface_mapping_ids_cache is None
+        assert viewer._surface_dimmed_colors_cache is None
+        assert viewer._surface_emphasis_work is None
+
+        viewer._set_hovered_region_ids((997,))
+        assert viewer._surface_mapping_ids_cache is not initial_mapping_ids
+
+
+def test_region_data_replaces_surface_emphasis_base_cache(mesh):
+    catalog = open_region_catalog(REGIONS)
+    data = AtlasRegionValues.from_arrays([-997, -8], [1.0, 2.5])
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, catalog=catalog, datoviz=fake) as viewer:
+        initial_base = viewer._surface_base_colors_cache
+        viewer._set_hovered_region_ids((997,))
+        assert viewer._surface_mapping_ids_cache is not None
+
+        viewer.set_region_data(data, value_range=(0, 5), mapping_reduction='weighted_mean')
+
+        assert viewer._surface_base_colors_cache is not initial_base
+        assert viewer._surface_mapping_ids_cache is not None
+        color_updates = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')]
+        np.testing.assert_array_equal(viewer._surface_base_colors_cache, color_updates[-2][3])
+
+
 def test_mesh_hover_reads_item_interaction_hover_identity(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake) as viewer:

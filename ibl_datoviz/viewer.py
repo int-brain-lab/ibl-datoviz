@@ -106,6 +106,10 @@ class AtlasViewer:
         self._hovered_region_ids: tuple[int, ...] = ()
         self._highlight_region_ids: tuple[int, ...] = ()
         self._last_surface_emphasis: tuple[tuple[int, ...], tuple[int, ...]] | None = None
+        self._surface_base_colors_cache: NDArray[np.uint8] | None = None
+        self._surface_mapping_ids_cache: NDArray[np.int64] | None = None
+        self._surface_dimmed_colors_cache: NDArray[np.uint8] | None = None
+        self._surface_emphasis_work: NDArray[np.uint8] | None = None
         self._last_mesh_region_ids: tuple[int, ...] = ()
         self._closed = False
         try:
@@ -206,17 +210,19 @@ class AtlasViewer:
         self.mesh = self.dvz.dvz_mesh(self.scene, 0)
         if not self.mesh:
             raise RuntimeError('dvz_mesh() failed')
+        surface_colors = self._display_surface_colors()
         self._check(
             self.dvz.dvz_visual_set_data_many(
                 self.mesh,
                 {
                     'position': self.mesh_data.exploded_positions(self.explode),
                     'normal': self.mesh_data.normals,
-                    'color': self._display_surface_colors(),
+                    'color': surface_colors,
                 },
             ),
             'dense mesh upload',
         )
+        self._invalidate_surface_emphasis_cache(surface_colors)
         if self.surface_opacity < 1:
             self._check(
                 self.dvz.dvz_visual_set_alpha_mode(self.mesh, self.dvz.DVZ_ALPHA_WBOIT),
@@ -273,10 +279,9 @@ class AtlasViewer:
         if self.catalog is not None and palette is None:
             self.tree_model = AtlasTreeModel.from_catalog(self.catalog, mapping)
             effective_palette = self.tree_model.palette
+        surface_colors = self._display_surface_colors(mapping, effective_palette)
         self._check(
-            self.dvz.dvz_visual_set_data(
-                self.mesh, 'color', self._display_surface_colors(mapping, effective_palette)
-            ),
+            self.dvz.dvz_visual_set_data(self.mesh, 'color', surface_colors),
             'mapping color update',
         )
         self._check(
@@ -300,7 +305,7 @@ class AtlasViewer:
         self._selected_region_ids = ()
         self._hovered_region_ids = ()
         self._highlight_region_ids = ()
-        self._last_surface_emphasis = None
+        self._invalidate_surface_emphasis_cache(surface_colors)
         self._last_mesh_region_ids = ()
         self._mapping_control.value = self.mesh_data.mapping_names.index(mapping)
         if self.region_tree is not None:
@@ -381,7 +386,7 @@ class AtlasViewer:
         self._region_opacity = opacity
         selected = self._selected_region_ids
         self._highlight_region_ids = ()
-        self._last_surface_emphasis = None
+        self._invalidate_surface_emphasis_cache(surface_colors)
         if selected or self._hovered_region_ids:
             self._apply_selected_region_ids(
                 selected, update_tree=False, update_table=False, clear_mesh=False
@@ -1160,15 +1165,21 @@ class AtlasViewer:
         state = (selected_ids, hovered_ids)
         if state == self._last_surface_emphasis:
             return
-        base_colors = self._display_surface_colors()
-        colors = base_colors.copy()
-        mapping_ids = np.abs(self.mesh_data.mapping_ids(self.mapping))
+        base_colors, mapping_ids = self._surface_emphasis_inputs()
+        if self._surface_emphasis_work is None:
+            self._surface_emphasis_work = np.empty_like(base_colors)
+        colors = self._surface_emphasis_work
+        np.copyto(colors, base_colors)
         if selected_ids:
             mask = np.isin(mapping_ids, selected_ids)
-            dimmed = base_colors.astype(np.float32)
-            dimmed[:, :3] *= self.selection_dim_factor
-            dimmed[:, 3] *= self.selection_dim_factor
-            colors = np.ascontiguousarray(np.rint(dimmed), dtype=np.uint8)
+            if self._surface_dimmed_colors_cache is None:
+                dimmed = base_colors.astype(np.float32)
+                dimmed[:, :3] *= self.selection_dim_factor
+                dimmed[:, 3] *= self.selection_dim_factor
+                self._surface_dimmed_colors_cache = np.ascontiguousarray(
+                    np.rint(dimmed), dtype=np.uint8
+                )
+            np.copyto(colors, self._surface_dimmed_colors_cache)
             colors[mask] = base_colors[mask]
             colors[mask, 3] = np.maximum(colors[mask, 3], 220)
         if hovered_ids:
@@ -1182,6 +1193,26 @@ class AtlasViewer:
         )
         self._highlight_region_ids = selected_ids
         self._last_surface_emphasis = state
+
+    def _invalidate_surface_emphasis_cache(
+        self, base_colors: NDArray[np.uint8] | None = None
+    ) -> None:
+        """Invalidate derived surface styling after canonical color or mapping changes."""
+        self._surface_base_colors_cache = base_colors
+        self._surface_mapping_ids_cache = None
+        self._surface_dimmed_colors_cache = None
+        self._surface_emphasis_work = None
+        self._last_surface_emphasis = None
+
+    def _surface_emphasis_inputs(self) -> tuple[NDArray[np.uint8], NDArray[np.int64]]:
+        """Return cached canonical colors and absolute region IDs for interactive styling."""
+        if self._surface_base_colors_cache is None:
+            self._surface_base_colors_cache = self._display_surface_colors()
+        if self._surface_mapping_ids_cache is None:
+            self._surface_mapping_ids_cache = np.ascontiguousarray(
+                np.abs(self.mesh_data.mapping_ids(self.mapping)), dtype=np.int64
+            )
+        return self._surface_base_colors_cache, self._surface_mapping_ids_cache
 
     def _sync_selection_highlight(
         self,

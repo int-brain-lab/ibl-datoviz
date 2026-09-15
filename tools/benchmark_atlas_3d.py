@@ -371,16 +371,32 @@ def _scenario_summary(runs: Sequence[dict]) -> dict[str, float | int]:
         'p99',
         'canvas',
         'prepare',
+        'gui_frame',
+        'gui_viewport',
+        'prepare_other',
         'scene_total',
         'execute',
         'post',
+        'query',
         'callback',
         'canvas_overhead',
     )
     summary: dict[str, float | int] = {'repeats': len(runs)}
     for field in fields:
-        values = [float(run['datoviz_frame_timing_ms'][field]) for run in runs]
-        summary[f'{field}_median'] = float(np.median(values))
+        values = [
+            float(run['datoviz_frame_timing_ms'][field])
+            for run in runs
+            if field in run['datoviz_frame_timing_ms']
+        ]
+        if values:
+            summary[f'{field}_median'] = float(np.median(values))
+    query_counts = [
+        int(run['datoviz_frame_timing_ms']['query_count'])
+        for run in runs
+        if 'query_count' in run['datoviz_frame_timing_ms']
+    ]
+    if query_counts:
+        summary['query_count_median'] = int(np.median(query_counts))
     summary['observed_fps_median'] = float(np.median([run['observed_fps'] for run in runs]))
     run_values = [float(run['datoviz_frame_timing_ms']['run_ms']) for run in runs]
     fps_values = [float(run['observed_fps']) for run in runs]

@@ -41,9 +41,14 @@ def test_scenario_summary_preserves_repeat_count():
                 'p99': 4,
                 'canvas': 1.5,
                 'prepare': 0.1,
+                'gui_frame': 0.02,
+                'gui_viewport': 0.03,
+                'prepare_other': 0.05,
                 'scene_total': 0.2,
                 'execute': 0.3,
                 'post': 0.4,
+                'query': 0.35,
+                'query_count': 2,
                 'callback': 0.25,
                 'canvas_overhead': 0.5,
             },
@@ -56,3 +61,6 @@ def test_scenario_summary_preserves_repeat_count():
     assert summary['repeats'] == 3
     assert summary['run_ms_median'] == pytest.approx(5)
     assert summary['observed_fps_median'] == pytest.approx(200)
+    assert summary['gui_viewport_median'] == pytest.approx(0.03)
+    assert summary['query_median'] == pytest.approx(0.35)
+    assert summary['query_count_median'] == 2
