@@ -1204,7 +1204,7 @@ class AtlasViewer:
                 )
             np.copyto(colors, self._surface_dimmed_colors_cache)
             colors[selected_mask] = base_colors[selected_mask]
-            colors[selected_mask, 3] = np.maximum(colors[selected_mask, 3], 220)
+            colors[selected_mask, 3] = 255
         if hovered_ids:
             hover_mask = np.isin(mapping_ids, hovered_ids)
             hovered_rgb = 0.72 * base_colors[hover_mask, :3].astype(np.float32) + 0.28 * 255
@@ -1213,9 +1213,7 @@ class AtlasViewer:
                 colors[hover_mask, 3] = np.maximum(base_colors[hover_mask, 3], 235)
             else:
                 selected_hover_mask = hover_mask & selected_mask
-                colors[selected_hover_mask, 3] = np.maximum(
-                    base_colors[selected_hover_mask, 3], 235
-                )
+                colors[selected_hover_mask, 3] = 255
         self._check(
             self.dvz.dvz_visual_set_data(self.mesh, 'color', colors),
             'selection and hover color update',

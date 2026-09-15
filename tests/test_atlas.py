@@ -429,7 +429,7 @@ def test_translucent_surface_uses_wboit_and_preserves_alpha(mesh):
         viewer.set_selected_region_ids([-315])
         color_calls = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')]
         selected_colors = color_calls[-1]
-        np.testing.assert_array_equal(selected_colors[3][:, 3], [220] * len(mesh.positions))
+        np.testing.assert_array_equal(selected_colors[3][:, 3], [255] * len(mesh.positions))
 
 
 def test_hover_brightens_only_hovered_region_without_selection_dimming(mesh):
@@ -482,6 +482,7 @@ def test_selection_dims_every_nonselected_surface_region(mesh):
         selected = np.abs(multi_region_mesh.mapping_ids('allen')) == 315
 
         np.testing.assert_array_equal(selected_colors[selected, :3], base[selected, :3])
+        np.testing.assert_array_equal(selected_colors[selected, 3], 255)
         np.testing.assert_array_equal(selected_colors[~selected, :3], base[~selected, :3])
         np.testing.assert_array_equal(
             selected_colors[~selected, 3],
@@ -495,7 +496,7 @@ def test_selection_dims_every_nonselected_surface_region(mesh):
             -1
         ][3]
         np.testing.assert_array_equal(hovered_colors[~selected, 3], selected_colors[~selected, 3])
-        np.testing.assert_array_equal(hovered_colors[selected], selected_colors[selected])
+        np.testing.assert_array_equal(hovered_colors[selected, 3], 255)
 
         viewer.clear_selection()
         alpha_modes = [call[2] for call in fake.calls if call[:2] == ('alpha_mode', 'mesh')]
