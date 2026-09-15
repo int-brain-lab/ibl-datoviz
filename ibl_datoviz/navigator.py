@@ -26,15 +26,37 @@ def _hex_rgb(value: str) -> tuple[int, int, int]:
     return tuple(int(value[offset : offset + 2], 16) for offset in (1, 3, 5))  # type: ignore[return-value]
 
 
-def oriented_slice(values: NDArray, array_axes: Sequence[str], axis: str) -> NDArray:
-    """Orient a raw atlas slice as image rows (y) and columns (x)."""
+def oriented_slice(
+    values: NDArray,
+    array_axes: Sequence[str],
+    axis: str,
+    *,
+    grid=None,
+) -> NDArray:
+    """Orient a raw atlas slice as image rows (y) and columns (x).
+
+    With a grid, increasing ML/AP/DV world coordinates are shown right/up. This
+    compensates for both the atlas affine sign and Datoviz's row-zero-at-v-zero
+    image convention.
+    """
     if axis not in SLICE_DISPLAY_AXES:
         raise ValueError('slice axis must be ap, ml or dv')
     axes = tuple(array_axes)
     if len(axes) != 2 or set(axes) != set(SLICE_DISPLAY_AXES[axis]):
         raise ValueError(f'unexpected {axis} slice axes: {axes}')
     x_axis, y_axis = SLICE_DISPLAY_AXES[axis]
-    return np.ascontiguousarray(np.transpose(values, (axes.index(y_axis), axes.index(x_axis))))
+    result = np.transpose(values, (axes.index(y_axis), axes.index(x_axis)))
+    if grid is not None:
+        matrix = np.asarray(grid.index_to_world_um_matrix, dtype=np.float64).reshape(4, 4)
+        for screen_axis, anatomical_axis in ((1, x_axis), (0, y_axis)):
+            array_index = grid.array_axes.index(anatomical_axis)
+            world_index = grid.world_axes.index(anatomical_axis)
+            derivative = matrix[world_index, array_index]
+            if derivative == 0:
+                raise ValueError('slice orientation requires an axis-aligned atlas grid')
+            if derivative < 0:
+                result = np.flip(result, axis=screen_axis)
+    return np.ascontiguousarray(result)
 
 
 def mapped_region(volumes: AtlasVolumes, source_index: int, mapping: str) -> AtlasRegion | None:
@@ -45,6 +67,122 @@ def mapped_region(volumes: AtlasVolumes, source_index: int, mapping: str) -> Atl
         return None
     by_id = {row.atlas_id: row for row in volumes.regions.physical(mapping)}
     return by_id[mapped_id]
+
+
+class AtlasSliceComposer:
+    """Cache volume-wide contrast and mapping lookup state for fast slice updates."""
+
+    def __init__(self, volumes: AtlasVolumes, mapping: str = 'allen') -> None:
+        self.volumes = volumes
+        self.low, self.high = (float(value) for value in np.percentile(volumes.template, (1, 99)))
+        if self.high <= self.low:
+            self.high = self.low + 1.0
+        self.mapping = ''
+        self._colors = np.empty((0, 3), dtype=np.uint8)
+        self._mapped_ids = np.empty(0, dtype=np.int64)
+        self._valid = np.empty(0, dtype=bool)
+        self.set_mapping(mapping)
+
+    def set_mapping(self, mapping: str) -> None:
+        """Rebuild the dense source-index lookup for one target mapping."""
+        physical = self.volumes.regions.physical('allen')
+        size = max(row.index for row in physical) + 1
+        colors = np.zeros((size, 3), dtype=np.uint8)
+        mapped_ids = np.zeros(size, dtype=np.int64)
+        valid = np.zeros(size, dtype=bool)
+        target_by_id = {row.atlas_id: row for row in self.volumes.regions.physical(mapping)}
+        mapped = self.volumes.regions.map_allen_ids((row.atlas_id for row in physical), mapping)
+        for row, mapped_id in zip(physical, mapped, strict=True):
+            if mapped_id is None or row.index == 0:
+                continue
+            target = target_by_id[mapped_id]
+            colors[row.index] = _hex_rgb(target.color_hex)
+            mapped_ids[row.index] = target.atlas_id
+            valid[row.index] = True
+        self.mapping = mapping
+        self._colors = colors
+        self._mapped_ids = mapped_ids
+        self._valid = valid
+
+    def compose(
+        self,
+        axis: str,
+        index: int,
+        *,
+        annotation_opacity: float = 0.58,
+        selected_region_ids: Sequence[int] = (),
+        selection_dim_factor: float = 0.35,
+    ) -> NDArray[np.uint8]:
+        """Compose one RGBA slice in O(slice pixels) after cached setup."""
+        if not np.isfinite(annotation_opacity) or not 0 <= annotation_opacity <= 1:
+            raise ValueError('annotation_opacity must be between zero and one')
+        if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
+            raise ValueError('selection_dim_factor must be between zero and one')
+
+        template_slice = self.volumes.slice('template', axis, index)
+        annotation_slice = self.volumes.slice('annotation', axis, index)
+        template = oriented_slice(
+            template_slice.values, template_slice.array_axes, axis, grid=self.volumes.grid
+        )
+        annotation = oriented_slice(
+            annotation_slice.values, annotation_slice.array_axes, axis, grid=self.volumes.grid
+        )
+        if int(annotation.max(initial=0)) >= len(self._valid):
+            raise ValueError('annotation contains an unknown source index')
+
+        gray = np.clip((template.astype(np.float32) - self.low) / (self.high - self.low), 0, 1)
+        rgb = np.repeat(np.rint(gray[..., None] * 255).astype(np.uint8), 3, axis=2)
+        valid = self._valid[annotation]
+        region_rgb = self._colors[annotation].astype(np.float32)
+        selected = {abs(int(region_id)) for region_id in selected_region_ids if region_id}
+        if selected:
+            dim = valid & ~np.isin(np.abs(self._mapped_ids[annotation]), tuple(selected))
+            region_rgb[dim] *= selection_dim_factor
+        blended = rgb.astype(np.float32) * (1 - annotation_opacity)
+        blended += region_rgb * annotation_opacity
+        rgb[valid] = np.rint(blended[valid]).astype(np.uint8)
+        alpha = np.full((*rgb.shape[:2], 1), 255, dtype=np.uint8)
+        return np.ascontiguousarray(np.concatenate((rgb, alpha), axis=2))
+
+
+def cursor_from_slice_fraction(
+    cursor: AtlasCursor,
+    axis: str,
+    x_fraction: float,
+    y_fraction: float,
+    grid,
+) -> AtlasCursor:
+    """Move two cursor axes from normalized coordinates within a slice image."""
+    if axis not in SLICE_DISPLAY_AXES:
+        raise ValueError('slice axis must be ap, ml or dv')
+    if not np.isfinite((x_fraction, y_fraction)).all():
+        raise ValueError('slice coordinates must be finite')
+    if not 0 <= x_fraction <= 1 or not 0 <= y_fraction <= 1:
+        raise ValueError('slice coordinates must lie between zero and one')
+    shape = grid.shape
+    sizes = dict(zip(('ap', 'ml', 'dv'), shape, strict=True))
+    x_axis, y_axis = SLICE_DISPLAY_AXES[axis]
+    fractions = {x_axis: x_fraction, y_axis: y_fraction}
+    for anatomical_axis in (x_axis, y_axis):
+        array_index = grid.array_axes.index(anatomical_axis)
+        world_index = grid.world_axes.index(anatomical_axis)
+        matrix = np.asarray(grid.index_to_world_um_matrix, dtype=np.float64).reshape(4, 4)
+        derivative = matrix[world_index, array_index]
+        if derivative == 0:
+            raise ValueError('slice cursor requires an axis-aligned atlas grid')
+        if derivative < 0:
+            fractions[anatomical_axis] = 1 - fractions[anatomical_axis]
+    result = cursor.replace(x_axis, round(fractions[x_axis] * (sizes[x_axis] - 1)), shape)
+    return result.replace(y_axis, round(fractions[y_axis] * (sizes[y_axis] - 1)), shape)
+
+
+def slice_index_fraction(grid, axis: str, index: int) -> float:
+    """Map one array index to a world-increasing screen fraction."""
+    array_index = grid.array_axes.index(axis)
+    world_index = grid.world_axes.index(axis)
+    derivative = np.asarray(grid.index_to_world_um_matrix).reshape(4, 4)[world_index, array_index]
+    fraction = index / max(1, grid.shape[array_index] - 1)
+    return float(1 - fraction if derivative < 0 else fraction)
 
 
 def compose_atlas_slice(
@@ -63,42 +201,13 @@ def compose_atlas_slice(
     through the volume pack and requested atlas mapping. Void and unmapped reduced
     regions show the anatomical template without an invented ontology identity.
     """
-    if not np.isfinite(annotation_opacity) or not 0 <= annotation_opacity <= 1:
-        raise ValueError('annotation_opacity must be between zero and one')
-    if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
-        raise ValueError('selection_dim_factor must be between zero and one')
-
-    template_slice = volumes.slice('template', axis, index)
-    annotation_slice = volumes.slice('annotation', axis, index)
-    template = oriented_slice(template_slice.values, template_slice.array_axes, axis)
-    annotation = oriented_slice(annotation_slice.values, annotation_slice.array_axes, axis)
-
-    low, high = np.percentile(volumes.template, (1.0, 99.0))
-    if high <= low:
-        high = low + 1.0
-    gray = np.clip((template.astype(np.float32) - low) / (high - low), 0, 1)
-    base = np.rint(gray[..., None] * 255).astype(np.uint8)
-    rgb = np.repeat(base, 3, axis=2)
-
-    selected = {abs(int(region_id)) for region_id in selected_region_ids if region_id}
-    for raw_source_index in np.unique(annotation):
-        source_index = int(raw_source_index)
-        if source_index == 0:
-            continue
-        row = mapped_region(volumes, source_index, mapping)
-        if row is None:
-            continue
-        region_rgb = np.asarray(_hex_rgb(row.color_hex), dtype=np.float32)
-        if selected and abs(row.atlas_id) not in selected:
-            region_rgb *= selection_dim_factor
-        mask = annotation == source_index
-        blended = (
-            rgb[mask].astype(np.float32) * (1 - annotation_opacity)
-            + region_rgb * annotation_opacity
-        )
-        rgb[mask] = np.rint(blended).astype(np.uint8)
-    alpha = np.full((*rgb.shape[:2], 1), 255, dtype=np.uint8)
-    return np.ascontiguousarray(np.concatenate((rgb, alpha), axis=2))
+    return AtlasSliceComposer(volumes, mapping).compose(
+        axis,
+        index,
+        annotation_opacity=annotation_opacity,
+        selected_region_ids=selected_region_ids,
+        selection_dim_factor=selection_dim_factor,
+    )
 
 
 @dataclass(frozen=True)

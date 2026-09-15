@@ -7,6 +7,25 @@ what works in the current native renderer from future browser exports.
 
 <div class="gallery-card" markdown>
 
+## Linked atlas navigator
+
+<span class="capability capability--native">Native · available</span>
+<span class="capability capability--data">D070 + Allen 50 um volumes</span>
+
+Three orthogonal anatomical/annotation slices share one AP/ML/DV cursor with the D070 surface,
+scalar template volume, ontology tree, mapping selector, and linked selections. Slice clicks and GUI
+sliders update every panel; Allen, Beryl, and Cosmos retain their official colors.
+
+```bash
+python examples/linked_atlas_navigator.py \
+  ../ibl-atlas-assets/build/d070-published/mesh-pack \
+  ../ibl-atlas-assets/build/allen-ccf-2017-50um
+```
+
+</div>
+
+<div class="gallery-card" markdown>
+
 ## BWM probe sites
 
 ![Real BWM probe sites](../images/bwm-probe.png)
@@ -96,6 +115,7 @@ python tools/benchmark_region_updates.py build/atlas-d070 \
 
 | Entry | Native | Offscreen | WebGPU |
 | --- | --- | --- | --- |
+| Linked atlas navigator | Available | Available | Not available: volume visual is native-only |
 | Offline contract smoke test | Available | Available | C/WASM portability spike |
 | Allen atlas explorer | Available | Available | Candidate; not exported |
 | BWM probe sites | Available | Available | Candidate; not exported |

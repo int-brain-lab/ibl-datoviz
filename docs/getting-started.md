@@ -39,6 +39,20 @@ PYTHONPATH=.:../ibl-atlas-assets/src python examples/allen_mouse_brain.py \
 The left dock contains the parent-closed ontology tree, mapping selector, filters, official color
 swatches, and linked selection. Drag the main view to orbit and click a surface region to select it.
 
+For the four-panel navigator, materialize the separate 50 um volume pack and provide both immutable
+pack roots:
+
+```bash
+python examples/linked_atlas_navigator.py \
+  ../ibl-atlas-assets/build/d070-published/mesh-pack \
+  ../ibl-atlas-assets/build/allen-ccf-2017-50um
+```
+
+Click any orthogonal slice to move the shared AP/ML/DV cursor. The same mapped identity drives the
+official slice colors, 3-D cursor, surface highlight, ontology tree, and any attached probe or
+regional tables. The scalar anatomical template is volume-rendered in the 3-D panel on native
+Datoviz; volume rendering is not currently claimed for the WebGPU export.
+
 For a non-interactive smoke render, add an output path:
 
 ```bash

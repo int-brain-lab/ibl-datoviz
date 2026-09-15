@@ -87,9 +87,7 @@ class AtlasViewer:
         self._last_mesh_region_ids: tuple[int, ...] = ()
         self._closed = False
         try:
-            self.figure = self.dvz.dvz_figure(self.scene, width, height, 0)
-            self.panel = self.dvz.dvz_panel_full(self.figure)
-            self.dvz.dvz_panel_set_background_color(self.panel, self.dvz.DvzColor(8, 12, 18, 255))
+            self._create_layout()
             self._create_surface()
             interaction_desc = self.dvz.dvz_item_interaction_desc()
             interaction_desc.target = self.dvz.DVZ_SCENE_TARGET_FACE
@@ -102,6 +100,12 @@ class AtlasViewer:
         except Exception:
             self.close()
             raise
+
+    def _create_layout(self) -> None:
+        """Create the figure and primary 3-D panel."""
+        self.figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
+        self.panel = self.dvz.dvz_panel_full(self.figure)
+        self.dvz.dvz_panel_set_background_color(self.panel, self.dvz.DvzColor(8, 12, 18, 255))
 
     @classmethod
     def from_pack(cls, path: str | Path, **kwargs) -> AtlasViewer:
@@ -305,9 +309,7 @@ class AtlasViewer:
             raise ValueError(f'unknown region mapping reduction: {mapping_reduction}')
         if opacity is not None and (not np.isfinite(opacity) or not 0 <= opacity <= 1):
             raise ValueError('region opacity must be between zero and one')
-        prepared = self._region_value_view(
-            data, self.mapping, value_range, color_scheme, opacity
-        )
+        prepared = self._region_value_view(data, self.mapping, value_range, color_scheme, opacity)
         surface_colors = self._region_surface_colors(self.mapping, prepared[0], prepared[4])
         self._check(
             self.dvz.dvz_visual_set_data(self.mesh, 'color', surface_colors),
@@ -894,6 +896,7 @@ class AtlasViewer:
                 len(self._mapping_items),
             ):
                 self.set_mapping(self.mesh_data.mapping_names[self._mapping_control.value])
+            self._draw_extra_gui(gui)
             if self.dvz.dvz_gui_button(gui, b'Collapse all'):
                 self.dvz.dvz_gui_tree_collapse_all(self.region_tree)
             self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
@@ -941,6 +944,9 @@ class AtlasViewer:
                     remaining = len(self._selected_region_ids) - 6
                     self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
         self.dvz.dvz_gui_end(gui)
+
+    def _draw_extra_gui(self, _gui) -> None:
+        """Draw optional controls supplied by specialized viewers."""
 
     def _set_tree_selection(self, region_ids: Sequence[int]) -> None:
         if self.region_tree is None or self.tree_model is None:

@@ -19,6 +19,24 @@
       ]
     },
     {
+      "id": "linked-atlas-navigator",
+      "title": "Linked atlas navigator",
+      "script": "examples/linked_atlas_navigator.py",
+      "asset": "d070",
+      "volume": "allen-ccf-2017-50um",
+      "native": "available",
+      "webgpu": "not-available-volume",
+      "output": "linked-atlas-navigator.png",
+      "arguments": [
+        "{asset_root}/mesh-pack",
+        "{volume_root}",
+        "--mapping",
+        "allen",
+        "--offscreen",
+        "{output}"
+      ]
+    },
+    {
       "id": "allen-mouse-brain",
       "title": "Allen atlas explorer",
       "script": "examples/allen_mouse_brain.py",
