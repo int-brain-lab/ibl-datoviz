@@ -12,7 +12,7 @@ When developing the three adjacent repositories together, point Python at the lo
 use the Datoviz environment that owns the built native library:
 
 ```bash
-export PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz
+export PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz
 ../../Viz/datoviz/.venv/bin/python -m pytest
 ```
 
@@ -22,8 +22,8 @@ The D070 asset-set lock identifies immutable remote bytes. Materialization verif
 mesh graph and region catalog before making them available to a viewer:
 
 ```bash
-PYTHONPATH=../ibl-atlas-assets/src python - <<'PY'
-from ibl_atlas_assets import bundled_asset_set, materialize_asset_set
+PYTHONPATH=../ibl-anatomy/src python - <<'PY'
+from ibl_anatomy import bundled_asset_set, materialize_asset_set
 
 materialize_asset_set(bundled_asset_set(), "build/atlas-d070")
 PY
@@ -35,18 +35,18 @@ Start with the isolated 3-D surface baseline. It contains one opaque mesh, one p
 and one arcball in a direct native window—no ImGui, ontology, hover query, volume, or slices:
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz \
+PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz \
 uv run python examples/atlas_spike.py \
-  ../ibl-atlas-assets/build/d070-published/mesh-pack
+  ../ibl-anatomy/build/d070-published/mesh-pack
 ```
 
 Then test the ontology and linked-selection layer independently by adding the catalog:
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz \
+PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz \
 uv run python examples/atlas_spike.py \
-  ../ibl-atlas-assets/build/d070-published/mesh-pack \
-  --regions ../ibl-atlas-assets/build/d070-published/regions.json
+  ../ibl-anatomy/build/d070-published/mesh-pack \
+  --regions ../ibl-anatomy/build/d070-published/regions.json
 ```
 
 This second rung also exposes an **Explode regions** slider. It follows the shared mesh contract:
@@ -56,7 +56,7 @@ Pass `--explode 0.5` to start at a nonzero value. The baseline without `--region
 The full asset-set entry point follows:
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src python examples/allen_mouse_brain.py \
+PYTHONPATH=.:../ibl-anatomy/src python examples/allen_mouse_brain.py \
   build/atlas-d070 --mapping allen
 ```
 
@@ -68,8 +68,8 @@ pack roots:
 
 ```bash
 python examples/linked_atlas_navigator.py \
-  ../ibl-atlas-assets/build/d070-published/mesh-pack \
-  ../ibl-atlas-assets/build/allen-ccf-2017-50um \
+  ../ibl-anatomy/build/d070-published/mesh-pack \
+  ../ibl-anatomy/build/allen-ccf-2017-50um \
   --ui-scale 1.5
 ```
 
@@ -95,10 +95,10 @@ volume and opt into 10 um slices explicitly:
 
 ```bash
 python examples/linked_atlas_navigator.py \
-  ../ibl-atlas-assets/build/d070-published/mesh-pack \
-  ../ibl-atlas-assets/build/allen-ccf-2017-50um \
+  ../ibl-anatomy/build/d070-published/mesh-pack \
+  ../ibl-anatomy/build/allen-ccf-2017-50um \
   --slice-resolution registered \
-  --slice-intensity-pack ../ibl-atlas-assets/build/allen-ccf-2017-10um-intensity \
+  --slice-intensity-pack ../ibl-anatomy/build/allen-ccf-2017-10um-intensity \
   --anatomy-pack ../ephys-atlas-web-v2/web/public/atlas/anatomy/allen-ccfv3-10um-bilateral-exact-599b5e0bbab1
 ```
 
@@ -111,7 +111,7 @@ complete 10 um volume is uploaded to the GPU.
 For a non-interactive smoke render, add an output path:
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src python examples/bwm_probe.py \
+PYTHONPATH=.:../ibl-anatomy/src python examples/bwm_probe.py \
   build/atlas-d070 --mapping beryl --offscreen build/bwm-probe.png
 ```
 

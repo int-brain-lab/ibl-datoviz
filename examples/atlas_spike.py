@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ibl_atlas_assets import open_region_catalog
+from ibl_anatomy import open_region_catalog
 from ibl_datoviz import AtlasViewer
 
 

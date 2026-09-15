@@ -21,7 +21,7 @@
 `LinkedAtlasNavigator.from_anatomy_packs()` combines an independently bounded dense volume with one
 complete registered high-resolution anatomy pack and its scalar intensity transport. The
 lower-level `from_multiresolution_packs()` remains available when callers intentionally manage
-three projection manifests themselves. `ibl-atlas-assets` owns integrity, affine, and decoded
+three projection manifests themselves. `ibl-anatomy` owns integrity, affine, and decoded
 geometry contracts; `ibl-datoviz` owns raster composition, latest-wins preparation, and
 owner-thread GPU updates.
 

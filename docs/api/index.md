@@ -10,7 +10,7 @@ The public API is intentionally small and split at data ownership boundaries.
 | [`ProbeSites`](data-models.md#ibl_datoviz.probe.ProbeSites) | Immutable positions, site identities, values, and signed Allen IDs |
 | [`AtlasRegionValues`](data-models.md#ibl_datoviz.regions.AtlasRegionValues) | Immutable regional scalar values and explicit aggregation weights |
 
-`ibl-atlas-assets` validates and decodes packaged anatomy. `ibl-datoviz` converts those arrays into
+`ibl-anatomy` validates and decodes packaged anatomy. `ibl-datoviz` converts those arrays into
 native presentation and interaction. Scientific coordinate-to-label operations remain in
 `iblatlas` or in an explicitly provenance-bearing data preparation step.
 

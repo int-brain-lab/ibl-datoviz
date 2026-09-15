@@ -6,7 +6,7 @@ from types import MappingProxyType, SimpleNamespace
 import numpy as np
 import pytest
 
-from ibl_atlas_assets import RegisteredSlice, RegisteredSlicePath
+from ibl_anatomy import RegisteredSlice, RegisteredSlicePath
 from ibl_datoviz import AtlasSliceSource, parse_svg_path
 from ibl_datoviz.atlas_slice_source import _rasterize
 from ibl_datoviz.navigator import oriented_slice

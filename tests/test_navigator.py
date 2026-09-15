@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ibl_atlas_assets import open_volume_pack
+from ibl_anatomy import open_volume_pack
 from ibl_datoviz import AtlasMesh, LinkedAtlasNavigator
 from ibl_datoviz.linked_atlas import volume_render_geometry
 from ibl_datoviz.navigator import (
@@ -20,7 +20,7 @@ from ibl_datoviz.navigator import (
 
 VOLUME_FIXTURE = (
     Path(__file__).resolve().parents[2]
-    / 'ibl-atlas-assets'
+    / 'ibl-anatomy'
     / 'tests'
     / 'fixtures'
     / 'volume-pack-v1'

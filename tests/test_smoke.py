@@ -9,7 +9,7 @@ from ibl_datoviz import AtlasViewer, LinkedAtlasNavigator
 
 FIXTURE = (
     Path(__file__).resolve().parents[2]
-    / 'ibl-atlas-assets'
+    / 'ibl-anatomy'
     / 'tests'
     / 'fixtures'
     / 'mesh-pack-v1'

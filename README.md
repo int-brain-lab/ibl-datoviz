@@ -4,7 +4,7 @@
 [API reference](docs/api/index.md)**
 
 `ibl-datoviz` 0.2 is a deliberately breaking Datoviz v0.4-based atlas viewer. The first
-vertical slice reads the renderer-neutral mesh-pack contract from `ibl-atlas-assets`, uploads
+vertical slice reads the renderer-neutral mesh-pack contract from `ibl-anatomy`, uploads
 its dense NumPy arrays, retains signed Allen/Beryl/Cosmos presentation identity, and adds
 scalar-colored probe sites, a probe path, arcball navigation, and Datoviz item interaction.
 
@@ -25,7 +25,7 @@ three adjacent repositories, use their source trees and the already-built local 
 library:
 
 ```bash
-export PYTHONPATH=../../Viz/datoviz:../ibl-atlas-assets/src
+export PYTHONPATH=../../Viz/datoviz:../ibl-anatomy/src
 /home/cyrille/GIT/Viz/datoviz/.venv/bin/python -m pytest
 ```
 
@@ -33,8 +33,8 @@ Run the miniature offline viewer and write its smoke image:
 
 ```bash
 python examples/atlas_spike.py \
-  ../ibl-atlas-assets/tests/fixtures/mesh-pack-v1/pack \
-  --regions ../ibl-atlas-assets/tests/fixtures/atlas-regions-v1/regions.json \
+  ../ibl-anatomy/tests/fixtures/mesh-pack-v1/pack \
+  --regions ../ibl-anatomy/tests/fixtures/atlas-regions-v1/regions.json \
   --offscreen build/atlas-spike.png
 ```
 
@@ -50,19 +50,19 @@ path creates one direct native view containing only an opaque mesh, perspective 
 arcball; it does not initialize ImGui, ontology widgets, picking, volumes, or slices:
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz \
+PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz \
 uv run python examples/atlas_spike.py \
-  ../ibl-atlas-assets/build/d070-published/mesh-pack
+  ../ibl-anatomy/build/d070-published/mesh-pack
 ```
 
 Only after that baseline is healthy, add the region catalog to test the separate embedded-GUI,
 hover, linked-selection, and explosion rung:
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz \
+PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz \
 uv run python examples/atlas_spike.py \
-  ../ibl-atlas-assets/build/d070-published/mesh-pack \
-  --regions ../ibl-atlas-assets/build/d070-published/regions.json
+  ../ibl-anatomy/build/d070-published/mesh-pack \
+  --regions ../ibl-anatomy/build/d070-published/regions.json
 ```
 
 Use `--explode 0.5` to set an initial value. The slider currently updates only the mesh position
@@ -75,15 +75,15 @@ versioned region catalog supplied as an explicit palette; they do not belong in 
 
 ## Real D070 checkpoint
 
-Materialize the pinned real surface once through `ibl-atlas-assets`, then run the same verified graph through the native adapter:
+Materialize the pinned real surface once through `ibl-anatomy`, then run the same verified graph through the native adapter:
 
 ```bash
-PYTHONPATH=../ibl-atlas-assets/src python - <<'PY'
-from ibl_atlas_assets import bundled_asset_set, materialize_asset_set
+PYTHONPATH=../ibl-anatomy/src python - <<'PY'
+from ibl_anatomy import bundled_asset_set, materialize_asset_set
 materialize_asset_set(bundled_asset_set(), "build/atlas-d070")
 PY
 
-PYTHONPATH=.:../ibl-atlas-assets/src python examples/benchmark_atlas.py \
+PYTHONPATH=.:../ibl-anatomy/src python examples/benchmark_atlas.py \
   build/atlas-d070 --render build/atlas-d070.png --json build/atlas-d070.json
 ```
 
@@ -94,7 +94,7 @@ See [the real D070 checkpoint](docs/REAL_D070_CHECKPOINT.md) for reproducible pr
 Launch the linked real-atlas explorer directly from that verified asset graph:
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src python examples/allen_mouse_brain.py \
+PYTHONPATH=.:../ibl-anatomy/src python examples/allen_mouse_brain.py \
   build/atlas-d070 --mapping allen
 ```
 
@@ -102,7 +102,7 @@ Add a fixed probe trajectory and 48 synthetic scalar-colored sites whose Allen l
 precomputed with `iblatlas.AllenAtlas(25)`:
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src python examples/allen_mouse_brain.py \
+PYTHONPATH=.:../ibl-anatomy/src python examples/allen_mouse_brain.py \
   build/atlas-d070 --mapping allen --demo-probe
 ```
 
@@ -130,7 +130,7 @@ collapsed to 192 exact atlas locations, seven signed Allen regions, and the mean
 adjacent provenance JSON.
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src python examples/bwm_probe.py \
+PYTHONPATH=.:../ibl-anatomy/src python examples/bwm_probe.py \
   build/atlas-d070 --mapping beryl
 ```
 
@@ -146,7 +146,7 @@ site counts forward as weights when Allen rows collapse into Beryl or Cosmos. It
 selection across scalar-colored surfaces, probe sites, the ontology tree, and both retained tables:
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src python examples/bwm_region_activity.py \
+PYTHONPATH=.:../ibl-anatomy/src python examples/bwm_region_activity.py \
   build/atlas-d070 --mapping beryl
 ```
 
@@ -157,7 +157,7 @@ names; ontology labels remain catalog-owned. The caller must explicitly request
 `mapping_reduction="weighted_mean"`, because that reduction is scientifically valid for this
 site-mean/count example but not for arbitrary statistics. Rows absent from a reduced mapping are
 omitted rather than misrepresented as root. Rendering belongs here; scientific derivation remains
-explicit in the example, while asset decoding and ontology metadata remain in `ibl-atlas-assets`.
+explicit in the example, while asset decoding and ontology metadata remain in `ibl-anatomy`.
 The example also gives valued regions higher opacity than the surrounding anatomical context; both
 opacities remain explicit viewer settings.
 

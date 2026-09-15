@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ibl_atlas_assets import open_mesh_pack, open_region_catalog
+from ibl_anatomy import open_mesh_pack, open_region_catalog
 from ibl_datoviz import (
     AtlasMesh,
     AtlasRegionValues,
@@ -21,7 +21,7 @@ from ibl_datoviz import (
 
 FIXTURE = (
     Path(__file__).resolve().parents[2]
-    / 'ibl-atlas-assets'
+    / 'ibl-anatomy'
     / 'tests'
     / 'fixtures'
     / 'mesh-pack-v1'
@@ -29,7 +29,7 @@ FIXTURE = (
 )
 REGIONS = (
     Path(__file__).resolve().parents[2]
-    / 'ibl-atlas-assets'
+    / 'ibl-anatomy'
     / 'tests'
     / 'fixtures'
     / 'atlas-regions-v1'

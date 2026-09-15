@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from time import perf_counter
 
-from ibl_atlas_assets import (
+from ibl_anatomy import (
     open_anatomy_pack,
     open_intensity_block_pack,
     open_volume_pack,

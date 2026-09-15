@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ibl_atlas_assets import (
+from ibl_anatomy import (
     open_anatomy_pack,
     open_intensity_block_pack,
     open_registered_projection,
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
-    from ibl_atlas_assets import AtlasVolumes
+    from ibl_anatomy import AtlasVolumes
 
 
 def volume_render_geometry(

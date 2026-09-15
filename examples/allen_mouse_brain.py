@@ -26,7 +26,7 @@ DEMO_ALLEN_REGION_IDS = np.asarray(
 
 
 def main() -> int:
-    """Verify and display one materialized ``ibl-atlas-assets`` graph."""
+    """Verify and display one materialized ``ibl-anatomy`` graph."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('asset_root', type=Path, help='materialized atlas asset-set directory')
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')

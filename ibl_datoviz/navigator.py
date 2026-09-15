@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
-    from ibl_atlas_assets import AtlasRegion, AtlasVolumes
+    from ibl_anatomy import AtlasRegion, AtlasVolumes
 
 
 SLICE_DISPLAY_AXES = {

@@ -8,7 +8,7 @@ pytest
 ```
 
 The adjacent-source command in [Getting started](getting-started.md) is useful while Datoviz and
-`ibl-atlas-assets` are changing together.
+`ibl-anatomy` are changing together.
 
 ## Build the documentation
 
@@ -30,7 +30,7 @@ report into the ignored build tree:
 
 ```bash
 python tools/build_gallery.py \
-  --asset-root ../ibl-atlas-assets/build/d070-published
+  --asset-root ../ibl-anatomy/build/d070-published
 ```
 
 Use `--example bwm-probe` to run one entry or `--dry-run` to inspect commands. After reviewing the
@@ -38,7 +38,7 @@ pixels, update only the entries that declare a canonical image:
 
 ```bash
 python tools/build_gallery.py \
-  --asset-root ../ibl-atlas-assets/build/d070-published \
+  --asset-root ../ibl-anatomy/build/d070-published \
   --example bwm-probe --publish
 ```
 
@@ -54,7 +54,7 @@ set with:
 
 ```bash
 python tools/benchmark_region_updates.py \
-  ../ibl-atlas-assets/build/d070-published \
+  ../ibl-anatomy/build/d070-published \
   --mapping allen --iterations 20 --json build/region-update-benchmark.json
 ```
 

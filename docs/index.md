@@ -14,7 +14,7 @@ ontology navigation, probe sites, regional values, and linked selection.
 
 ## Current scope
 
-- Verified renderer-neutral geometry and ontology data come from `ibl-atlas-assets`.
+- Verified renderer-neutral geometry and ontology data come from `ibl-anatomy`.
 - Dense meshes, WBOIT transparency, picking, arcball navigation, and retained GUI widgets use
   Datoviz v0.4.
 - `ibl-datoviz` owns native viewer composition and display behavior. It does not become a second

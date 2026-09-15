@@ -59,11 +59,11 @@ human interaction latency.
 ## Reproduction
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src:../../Viz/datoviz \
+PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz \
 DATOVIZ_LIBRARY=../../Viz/datoviz/build/src/libdatoviz.so \
 uv run python tools/benchmark_atlas_3d.py \
-  ../ibl-atlas-assets/build/d070-published/mesh-pack \
-  --regions ../ibl-atlas-assets/build/d070-published/regions.json \
+  ../ibl-anatomy/build/d070-published/mesh-pack \
+  --regions ../ibl-anatomy/build/d070-published/regions.json \
   --json build/atlas-3d-d070.json
 ```
 

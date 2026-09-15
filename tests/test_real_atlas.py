@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ibl_atlas_assets import bundled_asset_set, verify_materialized_asset_set
+from ibl_anatomy import bundled_asset_set, verify_materialized_asset_set
 from ibl_datoviz import AtlasMesh
 
 

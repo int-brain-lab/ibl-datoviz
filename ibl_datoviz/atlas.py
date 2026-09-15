@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ibl_atlas_assets import open_mesh_pack
+from ibl_anatomy import open_mesh_pack
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
-    from ibl_atlas_assets import MeshGeometry
+    from ibl_anatomy import MeshGeometry
 
 MISSING_REGION_ID = 0
 

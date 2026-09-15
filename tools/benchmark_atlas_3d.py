@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import datoviz as dvz
 import numpy as np
 
-from ibl_atlas_assets import open_region_catalog
+from ibl_anatomy import open_region_catalog
 from ibl_datoviz import AtlasMesh, AtlasViewer
 
 if TYPE_CHECKING:

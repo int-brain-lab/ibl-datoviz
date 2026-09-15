@@ -54,7 +54,7 @@ def _resolved_command(
 def _environment(repository: Path) -> dict[str, str]:
     environment = os.environ.copy()
     paths = [str(repository)]
-    adjacent_assets = repository.parent / 'ibl-atlas-assets' / 'src'
+    adjacent_assets = repository.parent / 'ibl-anatomy' / 'src'
     if adjacent_assets.is_dir():
         paths.append(str(adjacent_assets))
     existing = environment.get('PYTHONPATH')
@@ -73,20 +73,20 @@ def main() -> int:
     parser.add_argument(
         '--volume-root',
         type=Path,
-        default=repository.parent / 'ibl-atlas-assets' / 'build' / 'allen-ccf-2017-50um',
+        default=repository.parent / 'ibl-anatomy' / 'build' / 'allen-ccf-2017-50um',
         help='materialized Allen CCF 50 um volume-pack root',
     )
     parser.add_argument(
         '--asset-root',
         type=Path,
-        default=repository.parent / 'ibl-atlas-assets' / 'build' / 'd070-published',
+        default=repository.parent / 'ibl-anatomy' / 'build' / 'd070-published',
         help='materialized D070 asset-set root',
     )
     parser.add_argument(
         '--fixture-root',
         type=Path,
-        default=repository.parent / 'ibl-atlas-assets' / 'tests' / 'fixtures',
-        help='ibl-atlas-assets test-fixture root',
+        default=repository.parent / 'ibl-anatomy' / 'tests' / 'fixtures',
+        help='ibl-anatomy test-fixture root',
     )
     parser.add_argument(
         '--output-root',

@@ -22,8 +22,8 @@ The same entry accepts an optional exact 10 um slice source while retaining the 
 
 ```bash
 python examples/linked_atlas_navigator.py \
-  ../ibl-atlas-assets/build/d070-published/mesh-pack \
-  ../ibl-atlas-assets/build/allen-ccf-2017-50um \
+  ../ibl-anatomy/build/d070-published/mesh-pack \
+  ../ibl-anatomy/build/allen-ccf-2017-50um \
   --ui-scale 1.5
 ```
 
@@ -95,8 +95,8 @@ used by ephys-atlas-web-v2. It carries no scientific claim.
 
 ```bash
 python examples/atlas_spike.py \
-  ../ibl-atlas-assets/tests/fixtures/mesh-pack-v1/pack \
-  --regions ../ibl-atlas-assets/tests/fixtures/atlas-regions-v1/regions.json
+  ../ibl-anatomy/tests/fixtures/mesh-pack-v1/pack \
+  --regions ../ibl-anatomy/tests/fixtures/atlas-regions-v1/regions.json
 ```
 
 </div>
@@ -125,8 +125,8 @@ and static or animated explosion:
 
 ```bash
 python tools/benchmark_atlas_3d.py \
-  ../ibl-atlas-assets/build/d070-published/mesh-pack \
-  --regions ../ibl-atlas-assets/build/d070-published/regions.json \
+  ../ibl-anatomy/build/d070-published/mesh-pack \
+  --regions ../ibl-anatomy/build/d070-published/regions.json \
   --json build/atlas-3d-benchmark.json
 ```
 

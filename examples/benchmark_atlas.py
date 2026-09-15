@@ -10,7 +10,7 @@ import resource
 from pathlib import Path
 from time import perf_counter
 
-from ibl_atlas_assets import bundled_asset_set, verify_materialized_asset_set
+from ibl_anatomy import bundled_asset_set, verify_materialized_asset_set
 from ibl_datoviz import AtlasMesh, AtlasTreeModel, AtlasViewer
 
 

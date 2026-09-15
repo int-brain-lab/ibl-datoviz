@@ -1,7 +1,7 @@
 # ruff: noqa: PLR0912
 """Renderer-independent lazy volume made from atlas transport assets.
 
-This module deliberately depends only on the public ``ibl-atlas-assets`` reader
+This module deliberately depends only on the public ``ibl-anatomy`` reader
 interfaces.  In particular, it does not know about a canvas or a Datoviz
 texture: callers receive the same ``values, array_axes`` contract as an atlas
 volume slice.

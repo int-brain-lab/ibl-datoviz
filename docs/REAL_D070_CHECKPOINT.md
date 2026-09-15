@@ -2,7 +2,7 @@
 
 Status: reproducible local evidence, 2026-09-14.
 
-The native adapter consumes the packaged `ibl-atlas-assets` lock `allen-ccf-2017-d070-20260908`: 486,674 vertices, 966,645 triangles, 1,140 components, and 1,132 signed presentations. Both Python and the web TypeScript decoder match the lock's exact vertex and face presentation fingerprints.
+The native adapter consumes the packaged `ibl-anatomy` lock `allen-ccf-2017-d070-20260908`: 486,674 vertices, 966,645 triangles, 1,140 components, and 1,132 signed presentations. Both Python and the web TypeScript decoder match the lock's exact vertex and face presentation fingerprints.
 
 The real pack revealed and fixed a coordinate error hidden by the synthetic fixture. EAM3 positions are already compiled into ML/AP/DV micrometres. The manifest's `source_to_world_um` matrix records the offline source transform and must not be applied again. Display-space normalization remains local to this package.
 
@@ -20,8 +20,8 @@ These are development diagnostics rather than portable performance thresholds. T
 Reproduce the measurement with:
 
 ```bash
-PYTHONPATH=.:../ibl-atlas-assets/src python examples/benchmark_atlas.py \
-  ../ibl-atlas-assets/build/d070-published \
+PYTHONPATH=.:../ibl-anatomy/src python examples/benchmark_atlas.py \
+  ../ibl-anatomy/build/d070-published \
   --render build/d070-checkpoint.png \
   --json build/d070-checkpoint.json
 ```

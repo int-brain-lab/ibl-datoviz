@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import datoviz as dvz
 import numpy as np
 
-from ibl_atlas_assets import (
+from ibl_anatomy import (
     AtlasAssetSet,
     AtlasRegionCatalog,
     MaterializedAtlasAssets,

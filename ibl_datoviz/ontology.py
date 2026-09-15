@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
-    from ibl_atlas_assets import AtlasRegionCatalog
+    from ibl_anatomy import AtlasRegionCatalog
 
 ROOT_PARENT = np.iinfo(np.uint32).max
 
