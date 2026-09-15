@@ -46,7 +46,7 @@ def test_offscreen_linked_atlas_smoke(tmp_path):
         ) as navigator:
             navigator.set_cursor(navigator.cursor)
             assert navigator._selected_region_ids == ()
-            navigator.set_cursor(navigator.cursor, select_region=True)
+            navigator.select_cursor_region()
             assert navigator.cursor.region(navigator.volumes, 'allen').atlas_id == 315
             assert navigator._selected_region_ids == (315,)
             assert navigator._highlight_region_ids == (315,)

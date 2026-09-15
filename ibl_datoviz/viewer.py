@@ -80,7 +80,10 @@ class AtlasViewer:
         self._region_value_range: tuple[float, float] | None = None
         self._region_color_scheme: Literal['diverging', 'sequential'] = 'sequential'
         self._region_opacity: float | None = None
-        self._mapping_control = ctypes.c_int(mesh.mapping_names.index(mapping))
+        self._mapping_control, self._tree_filter = (
+            ctypes.c_int(mesh.mapping_names.index(mapping)),
+            ctypes.create_string_buffer(256),
+        )
         self._mapping_items = (ctypes.c_char_p * len(mesh.mapping_names))(
             *(name.title().encode() for name in mesh.mapping_names)
         )
@@ -844,8 +847,7 @@ class AtlasViewer:
             return
         self.region_tree = self.dvz.dvz_gui_tree(
             b'ibl_atlas_ontology',
-            self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_FILTER
-            | self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_MULTI_SELECT,
+            self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_MULTI_SELECT,
         )
         if not self.region_tree:
             raise RuntimeError('dvz_gui_tree() failed')
@@ -864,6 +866,11 @@ class AtlasViewer:
             self.dvz.dvz_gui_tree_set_swatches(self.region_tree, model.colors),
             'atlas ontology colors',
         )
+        if self._tree_filter.value:
+            self._check(
+                self.dvz.dvz_gui_tree_set_filter(self.region_tree, self._tree_filter.value),
+                'atlas ontology filter restore',
+            )
         styles = []
         for region_id, member in zip(model.region_ids, model.mapping_members, strict=True):
             if member:
@@ -884,7 +891,7 @@ class AtlasViewer:
         )
         self._set_tree_selection(self._selected_region_ids)
 
-    def _gui_callback(self, gui, _view, _user_data) -> None:  # noqa: PLR0912
+    def _gui_callback(self, gui, _view, _user_data) -> None:  # noqa: PLR0912, PLR0915
         self.dvz.dvz_gui_dock_window_once(
             gui, b'Allen mouse brain atlas', self.dvz.DVZ_GUI_DOCK_SLOT_LEFT, 430.0
         )
@@ -916,8 +923,35 @@ class AtlasViewer:
             self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
             if self.dvz.dvz_gui_button(gui, b'Expand 3 levels'):
                 self.dvz.dvz_gui_tree_expand_to_depth(self.region_tree, 3)
+            if self._selected_region_ids:
+                self.dvz.dvz_gui_separator_text(gui, b'Selection')
+                for region_id in self._selected_region_ids[:6]:
+                    label = (
+                        self.tree_model.describe(region_id) if self.tree_model else str(region_id)
+                    )
+                    self.dvz.dvz_gui_text(gui, label.encode())
+                if len(self._selected_region_ids) > 6:
+                    remaining = len(self._selected_region_ids) - 6
+                    self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
+            if self.dvz.dvz_gui_input_text(
+                gui, b'Filter regions', self._tree_filter, len(self._tree_filter)
+            ):
+                self._check(
+                    self.dvz.dvz_gui_tree_set_filter(self.region_tree, self._tree_filter.value),
+                    'atlas ontology filter',
+                )
             self.dvz.dvz_gui_separator_text(gui, b'Region hierarchy')
-            _, events, _dropped = self.dvz.dvz_gui_tree_draw(gui, self.region_tree)
+            scroll_tree = self.region_table is None and self.probe_table is None
+            tree_visible = True
+            if scroll_tree:
+                tree_visible = self.dvz.dvz_gui_begin_child(
+                    gui, b'Atlas region hierarchy', 0.0, 0.0, 0
+                )
+            events = ()
+            if tree_visible:
+                _, events, _dropped = self.dvz.dvz_gui_tree_draw(gui, self.region_tree)
+            if scroll_tree:
+                self.dvz.dvz_gui_end_child(gui)
             tree_changed = any(
                 event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED for event in events
             )
@@ -946,19 +980,20 @@ class AtlasViewer:
                 table_changed=table_changed,
                 region_table_changed=region_table_changed,
             )
-            if self._selected_region_ids:
-                self.dvz.dvz_gui_separator_text(gui, b'Selection')
-                for region_id in self._selected_region_ids[:6]:
-                    label = (
-                        self.tree_model.describe(region_id) if self.tree_model else str(region_id)
-                    )
-                    self.dvz.dvz_gui_text(gui, label.encode())
-                if len(self._selected_region_ids) > 6:
-                    remaining = len(self._selected_region_ids) - 6
-                    self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
         self.dvz.dvz_gui_end(gui)
         if self.viewport is not None:
             self.dvz.dvz_gui_viewport_window(self.viewport, b'Atlas views', None, 0)
+            hovered = ctypes.c_bool()
+            mouse_pos = (ctypes.c_float * 2)()
+            viewport_size = (ctypes.c_float * 2)()
+            if (
+                self.dvz.dvz_gui_viewport_mouse(
+                    self.viewport, mouse_pos, viewport_size, ctypes.byref(hovered)
+                )
+                and hovered.value
+                and getattr(self, '_hovered_region_label', None)
+            ):
+                self.dvz.dvz_gui_tooltip(gui, self._hovered_region_label.encode())
 
     def _draw_extra_gui(self, _gui) -> None:
         """Draw optional controls supplied by specialized viewers."""

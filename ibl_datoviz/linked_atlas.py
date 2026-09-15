@@ -223,8 +223,11 @@ class LinkedAtlasNavigator(AtlasViewer):
         texcoords = np.array([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=np.float32)
         return positions, texcoords
 
-    def _create_slices(self) -> None:
+    def _create_slices(self) -> None:  # noqa: PLR0915
         for axis, panel in self.slice_panels.items():
+            attach = self.dvz.dvz_visual_attach_desc()
+            attach.controller_mode = self.dvz.DVZ_CONTROLLER_APPLY
+            attach.coord_space = self.dvz.DVZ_VISUAL_COORD_DATA
             anatomy_data, annotation_data = self._slice_layers(axis)
             field = self.dvz.dvz_sampled_field_from_array(
                 self.scene,
@@ -253,7 +256,10 @@ class LinkedAtlasNavigator(AtlasViewer):
                 self.dvz.dvz_visual_set_alpha_mode(image, self.dvz.DVZ_ALPHA_BLENDED),
                 'slice alpha mode',
             )
-            self._check(self.dvz.dvz_panel_add_visual(panel, image, None), 'slice attach')
+            attach.z_layer = 0
+            self._check(
+                self.dvz.dvz_panel_add_visual(panel, image, ctypes.byref(attach)), 'slice attach'
+            )
             self._slice_fields[axis] = field
             self._slice_images[axis] = image
 
@@ -291,8 +297,10 @@ class LinkedAtlasNavigator(AtlasViewer):
                 self.dvz.dvz_visual_set_alpha_mode(annotation_image, self.dvz.DVZ_ALPHA_BLENDED),
                 'annotation alpha mode',
             )
+            attach.z_layer = 1
             self._check(
-                self.dvz.dvz_panel_add_visual(panel, annotation_image, None), 'annotation attach'
+                self.dvz.dvz_panel_add_visual(panel, annotation_image, ctypes.byref(attach)),
+                'annotation attach',
             )
             self._annotation_fields[axis] = annotation_field
             self._annotation_images[axis] = annotation_image
@@ -315,7 +323,13 @@ class LinkedAtlasNavigator(AtlasViewer):
             )
             self._check(self.dvz.dvz_visual_set_depth_test(crosshair, False), 'crosshair depth')
             self._check(
-                self.dvz.dvz_panel_add_visual(panel, crosshair, None), 'slice crosshair attach'
+                self.dvz.dvz_visual_set_alpha_mode(crosshair, self.dvz.DVZ_ALPHA_BLENDED),
+                'crosshair alpha mode',
+            )
+            attach.z_layer = 10
+            self._check(
+                self.dvz.dvz_panel_add_visual(panel, crosshair, ctypes.byref(attach)),
+                'slice crosshair attach',
             )
             self._crosshairs[axis] = crosshair
 
@@ -345,7 +359,11 @@ class LinkedAtlasNavigator(AtlasViewer):
                 ),
                 'slice hover marker upload',
             )
-            self._check(self.dvz.dvz_panel_add_visual(panel, hover, None), 'hover marker attach')
+            attach.z_layer = 11
+            self._check(
+                self.dvz.dvz_panel_add_visual(panel, hover, ctypes.byref(attach)),
+                'hover marker attach',
+            )
             self._hover_markers[axis] = hover
 
     def _slice_rgba(self, axis: str) -> NDArray[np.uint8]:
@@ -679,6 +697,12 @@ class LinkedAtlasNavigator(AtlasViewer):
         self.set_cursor(cursor, select_region=False)
         return True
 
+    def select_cursor_region(self) -> None:
+        """Commit the region under the current AP/ML/DV cursor."""
+        row = self.cursor.region(self.volumes, self.mapping)
+        ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
+        self._apply_selected_region_ids(ids, update_tree=True, update_table=True, clear_mesh=True)
+
     def set_mapping(self, mapping: str, palette=None) -> None:
         """Switch all mesh, slice, cursor, and ontology identities together."""
         if palette is not None:
@@ -707,6 +731,8 @@ class LinkedAtlasNavigator(AtlasViewer):
                 AtlasCursor(*(self._cursor_controls[axis].value for axis in ('ap', 'ml', 'dv'))),
                 select_region=False,
             )
+        if self.dvz.dvz_gui_button(gui, b'Select cursor region'):
+            self.select_cursor_region()
         if self.dvz.dvz_gui_slider_float(
             gui,
             b'Annotation opacity',
@@ -843,7 +869,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                         self.dvz.dvz_view_request_frame(self.view)
                     return
                 if amount:
-                    step = 1 if amount > 0 else -1
+                    step = 5 if amount > 0 else -5
                     if pointer.mods & self.dvz.DVZ_KEY_MODIFIER_SHIFT:
                         step *= 5
                     if self.step_slice(axis, step):
@@ -857,7 +883,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             if (
                 pointer.type == self.dvz.DVZ_POINTER_EVENT_CLICK
                 and pointer.button == self.dvz.DVZ_POINTER_BUTTON_LEFT
-                and self.set_cursor_from_slice_data(axis, x, y, select_region=True)
+                and self.set_cursor_from_slice_data(axis, x, y, select_region=False)
             ):
                 self.dvz.dvz_view_request_frame(self.view)
 
