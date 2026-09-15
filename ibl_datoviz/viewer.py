@@ -265,6 +265,15 @@ class AtlasViewer:
         if self.region_data is None:
             return self._surface_colors(active_mapping, active_palette)
         region_ids, _, _, _, value_colors = self._mapped_region_values(active_mapping)
+        return self._region_surface_colors(active_mapping, region_ids, value_colors)
+
+    def _region_surface_colors(
+        self,
+        mapping: str,
+        region_ids: NDArray[np.int64],
+        value_colors: NDArray[np.uint8],
+    ) -> NDArray[np.uint8]:
+        """Expand one color per presentation region to dense mesh vertices."""
         alpha = int(round(255 * self.surface_opacity))
         lookup = np.tile(
             np.asarray((46, 52, 62, alpha), dtype=np.uint8),
@@ -272,7 +281,7 @@ class AtlasViewer:
         )
         by_region = dict(zip(region_ids, value_colors, strict=True))
         for presentation in self.mesh_data.presentations:
-            mapped_id = presentation['mappings'][active_mapping]
+            mapped_id = presentation['mappings'][mapping]
             color = by_region.get(mapped_id)
             if color is not None:
                 lookup[presentation['presentation_id']] = color
@@ -296,15 +305,18 @@ class AtlasViewer:
             raise ValueError(f'unknown region mapping reduction: {mapping_reduction}')
         if opacity is not None and (not np.isfinite(opacity) or not 0 <= opacity <= 1):
             raise ValueError('region opacity must be between zero and one')
-        self._region_value_view(data, self.mapping, value_range, color_scheme, opacity)
+        prepared = self._region_value_view(
+            data, self.mapping, value_range, color_scheme, opacity
+        )
+        surface_colors = self._region_surface_colors(self.mapping, prepared[0], prepared[4])
+        self._check(
+            self.dvz.dvz_visual_set_data(self.mesh, 'color', surface_colors),
+            'region scalar color update',
+        )
         self.region_data = data
         self._region_value_range = value_range
         self._region_color_scheme = color_scheme
         self._region_opacity = opacity
-        self._check(
-            self.dvz.dvz_visual_set_data(self.mesh, 'color', self._display_surface_colors()),
-            'region scalar color update',
-        )
         selected = self._selected_region_ids
         self._highlight_region_ids = ()
         if selected:

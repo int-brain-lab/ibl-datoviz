@@ -129,10 +129,11 @@ that second use case without introducing metric switching. `AtlasRegionValues` r
 identity and explicit aggregation weights; the caller must explicitly choose weighted-mean
 reduction when Beryl or Cosmos collapses multiple valid Allen rows. Parent-closure rows absent from
 the target mapping are omitted rather than collapsed into the legacy root placeholder. Surface
-recoloring uses a presentation lookup, avoiding one full vertex scan per region; twenty complete
-D070 color preparations took about 69 milliseconds on the diagnostic host. One authoritative
-selection now links regional surface color, individual probe sites, the ontology tree, a regional
-summary table, and the site table. This is evidence for a small typed region-scalar boundary, but
-not for a shared dashboard abstraction.
+recoloring uses a presentation lookup and indexed ontology descriptions, avoiding a vertex scan and
+an ontology scan per region. The reproducible full-catalog benchmark updates all 2,194 signed Allen
+rows over 486,674 vertices in about 6.3 milliseconds per preparation and native upload on the
+diagnostic host. One authoritative selection now links regional surface color, individual probe
+sites, the ontology tree, a regional summary table, and the site table. This is evidence for a small
+typed region-scalar boundary, but not for a shared dashboard abstraction.
 
 Volume rendering should wait until a pinned annotation/template volume contract exists.

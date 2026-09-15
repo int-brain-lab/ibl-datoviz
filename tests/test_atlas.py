@@ -494,6 +494,75 @@ def test_region_values_color_surface_and_follow_mapping(mesh):
         assert viewer.region_data is None
 
 
+def test_mapping_change_clears_all_linked_selection_state(mesh):
+    catalog = open_region_catalog(REGIONS)
+    sites = ProbeSites.from_arrays(
+        [[-1, 0, 0], [1, 0, 0]],
+        [1, 2],
+        [-8, 8],
+        site_ids=[11, 12],
+    )
+    regions = AtlasRegionValues.from_arrays([-997, -8], [1, 2], weights=[1, 1])
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, catalog=catalog, datoviz=fake) as viewer:
+        viewer.set_probe_data(sites)
+        viewer.set_region_data(regions, mapping_reduction='weighted_mean')
+        viewer._replace_region_tree()
+        viewer._replace_probe_table()
+        viewer._replace_region_table()
+        viewer.set_selected_region_ids([-8])
+
+        viewer.set_mapping('beryl')
+
+        assert viewer.selected_region_ids() == ()
+        assert viewer._highlight_region_ids == ()
+        assert fake.tree_selection == []
+        assert fake.table_selection == []
+        item_keys = [call for call in fake.calls if call[0] == 'item_link_keys'][-1][1]
+        np.testing.assert_array_equal(item_keys.view(np.int64), [0, 0])
+        region_rows = [call for call in fake.calls if call[0] == 'table_rows'][-1][1]
+        np.testing.assert_array_equal(region_rows.view(np.int64), [997])
+
+
+def test_replacing_payloads_rebuilds_tables_without_changing_atlas_selection(mesh):
+    catalog = open_region_catalog(REGIONS)
+    first_sites = ProbeSites.from_arrays([[0, 0, 0]], [1], [-8], site_ids=[11])
+    next_sites = ProbeSites.from_arrays([[1, 0, 0]], [2], [8], site_ids=[21])
+    first_regions = AtlasRegionValues.from_arrays([-8], [1])
+    next_regions = AtlasRegionValues.from_arrays([-997], [2])
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, catalog=catalog, datoviz=fake) as viewer:
+        viewer.gui = SimpleNamespace(name='gui')
+        viewer.set_probe_data(first_sites)
+        viewer.set_region_data(first_regions, mapping_reduction='weighted_mean')
+        viewer.set_selected_region_ids([-8])
+        destroy_count = sum(call[0] == 'table_destroy' for call in fake.calls)
+
+        viewer.set_probe_data(next_sites)
+        viewer.set_region_data(next_regions, mapping_reduction='weighted_mean')
+
+        assert viewer.selected_region_ids() == (-8,)
+        assert sum(call[0] == 'table_destroy' for call in fake.calls) == destroy_count + 2
+        probe_rows = [call for call in fake.calls if call[0] == 'table_rows'][-2][1]
+        region_rows = [call for call in fake.calls if call[0] == 'table_rows'][-1][1]
+        np.testing.assert_array_equal(probe_rows, [21])
+        np.testing.assert_array_equal(region_rows.view(np.int64), [-997])
+        assert fake.table_selection == []
+
+
+def test_region_recolor_uses_presentation_lookup_not_per_region_vertex_masks(mesh, monkeypatch):
+    catalog = open_region_catalog(REGIONS)
+    data = AtlasRegionValues.from_arrays([-997, -8], [1, 2])
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, catalog=catalog, datoviz=fake) as viewer:
+        monkeypatch.setattr(
+            type(mesh),
+            'mapping_ids',
+            lambda *_args: pytest.fail('regional recolor scanned vertex mapping IDs'),
+        )
+        viewer.set_region_data(data, mapping_reduction='weighted_mean')
+
+
 def test_region_tree_model_preserves_signed_identity_and_canonical_colors():
     model = AtlasTreeModel.from_catalog(open_region_catalog(REGIONS), 'allen')
     np.testing.assert_array_equal(model.region_ids, [-997, -8])

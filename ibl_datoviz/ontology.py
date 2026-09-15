@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from numpy.typing import NDArray
 
     from ibl_atlas_assets import AtlasRegionCatalog
@@ -41,6 +44,7 @@ class AtlasTreeModel:
     names: tuple[str, ...]
     colors: NDArray[np.uint8]
     mapping_members: NDArray[np.bool_]
+    descriptions: Mapping[int, str]
 
     @classmethod
     def from_catalog(cls, catalog: AtlasRegionCatalog, mapping: str) -> AtlasTreeModel:
@@ -58,17 +62,24 @@ class AtlasTreeModel:
             else:
                 parents.append(row_index[row.parent_id])
         region_ids = np.ascontiguousarray([row.atlas_id for row in rows], dtype=np.int64)
+        acronyms = tuple(row.acronym for row in rows)
+        names = tuple(row.name.removesuffix(' (left)') for row in rows)
+        descriptions = {
+            abs(int(region_id)): f'{acronym} — {name}'
+            for region_id, acronym, name in zip(region_ids, acronyms, names, strict=True)
+        }
         return cls(
             mapping=mapping,
             region_ids=region_ids,
             keys=np.ascontiguousarray(region_ids.view(np.uint64)),
             parents=np.ascontiguousarray(parents, dtype=np.uint32),
-            acronyms=tuple(row.acronym for row in rows),
-            names=tuple(row.name.removesuffix(' (left)') for row in rows),
+            acronyms=acronyms,
+            names=names,
             colors=np.ascontiguousarray([_rgba(row.color_hex) for row in rows], dtype=np.uint8),
             mapping_members=np.ascontiguousarray(
                 [row.mapping_member for row in rows], dtype=np.bool_
             ),
+            descriptions=MappingProxyType(descriptions),
         )
 
     @property
@@ -110,10 +121,4 @@ class AtlasTreeModel:
 
     def describe(self, region_id: int) -> str:
         """Return a compact acronym and name for a signed or logical region ID."""
-        logical_id = abs(int(region_id))
-        for row_id, acronym, name in zip(
-            self.region_ids, self.acronyms, self.names, strict=True
-        ):
-            if abs(int(row_id)) == logical_id:
-                return f'{acronym} — {name}'
-        return str(region_id)
+        return self.descriptions.get(abs(int(region_id)), str(region_id))
