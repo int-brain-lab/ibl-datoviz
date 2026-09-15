@@ -10,18 +10,18 @@ mode to immediate in every run.
 
 | Scenario | Median FPS | Run ms | Relevant CPU mutation | Median RSS |
 | --- | ---: | ---: | ---: | ---: |
-| Opaque baseline | 246.0 | 4.06 | 0.00 ms | 362 MiB |
+| Opaque baseline | 261.6 | 3.82 | 0.00 ms | 363 MiB |
 | Continuous arcball update | 249.0 | 4.02 | 0.03 ms | 362 MiB |
 | Interaction capability, idle | 240.9 | 4.15 | 0.00 ms | 363 MiB |
 | Static explosion | 251.9 | 3.97 | 0.00 ms | 366 MiB |
 | Animated explosion | 213.7 | 4.68 | 1.19 ms | 362 MiB |
-| Hover-emphasis update every frame | 113.3 | 8.83 | 8.76 ms | 362 MiB |
-| Selection update every frame | 86.8 | 11.52 | 10.97 ms | 362 MiB |
-| Face query every frame | 89.8 | 11.14 | 0.12 ms | 534 MiB |
-| Embedded GUI and ontology, idle | 96.5 | 10.36 | 0.00 ms | 378 MiB |
-| Embedded GUI plus interaction, idle | 98.8 | 10.12 | 0.00 ms | 378 MiB |
+| Hover-emphasis update every frame | 258.6 | 3.87 | 1.47 ms | 363 MiB |
+| Selection update every frame | 257.3 | 3.89 | 1.61 ms | 363 MiB |
+| Face query every frame | 91.1 | 10.98 | 0.12 ms | 535 MiB |
+| Embedded GUI and ontology, idle | 126.6 | 7.90 | 0.00 ms | 378 MiB |
+| Embedded GUI plus interaction, idle | 126.2 | 7.92 | 0.00 ms | 378 MiB |
 
-The raw report is written to `build/atlas-3d-d070.json` and deliberately remains untracked because
+The optimized raw report is written to `build/atlas-3d-optimized.json` and deliberately remains untracked because
 timings depend on the host, driver, window system, and current machine load.
 
 ## Findings
@@ -32,23 +32,25 @@ Static explosion also has no continuing cost. The current CPU explosion implemen
 Python and reduces median throughput by roughly 13%. This is measurable but not an immediate
 performance blocker for a user-controlled slider.
 
-Hover and selection stress tests alternate region state every frame. They rebuild dense colors and
-upload 1,946,696 bytes per change. Their 8-11 ms Python cost is the clearest `ibl-datoviz`
-bottleneck, although real input should update only when the hovered or selected identity changes.
-The next optimization should cache presentation-level masks and colors, then measure whether the
-remaining dense color upload is material before requesting a new Datoviz facility.
+Hover and selection stress tests alternate region state every frame and upload 1,946,696 bytes per
+change. Caching the canonical surface colors, absolute mapping IDs, dimmed colors, and writable
+output buffer reduced their median Python mutation cost from 8.76-10.97 ms to 1.47-1.61 ms. Their
+throughput is now within measurement noise of the opaque baseline. A GPU-resident per-part styling
+facility could eventually remove the remaining dense mask, copy, and upload, but it is no longer an
+RC3 blocker.
 
-An active face query every frame spends about 9.9 ms in Datoviz's post phase and raises median RSS
-by about 173 MiB. Query request construction itself costs only about 0.12 ms. This confirms that
+An active face query every frame spends about 9.43 ms in Datoviz's query phase and raises median RSS
+by about 172 MiB. Query request construction itself costs only about 0.12 ms. This confirms that
 hover queries must be movement-driven, coalesced, and throttled. The retained expanded indexed
 picking representation remains a worthwhile later Datoviz optimization. Merely enabling the
 interaction capability has little steady-state cost.
 
-The embedded GUI scenarios spend about 9 ms per frame in Datoviz's prepare phase. This scenario
-currently combines the GUI frame, embedded viewport resolution, docking, and the complete retained
-ontology tree, so it does not yet identify which layer owns the cost. A follow-up micro-ladder must
-compare an empty GUI, an empty embedded viewport, a small tree, and the complete Allen tree before
-changing either repository.
+The new Datoviz decomposition attributes about 1.59 ms per frame to Dear ImGui construction and the
+ontology callback, 5.16 ms to resolving the embedded viewport, and less than 0.01 ms to other prepare
+work. Preventing GUI-managed source views from also entering normal app scheduling reduced median
+GUI frame time from about 10.9 ms in the diagnostic run to about 7.9 ms, a roughly 28% improvement.
+The remaining viewport cost includes the source render and a synchronous device wait; changing that
+synchronization policy needs a post-v0.4 design rather than an RC3 shortcut.
 
 High-percentile timing contains occasional 8-17 ms spikes even in baseline runs. The randomized
 fresh-process medians are suitable for ranking these large effects, but the report is not a portable
@@ -64,7 +66,7 @@ DATOVIZ_LIBRARY=../../Viz/datoviz/build/src/libdatoviz.so \
 uv run python tools/benchmark_atlas_3d.py \
   ../ibl-anatomy/build/d070-published/mesh-pack \
   --regions ../ibl-anatomy/build/d070-published/regions.json \
-  --json build/atlas-3d-d070.json
+  --json build/atlas-3d-optimized.json
 ```
 
 The report embeds package paths, Git revisions, platform information, GPU identity, resolved
@@ -73,8 +75,8 @@ counts, and aggregate ranges.
 
 ## Next measurements
 
-1. Split the embedded GUI cost into GUI-only, viewport-only, small-tree, and complete-tree cases.
-2. Profile presentation-level color preparation separately from the dense color upload.
-3. Measure realistic hover scheduling: pointer movement with at most one outstanding query.
+1. Split the remaining GUI cost into an empty GUI, empty embedded viewport, small tree, and complete tree.
+2. Measure realistic hover scheduling: pointer movement with at most one outstanding query.
+3. Separate query plan construction, command execution, and synchronous readback in a later Datoviz profiler revision.
 4. Keep the current explosion path unless ordinary slider interaction shows visible latency.
 5. Build and benchmark one isolated 2-D slice view before returning to the linked navigator.
