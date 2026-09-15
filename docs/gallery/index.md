@@ -130,6 +130,9 @@ python tools/benchmark_atlas_3d.py \
   --json build/atlas-3d-benchmark.json
 ```
 
+See [the D070 findings](../ATLAS_3D_BENCHMARK_FINDINGS.md) for the current measurements,
+limitations, and follow-up microbenchmarks.
+
 `examples/benchmark_registered_slices.py` measures cold indexed-block decode, exact registered annotation rasterization, mapping-aware boundary extraction, warm cache reuse, and retained cache bytes for all three orthogonal 10 um planes. Reports remain local because source publication and host performance are independent concerns.
 
 ## Capability matrix
