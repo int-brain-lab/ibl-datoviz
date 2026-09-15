@@ -66,7 +66,9 @@ class AtlasViewer:
         self.scene = self.dvz.dvz_scene()
         if not self.scene:
             raise RuntimeError('dvz_scene() failed')
-        self.app, self.view, self.arcball = None, None, None
+        self.app, self.view, self.arcball, self.arcball_controller = None, None, None, None
+        self.host_figure = None
+        self.viewport = None
         self.interaction = None
         self.region_tree, self.region_table = None, None
         self.probe_table = None
@@ -105,7 +107,7 @@ class AtlasViewer:
         """Create the figure and primary 3-D panel."""
         self.figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
         self.panel = self.dvz.dvz_panel_full(self.figure)
-        self.dvz.dvz_panel_set_background_color(self.panel, self.dvz.DvzColor(8, 12, 18, 255))
+        self.dvz.dvz_panel_set_background_color(self.panel, self.dvz.DvzColor(29, 33, 39, 255))
 
     @classmethod
     def from_pack(cls, path: str | Path, **kwargs) -> AtlasViewer:
@@ -882,10 +884,14 @@ class AtlasViewer:
         )
         self._set_tree_selection(self._selected_region_ids)
 
-    def _gui_callback(self, gui, _view, _user_data) -> None:
+    def _gui_callback(self, gui, _view, _user_data) -> None:  # noqa: PLR0912
         self.dvz.dvz_gui_dock_window_once(
             gui, b'Allen mouse brain atlas', self.dvz.DVZ_GUI_DOCK_SLOT_LEFT, 430.0
         )
+        if self.viewport is not None:
+            self.dvz.dvz_gui_dock_window_once(
+                gui, b'Atlas views', self.dvz.DVZ_GUI_DOCK_SLOT_CENTER, 0.0
+            )
         if self.dvz.dvz_gui_begin(gui, b'Allen mouse brain atlas', None, 0):
             self.dvz.dvz_gui_text(gui, b'CCF 2017 anatomy')
             if self.dvz.dvz_gui_combo(
@@ -896,35 +902,42 @@ class AtlasViewer:
                 len(self._mapping_items),
             ):
                 self.set_mapping(self.mesh_data.mapping_names[self._mapping_control.value])
+            if self.dvz.dvz_gui_button(gui, b'Clear region selection'):
+                self.clear_selection()
             self._draw_extra_gui(gui)
             if self.dvz.dvz_gui_button(gui, b'Collapse all'):
                 self.dvz.dvz_gui_tree_collapse_all(self.region_tree)
             self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
+            if self.dvz.dvz_gui_button(gui, b'Expand all'):
+                self._check(
+                    self.dvz.dvz_gui_tree_expand_all(self.region_tree),
+                    'atlas ontology expansion',
+                )
+            self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
             if self.dvz.dvz_gui_button(gui, b'Expand 3 levels'):
                 self.dvz.dvz_gui_tree_expand_to_depth(self.region_tree, 3)
-            self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
-            if self.dvz.dvz_gui_button(gui, b'Clear selection'):
-                self.clear_selection()
             self.dvz.dvz_gui_separator_text(gui, b'Region hierarchy')
-            _, events, dropped = self.dvz.dvz_gui_tree_draw(gui, self.region_tree)
-            tree_changed = dropped > 0 or any(
+            _, events, _dropped = self.dvz.dvz_gui_tree_draw(gui, self.region_tree)
+            tree_changed = any(
                 event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED for event in events
             )
             table_changed = False
             region_table_changed = False
             if self.region_table is not None:
                 self.dvz.dvz_gui_separator_text(gui, b'Region values')
-                _, region_events, region_dropped = self.dvz.dvz_gui_table_draw(
+                _, region_events, _region_dropped = self.dvz.dvz_gui_table_draw(
                     gui, self.region_table
                 )
-                region_table_changed = region_dropped > 0 or any(
+                region_table_changed = any(
                     event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED
                     for event in region_events
                 )
             if self.probe_table is not None:
                 self.dvz.dvz_gui_separator_text(gui, b'Probe sites')
-                _, table_events, table_dropped = self.dvz.dvz_gui_table_draw(gui, self.probe_table)
-                table_changed = table_dropped > 0 or any(
+                _, table_events, _table_dropped = self.dvz.dvz_gui_table_draw(
+                    gui, self.probe_table
+                )
+                table_changed = any(
                     event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED
                     for event in table_events
                 )
@@ -944,6 +957,8 @@ class AtlasViewer:
                     remaining = len(self._selected_region_ids) - 6
                     self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
         self.dvz.dvz_gui_end(gui)
+        if self.viewport is not None:
+            self.dvz.dvz_gui_viewport_window(self.viewport, b'Atlas views', None, 0)
 
     def _draw_extra_gui(self, _gui) -> None:
         """Draw optional controls supplied by specialized viewers."""
@@ -1053,7 +1068,7 @@ class AtlasViewer:
             mesh_region_ids, update_tree=True, update_table=True, clear_mesh=False
         )
 
-    def _create_view(self, *, offscreen: bool, title: str) -> None:
+    def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0912, PLR0915
         if self.app is not None:
             raise RuntimeError('viewer already has an active app')
         self.app = self.dvz.dvz_app(self.scene)
@@ -1061,17 +1076,29 @@ class AtlasViewer:
             raise RuntimeError('dvz_app() failed')
         if offscreen:
             self.view = self.dvz.dvz_view_offscreen(self.app, self.figure, self.width, self.height)
-        else:
+            if not self.view:
+                raise RuntimeError('Datoviz view creation failed')
+            self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, None)
+        elif self.catalog is None:
             self.view = self.dvz.dvz_view_window(
                 self.app, self.figure, self.width, self.height, title.encode()
             )
+            if not self.view:
+                raise RuntimeError('Datoviz view creation failed')
+            self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, None)
+        else:
+            self.host_figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
+            if not self.host_figure:
+                raise RuntimeError('Datoviz host figure creation failed')
+            host_panel = self.dvz.dvz_panel_full(self.host_figure)
+            if not host_panel:
+                raise RuntimeError('Datoviz host panel creation failed')
+            self.dvz.dvz_panel_set_background_color(host_panel, self.dvz.DvzColor(24, 27, 32, 255))
+            self.view = self.dvz.dvz_view_window(
+                self.app, self.host_figure, self.width, self.height, title.encode()
+            )
         if not self.view:
             raise RuntimeError('Datoviz view creation failed')
-        self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, None)
-        if not self.arcball:
-            raise RuntimeError('dvz_view_arcball() failed')
-        angles = (ctypes.c_float * 3)(*self.camera_angles)
-        self._check(self.dvz.dvz_arcball_set(self.arcball, angles), 'arcball setup')
         if not offscreen and self.catalog is not None:
             self._replace_region_tree()
             if self.probe_data is not None:
@@ -1084,10 +1111,39 @@ class AtlasViewer:
             self.gui = self.dvz.dvz_view_gui(self.view, ctypes.byref(config))
             if not self.gui:
                 raise RuntimeError('dvz_view_gui() failed')
+            viewport_config = self.dvz.dvz_gui_viewport_config()
+            viewport_config.viewport_flags = self.dvz.DVZ_GUI_VIEWPORT_FLAGS_FORWARD_INPUT
+            self.viewport = self.dvz.dvz_gui_viewport(
+                self.gui, self.figure, ctypes.byref(viewport_config)
+            )
+            if not self.viewport:
+                raise RuntimeError('dvz_gui_viewport() failed')
+            self.arcball_controller = self.dvz.dvz_arcball(self.scene, None)
+            if not self.arcball_controller:
+                raise RuntimeError('dvz_arcball() failed')
+            self.arcball = self.dvz.dvz_controller_arcball(self.arcball_controller)
+            if not self.arcball:
+                raise RuntimeError('dvz_controller_arcball() failed')
+            self._check(
+                self.dvz.dvz_panel_bind_controller(
+                    self.panel, self.arcball_controller, self.dvz.DVZ_DIM_MASK_XYZ
+                ),
+                'arcball panel binding',
+            )
+            self._check(
+                self.dvz.dvz_panel_connect_input(
+                    self.panel, self.dvz.dvz_gui_viewport_input(self.viewport)
+                ),
+                'embedded viewport input connection',
+            )
             self._check(
                 self.dvz.dvz_view_set_gui_callback(self.view, self._gui_callback, None),
                 'atlas GUI callback',
             )
+        if not self.arcball:
+            raise RuntimeError('dvz arcball creation failed')
+        angles = (ctypes.c_float * 3)(*self.camera_angles)
+        self._check(self.dvz.dvz_arcball_set(self.arcball, angles), 'arcball setup')
 
     def render_offscreen(self, output: str | Path | None = None) -> NDArray[np.uint8]:
         """Render exactly one frame and return a copied RGBA image."""
@@ -1096,7 +1152,7 @@ class AtlasViewer:
         rgba = np.array(self.dvz.dvz_view_capture_rgba(self.view), copy=True)
         if rgba.shape != (self.height, self.width, 4) or rgba.dtype != np.uint8:
             raise RuntimeError(f'unexpected capture shape or dtype: {rgba.shape} {rgba.dtype}')
-        background = np.array([8, 12, 18], dtype=np.uint8)
+        background = np.array([29, 33, 39], dtype=np.uint8)
         if not np.any(rgba[..., :3] != background):
             raise RuntimeError('offscreen atlas capture is blank')
         if output is not None:
@@ -1116,6 +1172,10 @@ class AtlasViewer:
         """Destroy app before scene; scene owns all remaining handles."""
         if self._closed:
             return
+        if self.viewport is not None:
+            self.dvz.dvz_panel_connect_input(self.panel, None)
+            self.dvz.dvz_gui_viewport_destroy(self.viewport)
+            self.viewport = None
         if self.app:
             self.dvz.dvz_app_destroy(self.app)
             self.app = None

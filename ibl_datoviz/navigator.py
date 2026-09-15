@@ -144,6 +144,57 @@ class AtlasSliceComposer:
         alpha = np.full((*rgb.shape[:2], 1), 255, dtype=np.uint8)
         return np.ascontiguousarray(np.concatenate((rgb, alpha), axis=2))
 
+    def compose_layers(
+        self,
+        axis: str,
+        index: int,
+        *,
+        annotation_opacity: float = 0.58,
+        selected_region_ids: Sequence[int] = (),
+        selection_dim_factor: float = 0.35,
+    ) -> tuple[NDArray[np.uint8], NDArray[np.uint8]]:
+        """Return independent anatomical and annotation RGBA image layers.
+
+        Keeping the layers separate lets the renderer use linear filtering for
+        the template and nearest-neighbour filtering for integer atlas labels.
+        The annotation alpha is premultiplied only by its UI opacity; callers
+        can therefore toggle either layer without recomposing the other one.
+        """
+        if not np.isfinite(annotation_opacity) or not 0 <= annotation_opacity <= 1:
+            raise ValueError('annotation_opacity must be between zero and one')
+        if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
+            raise ValueError('selection_dim_factor must be between zero and one')
+        template_slice = self.volumes.slice('template', axis, index)
+        annotation_slice = self.volumes.slice('annotation', axis, index)
+        template = oriented_slice(
+            template_slice.values, template_slice.array_axes, axis, grid=self.volumes.grid
+        )
+        annotation = oriented_slice(
+            annotation_slice.values, annotation_slice.array_axes, axis, grid=self.volumes.grid
+        )
+        if int(annotation.max(initial=0)) >= len(self._valid):
+            raise ValueError('annotation contains an unknown source index')
+        gray = np.clip((template.astype(np.float32) - self.low) / (self.high - self.low), 0, 1)
+        anatomy_rgb = np.repeat(np.rint(gray[..., None] * 255).astype(np.uint8), 3, axis=2)
+        valid = self._valid[annotation]
+        # Let the panel background show through outside atlas tissue instead of
+        # painting an artificial black rectangle around every slice.
+        anatomy_alpha = np.where(valid, 255, 0).astype(np.uint8)
+        anatomy = np.concatenate((anatomy_rgb, anatomy_alpha[..., None]), axis=2)
+        region_rgb = self._colors[annotation].copy()
+        selected = {abs(int(region_id)) for region_id in selected_region_ids if region_id}
+        if selected:
+            dim = valid & ~np.isin(np.abs(self._mapped_ids[annotation]), tuple(selected))
+            region_rgb[dim] = np.rint(region_rgb[dim] * selection_dim_factor).astype(np.uint8)
+        annotation_rgba = np.concatenate(
+            (
+                region_rgb,
+                np.where(valid, np.rint(annotation_opacity * 255), 0).astype(np.uint8)[..., None],
+            ),
+            axis=2,
+        )
+        return np.ascontiguousarray(anatomy), np.ascontiguousarray(annotation_rgba)
+
 
 def cursor_from_slice_fraction(
     cursor: AtlasCursor,
@@ -183,6 +234,30 @@ def slice_index_fraction(grid, axis: str, index: int) -> float:
     derivative = np.asarray(grid.index_to_world_um_matrix).reshape(4, 4)[world_index, array_index]
     fraction = index / max(1, grid.shape[array_index] - 1)
     return float(1 - fraction if derivative < 0 else fraction)
+
+
+def step_slice_cursor(
+    cursor: AtlasCursor,
+    axis: str,
+    delta: int,
+    shape: Sequence[int],
+) -> AtlasCursor:
+    """Move the cursor along one orthogonal-slice axis, clamped to the grid.
+
+    ``axis`` identifies the slice plane (``'ap'``, ``'ml'`` or ``'dv'``), so
+    wheel navigation changes that plane's index while leaving the in-plane
+    cursor position untouched.
+    """
+    if axis not in ('ap', 'ml', 'dv'):
+        raise ValueError('slice axis must be ap, ml or dv')
+    if not isinstance(delta, (int, np.integer)):
+        raise TypeError('slice step must be an integer')
+    axis_index = ('ap', 'ml', 'dv').index(axis)
+    size = int(shape[axis_index])
+    if size <= 0:
+        raise ValueError('slice axis has no samples')
+    value = int(np.clip(cursor.as_index()[axis_index] + int(delta), 0, size - 1))
+    return cursor.replace(axis, value, shape)
 
 
 def compose_atlas_slice(

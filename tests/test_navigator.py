@@ -15,6 +15,7 @@ from ibl_datoviz.navigator import (
     cursor_from_slice_fraction,
     mapped_region,
     oriented_slice,
+    step_slice_cursor,
 )
 
 VOLUME_FIXTURE = (
@@ -72,6 +73,13 @@ def test_cursor_replacement_is_bounded(volumes):
         cursor.replace('dv', 3, volumes.grid.shape)
 
 
+def test_step_slice_cursor_changes_only_plane_and_clamps(volumes):
+    cursor = AtlasCursor(2, 2, 1)
+    assert step_slice_cursor(cursor, 'dv', 1, volumes.grid.shape) == AtlasCursor(2, 2, 2)
+    assert step_slice_cursor(cursor, 'ap', -99, volumes.grid.shape) == AtlasCursor(0, 2, 1)
+    assert step_slice_cursor(cursor, 'ml', 99, volumes.grid.shape) == AtlasCursor(2, 4, 1)
+
+
 def test_slice_fraction_moves_only_displayed_axes(volumes):
     cursor = AtlasCursor(2, 2, 1)
     moved = cursor_from_slice_fraction(cursor, 'dv', 0.0, 1.0, volumes.grid)
@@ -126,6 +134,18 @@ def test_composed_slice_is_rgba_and_preserves_void_template(volumes):
     assert np.all(image[..., 3] == 255)
     assert tuple(image[1, 2, :3]) == (255, 255, 255)  # right root
     assert len({tuple(pixel) for pixel in image[..., :3].reshape(-1, 3)}) > 3
+
+
+def test_slice_layers_keep_anatomy_and_annotation_independent(volumes):
+    composer = AtlasSliceComposer(volumes)
+    anatomy, annotation = composer.compose_layers('dv', 1, annotation_opacity=0.5)
+    assert anatomy.shape == annotation.shape == (4, 5, 4)
+    assert anatomy.dtype == annotation.dtype == np.uint8
+    assert set(np.unique(anatomy[..., 3])) <= {0, 255}
+    assert annotation[..., 3].max() <= 128
+    # Atlas void remains transparent in both layers so the panel background shows through.
+    assert annotation[0, 0, 3] == 0
+    assert anatomy[0, 0, 3] == 0
 
 
 def test_selection_dims_only_other_mapped_regions(volumes):

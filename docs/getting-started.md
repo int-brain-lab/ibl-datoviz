@@ -48,10 +48,19 @@ python examples/linked_atlas_navigator.py \
   ../ibl-atlas-assets/build/allen-ccf-2017-50um
 ```
 
-Click any orthogonal slice to move the shared AP/ML/DV cursor. The same mapped identity drives the
-official slice colors, 3-D cursor, surface highlight, ontology tree, and any attached probe or
-regional tables. The scalar anatomical template is volume-rendered in the 3-D panel on native
-Datoviz; volume rendering is not currently claimed for the WebGPU export.
+The atlas dock and visualization area resize as sibling panels. Hover a slice to preview its mapped
+region, and click to move the shared AP/ML/DV cursor and commit the region selection. The sliders
+and slice navigation deliberately move the cursor without changing selection. Over a slice, use
+the wheel for one-section steps, Shift+wheel for five-section steps, or the bracket/Page Up/Page
+Down keys. Ctrl+wheel zooms a slice, and double-click resets its zoom. Separate controls toggle the
+anatomy and annotation layers and adjust annotation or volume opacity. The template is linearly sampled,
+while the discrete labels retain nearest-neighbour sampling and transparent atlas margins reveal
+the neutral panel background.
+
+The same committed mapped identity drives the official slice colors, 3-D cursor, surface highlight,
+ontology tree, and any attached probe or regional tables. The scalar anatomical template is
+volume-rendered in the 3-D panel on native Datoviz; volume rendering is not currently claimed for
+the WebGPU export.
 
 For a non-interactive smoke render, add an output path:
 

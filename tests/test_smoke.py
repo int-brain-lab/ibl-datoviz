@@ -35,7 +35,7 @@ def test_offscreen_atlas_smoke(tmp_path):
     assert rgba.shape == (192, 256, 4)
     assert rgba.dtype == np.uint8
     assert output.stat().st_size > 0
-    assert np.count_nonzero(np.any(rgba[..., :3] != [8, 12, 18], axis=2)) > 40
+    assert np.count_nonzero(np.any(rgba[..., :3] != [29, 33, 39], axis=2)) > 40
 
 
 def test_offscreen_linked_atlas_smoke(tmp_path):
@@ -45,6 +45,8 @@ def test_offscreen_linked_atlas_smoke(tmp_path):
             FIXTURE, VOLUME_FIXTURE, width=320, height=240
         ) as navigator:
             navigator.set_cursor(navigator.cursor)
+            assert navigator._selected_region_ids == ()
+            navigator.set_cursor(navigator.cursor, select_region=True)
             assert navigator.cursor.region(navigator.volumes, 'allen').atlas_id == 315
             assert navigator._selected_region_ids == (315,)
             assert navigator._highlight_region_ids == (315,)
@@ -54,4 +56,4 @@ def test_offscreen_linked_atlas_smoke(tmp_path):
         raise
     assert rgba.shape == (240, 320, 4)
     assert output.stat().st_size > 0
-    assert np.count_nonzero(np.any(rgba[..., :3] != [8, 12, 18], axis=2)) > 200
+    assert np.count_nonzero(np.any(rgba[..., :3] != [29, 33, 39], axis=2)) > 200

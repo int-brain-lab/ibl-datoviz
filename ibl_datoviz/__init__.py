@@ -8,6 +8,7 @@ from .navigator import (
     compose_atlas_slice,
     cursor_from_slice_fraction,
     slice_index_fraction,
+    step_slice_cursor,
 )
 from .ontology import AtlasTreeModel, decode_region_key, encode_region_key
 from .probe import ProbeSites
@@ -27,6 +28,7 @@ __all__ = [
     'compose_atlas_slice',
     'cursor_from_slice_fraction',
     'slice_index_fraction',
+    'step_slice_cursor',
     'decode_region_key',
     'encode_region_key',
 ]
