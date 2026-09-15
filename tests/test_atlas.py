@@ -472,7 +472,7 @@ def test_selection_dims_every_nonselected_surface_region(mesh):
         multi_region_mesh,
         datoviz=fake,
         selection_dim_factor=0.25,
-        selection_context_opacity=0.08,
+        selection_context_opacity=0.18,
     ) as viewer:
         base = viewer._display_surface_colors()
         viewer.set_selected_region_ids((-315,))
@@ -482,13 +482,10 @@ def test_selection_dims_every_nonselected_surface_region(mesh):
         selected = np.abs(multi_region_mesh.mapping_ids('allen')) == 315
 
         np.testing.assert_array_equal(selected_colors[selected, :3], base[selected, :3])
-        np.testing.assert_array_equal(
-            selected_colors[~selected, :3],
-            np.rint(base[~selected, :3].astype(np.float32) * 0.25).astype(np.uint8),
-        )
+        np.testing.assert_array_equal(selected_colors[~selected, :3], base[~selected, :3])
         np.testing.assert_array_equal(
             selected_colors[~selected, 3],
-            np.rint(base[~selected, 3].astype(np.float32) * 0.08).astype(np.uint8),
+            np.rint(base[~selected, 3].astype(np.float32) * 0.18).astype(np.uint8),
         )
         alpha_modes = [call[2] for call in fake.calls if call[:2] == ('alpha_mode', 'mesh')]
         assert alpha_modes == [fake.DVZ_ALPHA_OPAQUE, fake.DVZ_ALPHA_WBOIT]

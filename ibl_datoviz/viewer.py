@@ -46,7 +46,7 @@ class AtlasViewer:
         camera_angles: Sequence[float] = (-0.35, 0.25, 0.12),
         explode: float = 0.0,
         selection_dim_factor: float = 0.42,
-        selection_context_opacity: float = 0.08,
+        selection_context_opacity: float = 0.18,
         surface_opacity: float = 1.0,
         ui_scale: float = 1.0,
         sidebar_width: float = 340.0,
@@ -1198,7 +1198,6 @@ class AtlasViewer:
             selected_mask = np.isin(mapping_ids, selected_ids)
             if self._surface_dimmed_colors_cache is None:
                 dimmed = base_colors.astype(np.float32)
-                dimmed[:, :3] *= self.selection_dim_factor
                 dimmed[:, 3] *= self.selection_context_opacity
                 self._surface_dimmed_colors_cache = np.ascontiguousarray(
                     np.rint(dimmed), dtype=np.uint8
