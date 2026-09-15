@@ -9,6 +9,8 @@ what works in the current native renderer from future browser exports.
 
 ## Linked atlas navigator
 
+![Linked atlas navigator](../images/linked-atlas-navigator.png)
+
 <span class="capability capability--native">Native · available</span>
 <span class="capability capability--data">D070 + Allen 50 um volumes</span>
 

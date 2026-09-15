@@ -27,6 +27,7 @@
       "native": "available",
       "webgpu": "not-available-volume",
       "output": "linked-atlas-navigator.png",
+      "published_image": "docs/images/linked-atlas-navigator.png",
       "arguments": [
         "{asset_root}/mesh-pack",
         "{volume_root}",
