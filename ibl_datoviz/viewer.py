@@ -46,6 +46,7 @@ class AtlasViewer:
         camera_angles: Sequence[float] = (-0.35, 0.25, 0.12),
         explode: float = 0.0,
         selection_dim_factor: float = 0.42,
+        selection_context_opacity: float = 0.08,
         surface_opacity: float = 1.0,
         ui_scale: float = 1.0,
         sidebar_width: float = 340.0,
@@ -55,6 +56,8 @@ class AtlasViewer:
     ) -> None:
         if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
             raise ValueError('selection_dim_factor must be between zero and one')
+        if not np.isfinite(selection_context_opacity) or not 0 <= selection_context_opacity <= 1:
+            raise ValueError('selection_context_opacity must be between zero and one')
         if not np.isfinite(explode) or not 0 <= explode <= 1:
             raise ValueError('explode must be between zero and one')
         if not np.isfinite(surface_opacity) or not 0 <= surface_opacity <= 1:
@@ -76,6 +79,7 @@ class AtlasViewer:
         self.height = height
         self.explode = float(explode)
         self.selection_dim_factor = selection_dim_factor
+        self.selection_context_opacity = selection_context_opacity
         self.surface_opacity = surface_opacity
         self.ui_scale = float(ui_scale)
         self.sidebar_width = float(sidebar_width)
@@ -1189,23 +1193,30 @@ class AtlasViewer:
             self._surface_emphasis_work = np.empty_like(base_colors)
         colors = self._surface_emphasis_work
         np.copyto(colors, base_colors)
+        selected_mask = None
         if selected_ids:
-            mask = np.isin(mapping_ids, selected_ids)
+            selected_mask = np.isin(mapping_ids, selected_ids)
             if self._surface_dimmed_colors_cache is None:
                 dimmed = base_colors.astype(np.float32)
                 dimmed[:, :3] *= self.selection_dim_factor
-                dimmed[:, 3] = 0
+                dimmed[:, 3] *= self.selection_context_opacity
                 self._surface_dimmed_colors_cache = np.ascontiguousarray(
                     np.rint(dimmed), dtype=np.uint8
                 )
             np.copyto(colors, self._surface_dimmed_colors_cache)
-            colors[mask] = base_colors[mask]
-            colors[mask, 3] = np.maximum(colors[mask, 3], 220)
+            colors[selected_mask] = base_colors[selected_mask]
+            colors[selected_mask, 3] = np.maximum(colors[selected_mask, 3], 220)
         if hovered_ids:
             hover_mask = np.isin(mapping_ids, hovered_ids)
             hovered_rgb = 0.72 * base_colors[hover_mask, :3].astype(np.float32) + 0.28 * 255
             colors[hover_mask, :3] = np.rint(hovered_rgb).astype(np.uint8)
-            colors[hover_mask, 3] = np.maximum(base_colors[hover_mask, 3], 235)
+            if selected_mask is None:
+                colors[hover_mask, 3] = np.maximum(base_colors[hover_mask, 3], 235)
+            else:
+                selected_hover_mask = hover_mask & selected_mask
+                colors[selected_hover_mask, 3] = np.maximum(
+                    base_colors[selected_hover_mask, 3], 235
+                )
         self._check(
             self.dvz.dvz_visual_set_data(self.mesh, 'color', colors),
             'selection and hover color update',

@@ -402,6 +402,8 @@ def test_camera_angles_are_validated_stored_and_applied(mesh):
 
     with pytest.raises(ValueError, match='selection_dim_factor'):
         AtlasViewer(mesh, datoviz=FakeDatoviz(), selection_dim_factor=1.1)
+    with pytest.raises(ValueError, match='selection_context_opacity'):
+        AtlasViewer(mesh, datoviz=FakeDatoviz(), selection_context_opacity=-0.1)
     with pytest.raises(ValueError, match='surface_opacity'):
         AtlasViewer(mesh, datoviz=FakeDatoviz(), surface_opacity=-0.1)
     with pytest.raises(ValueError, match='surface_opacity'):
@@ -466,7 +468,12 @@ def test_selection_dims_every_nonselected_surface_region(mesh):
     )
     multi_region_mesh = replace(mesh, presentations=presentations)
     fake = FakeDatoviz()
-    with AtlasViewer(multi_region_mesh, datoviz=fake, selection_dim_factor=0.25) as viewer:
+    with AtlasViewer(
+        multi_region_mesh,
+        datoviz=fake,
+        selection_dim_factor=0.25,
+        selection_context_opacity=0.08,
+    ) as viewer:
         base = viewer._display_surface_colors()
         viewer.set_selected_region_ids((-315,))
         selected_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][
@@ -479,9 +486,19 @@ def test_selection_dims_every_nonselected_surface_region(mesh):
             selected_colors[~selected, :3],
             np.rint(base[~selected, :3].astype(np.float32) * 0.25).astype(np.uint8),
         )
-        np.testing.assert_array_equal(selected_colors[~selected, 3], 0)
+        np.testing.assert_array_equal(
+            selected_colors[~selected, 3],
+            np.rint(base[~selected, 3].astype(np.float32) * 0.08).astype(np.uint8),
+        )
         alpha_modes = [call[2] for call in fake.calls if call[:2] == ('alpha_mode', 'mesh')]
         assert alpha_modes == [fake.DVZ_ALPHA_OPAQUE, fake.DVZ_ALPHA_WBOIT]
+
+        viewer._set_hovered_region_ids((997,))
+        hovered_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][
+            -1
+        ][3]
+        np.testing.assert_array_equal(hovered_colors[~selected, 3], selected_colors[~selected, 3])
+        np.testing.assert_array_equal(hovered_colors[selected], selected_colors[selected])
 
         viewer.clear_selection()
         alpha_modes = [call[2] for call in fake.calls if call[:2] == ('alpha_mode', 'mesh')]
