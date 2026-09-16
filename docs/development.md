@@ -1,5 +1,9 @@
 # Development and documentation
 
+The [real-data interactive example roadmap](REAL_DATA_EXAMPLE_ROADMAP.md) records the planned
+capability ladder and review process. The [release-hardening handoff](RELEASE_HARDENING_HANDOFF.md)
+records the correctness, lifecycle, packaging, and API blockers that precede a release.
+
 ## Checks
 
 ```bash

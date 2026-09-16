@@ -6,8 +6,6 @@ v0.4.
 **[Documentation](docs/index.md) · [Getting started](docs/getting-started.md) ·
 [Gallery](docs/gallery/index.md) · [API reference](docs/api/index.md)**
 
-![Mapping-aware regional activity in the Allen atlas](docs/images/bwm-region-activity.png)
-
 `ibl-datoviz` combines verified Allen CCF 2017 assets from `ibl-anatomy` with interactive 3-D
 surfaces, orthogonal anatomical slices, ontology navigation, probe sites, regional values, and
 linked selection.

@@ -55,7 +55,10 @@ nav:
       - api/index.md
       - Atlas viewer: api/viewer.md
       - Data models: api/data-models.md
-  - Development: development.md
+  - Development:
+      - Guide: development.md
+      - Real-data example roadmap: REAL_DATA_EXAMPLE_ROADMAP.md
+      - Release-hardening handoff: RELEASE_HARDENING_HANDOFF.md
   - Evidence:
       - Real D070 checkpoint: REAL_D070_CHECKPOINT.md
       - Atlas 3-D benchmark: ATLAS_3D_BENCHMARK_FINDINGS.md

@@ -10,8 +10,6 @@ ontology navigation, probe sites, regional values, and linked selection.
   <span class="capability capability--data">Allen · Beryl · Cosmos</span>
 </div>
 
-![Mapping-aware BWM regional activity](images/bwm-region-activity.png)
-
 ## Current scope
 
 - Verified renderer-neutral geometry and ontology data come from `ibl-anatomy`.
