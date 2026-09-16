@@ -1,182 +1,136 @@
 # ibl-datoviz
 
-**[Documentation](docs/index.md) · [Gallery](docs/gallery/index.md) ·
-[API reference](docs/api/index.md)**
+Native Python visualization for International Brain Laboratory atlas data, built on Datoviz
+v0.4.
 
-`ibl-datoviz` 0.2 is a deliberately breaking Datoviz v0.4-based atlas viewer. The first
-vertical slice reads the renderer-neutral mesh-pack contract from `ibl-anatomy`, uploads
-its dense NumPy arrays, retains signed Allen/Beryl/Cosmos presentation identity, and adds
-scalar-colored probe sites, a probe path, arcball navigation, and Datoviz item interaction.
+**[Documentation](docs/index.md) · [Getting started](docs/getting-started.md) ·
+[Gallery](docs/gallery/index.md) · [API reference](docs/api/index.md)**
 
-The mesh geometry is uploaded once. Calling `AtlasViewer.set_mapping()` updates only vertex
-colors and per-face link keys, so switching ontology mappings does not reload geometry. Datoviz
-indexed-mesh item queries identify triangle primitives; the adapter therefore classifies each
-face at the declared hemispheric boundary rather than incorrectly treating query IDs as vertex
-IDs.
+![Mapping-aware regional activity in the Allen atlas](docs/images/bwm-region-activity.png)
 
-Build the local documentation site with `mkdocs build --strict`. Gallery commands and capability
-labels are kept in `docs/gallery/manifest.json`; `python tools/build_gallery.py --dry-run` shows the
-reproducible native screenshot pipeline without modifying tracked images.
+`ibl-datoviz` combines verified Allen CCF 2017 assets from `ibl-anatomy` with interactive 3-D
+surfaces, orthogonal anatomical slices, ontology navigation, probe sites, regional values, and
+linked selection.
 
-## Development checkout
+> [!NOTE]
+> Version 0.2 is under active development and intentionally breaks the historical 0.1 API while
+> the Datoviz v0.4 integration is validated.
 
-The committed `uv` sources pin exact Datoviz and atlas-assets revisions. When working on the
-three adjacent repositories, use their source trees and the already-built local Datoviz native
-library:
+## Features
 
-```bash
-export PYTHONPATH=../../Viz/datoviz:../ibl-anatomy/src
-/home/cyrille/GIT/Viz/datoviz/.venv/bin/python -m pytest
-```
+- Allen, Beryl, and Cosmos presentations backed by a versioned region catalog.
+- A native D070 surface viewer with arcball navigation, face picking, region selection, and
+  component explosion.
+- A four-panel navigator linking three orthogonal slices, a 3-D surface and volume, an AP/ML/DV
+  cursor, and the ontology tree.
+- Scalar-colored probe sites and regional values with linked, searchable tables.
+- Mapping-aware slice boundaries and optional registered 10 um slices over a bounded 50 um 3-D
+  volume.
+- Native offscreen rendering and reproducible gallery and benchmark commands.
 
-Run the miniature offline viewer and write its smoke image:
+The package owns viewer composition and display behavior. `ibl-anatomy` owns the versioned asset
+and decoding contracts; scientific atlas computations and coordinate-to-label annotation remain
+outside this package.
 
-```bash
-python examples/atlas_spike.py \
-  ../ibl-anatomy/tests/fixtures/mesh-pack-v1/pack \
-  --regions ../ibl-anatomy/tests/fixtures/atlas-regions-v1/regions.json \
-  --offscreen build/atlas-spike.png
-```
+## Install a development checkout
 
-Omit `--offscreen` for the interactive view. With `--regions`, the viewer uses official ontology
-colors and adds a native retained grey-matter browser with Allen/Beryl/Cosmos switching, search,
-color swatches, collapse/expand controls, signed-ID selection, and a region explosion slider.
-Explosion uses the mesh pack's canonical component-centroid displacement vectors, matching the
-ephys-atlas-web-v2 definition. Drag to orbit the arcball and click a mesh face to exercise picking.
-`AtlasViewer.selected_region_ids()` returns signed IDs selected through either surface or tree;
-while a selection is active, all non-selected surface regions remain faintly visible as transparent
-context.
-
-Use the real D070 mesh without `--regions` as the first performance and interaction baseline. This
-path creates one direct native view containing only an opaque mesh, perspective camera, and
-arcball; it does not initialize ImGui, ontology widgets, picking, volumes, or slices:
+The branch pins the Datoviz and `ibl-anatomy` source revisions used during development. From the
+repository root:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz \
-uv run python examples/atlas_spike.py \
-  ../ibl-anatomy/build/d070-published/mesh-pack
+uv sync --group dev
 ```
 
-Only after that baseline is healthy, add the region catalog to test the separate embedded-GUI,
-hover, linked-selection, and explosion rung:
+When developing all three repositories from adjacent checkouts, point Python at their sources:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz \
-uv run python examples/atlas_spike.py \
-  ../ibl-anatomy/build/d070-published/mesh-pack \
-  --regions ../ibl-anatomy/build/d070-published/regions.json
+export PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz
+uv run pytest
 ```
 
-Use `--explode 0.5` to set an initial value. The slider currently updates only the mesh position
-buffer; the benchmark ladder will measure this path before a Datoviz GPU-deformation API is
-considered.
+See [Getting started](docs/getting-started.md) for asset materialization and local native-library
+setup.
 
-The miniature fixture is intentionally synthetic and its Beryl mapping is absent. Missing
-mapping values therefore use a neutral gray. Real atlas colors should eventually come from a
-versioned region catalog supplied as an explicit palette; they do not belong in Datoviz.
+## Open an atlas
 
-## Real D070 checkpoint
-
-Materialize the pinned real surface once through `ibl-anatomy`, then run the same verified graph through the native adapter:
+Materialize the immutable D070 asset set with `ibl-anatomy`:
 
 ```bash
 PYTHONPATH=../ibl-anatomy/src python - <<'PY'
 from ibl_anatomy import bundled_asset_set, materialize_asset_set
+
 materialize_asset_set(bundled_asset_set(), "build/atlas-d070")
 PY
-
-PYTHONPATH=.:../ibl-anatomy/src python examples/benchmark_atlas.py \
-  build/atlas-d070 --render build/atlas-d070.png --json build/atlas-d070.json
 ```
 
-The EAM3 arrays are already compiled into declared ML/AP/DV micrometre coordinates. `source_to_world_um` is source provenance and must not be applied again. The shared reader owns that invariant and the vertex/face presentation classification; this package owns display normalization, palette upload, Datoviz interaction, and viewer lifecycle.
-
-See [the real D070 checkpoint](docs/REAL_D070_CHECKPOINT.md) for reproducible preparation, rendering, memory, and face-query measurements.
-
-Launch the linked real-atlas explorer directly from that verified asset graph:
+Then open the surface viewer:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src python examples/allen_mouse_brain.py \
+PYTHONPATH=.:../ibl-anatomy/src \
+uv run python examples/allen_mouse_brain.py \
   build/atlas-d070 --mapping allen
 ```
 
-Add a fixed probe trajectory and 48 synthetic scalar-colored sites whose Allen labels were
-precomputed with `iblatlas.AllenAtlas(25)`:
+The left dock provides ontology search, mapping controls, official color swatches, and linked
+selection. Drag the atlas to orbit it and click a surface region to select it.
 
-```bash
-PYTHONPATH=.:../ibl-anatomy/src python examples/allen_mouse_brain.py \
-  build/atlas-d070 --mapping allen --demo-probe
+The equivalent minimal Python entry point is:
+
+```python
+from ibl_datoviz import AtlasViewer
+
+with AtlasViewer.from_asset_set("build/atlas-d070", mapping="beryl") as viewer:
+    viewer.show(title="Allen mouse brain atlas")
 ```
 
-With `--probe`, the example lowers anatomy opacity to 0.18 and renders the dense atlas mesh with
-Datoviz v0.4 weighted blended order-independent transparency (WBOIT). Override that choice with
-`--surface-opacity`. The viewer API keeps opacity as a multiplier on canonical region alpha, so
-mapping changes and selection highlighting preserve the translucent anatomy shell. WBOIT is a
-native capability in this checkpoint; a future WebGPU version needs an explicit supported
-fallback rather than silently changing the rendering model.
+## Open the linked navigator
 
-`ProbeSites` is the small renderer-neutral application payload exercised by this demo: immutable
-site IDs, ML/AP/DV positions, scalar values, and signed Allen IDs. The viewer derives the current
-Allen/Beryl/Cosmos presentation through the verified catalog, installs item link keys in one batch,
-and builds a searchable/sortable retained table. Selecting table rows selects their atlas regions;
-tree or surface selection selects matching sites. Custom coordinates remain available through
-`--probe ENTRY_ML ENTRY_AP ENTRY_DV TIP_ML TIP_AP TIP_DV`, without pretending they have been
-anatomically annotated.
-
-## Real BWM ephys checkpoint
-
-The repository includes one compact derived fixture from the local `bwm_ephys` 1.1.0 dataset. It
-contains insertion `a21bade7-5be7-4a17-a9b9-ddee453e6260` (PL030, Hausser lab): 384 channels
-collapsed to 192 exact atlas locations, seven signed Allen regions, and the mean firing rate of the
-459 good units assigned to those sites. Source hashes and the full derivation are stored in the
-adjacent provenance JSON.
+With the D070 mesh and 50 um annotation/template volume pack materialized:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src python examples/bwm_probe.py \
-  build/atlas-d070 --mapping beryl
+PYTHONPATH=.:../ibl-anatomy/src \
+uv run python examples/linked_atlas_navigator.py \
+  ../ibl-anatomy/build/d070-published/mesh-pack \
+  ../ibl-anatomy/build/allen-ccf-2017-50um \
+  --ui-scale 1.5
 ```
 
-![Real BWM probe sites in the D070 atlas](docs/images/bwm-probe.png)
+The navigator shares one AP/ML/DV cursor and one region selection across the three slices, 3-D
+view, volume, and ontology. Registered 10 um slices are supported without uploading a complete
+10 um volume; the detailed command and interaction controls are documented in
+[Getting started](docs/getting-started.md#open-the-atlas-browser).
 
-The demo uses a sequential color scheme and clips its display range to the finite 5th–95th
-percentiles. This is a robust visualization choice, not a statistical analysis or a change to the
-recorded values. Missing values remain explicit and gray. The GUI table exposes the raw mean firing
-rate and links its stable channel-group rows to surface and ontology selection.
+## Real-data examples
 
-The second view aggregates those same measurements by signed Allen region and carries the declared
-site counts forward as weights when Allen rows collapse into Beryl or Cosmos. It exercises one
-selection across scalar-colored surfaces, probe sites, the ontology tree, and both retained tables:
+The repository includes a compact, provenance-recorded fixture derived from one BWM ephys
+insertion. It demonstrates both probe-site and mapping-aware regional views:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src python examples/bwm_region_activity.py \
-  build/atlas-d070 --mapping beryl
+PYTHONPATH=.:../ibl-anatomy/src \
+uv run python examples/bwm_probe.py build/atlas-d070 --mapping beryl
+
+PYTHONPATH=.:../ibl-anatomy/src \
+uv run python examples/bwm_region_activity.py build/atlas-d070 --mapping beryl
 ```
 
-![Mapping-aware BWM regional activity](docs/images/bwm-region-activity.png)
+These examples keep scientific derivation explicit: renderer payloads contain stable site or
+region identities and display values, while ontology labels and mappings come from the verified
+catalog. See the [gallery](docs/gallery/index.md) for screenshots, capability labels, and more
+commands.
 
-`AtlasRegionValues` deliberately contains only signed Allen IDs, one scalar, weights, and column
-names; ontology labels remain catalog-owned. The caller must explicitly request
-`mapping_reduction="weighted_mean"`, because that reduction is scientifically valid for this
-site-mean/count example but not for arbitrary statistics. Rows absent from a reduced mapping are
-omitted rather than misrepresented as root. Rendering belongs here; scientific derivation remains
-explicit in the example, while asset decoding and ontology metadata remain in `ibl-anatomy`.
-The example also gives valued regions higher opacity than the surrounding anatomical context; both
-opacities remain explicit viewer settings.
+## Development
 
-`AtlasViewer(camera_angles=(x, y, z))` selects a reproducible initial arcball view, and
-`set_camera_angles()` updates an active view. These calls require Datoviz commit `1114b65fa` or
-later; earlier v0.4 snapshots retained the angles but skipped them on camera-less panels.
-
-To reproduce the committed fixture from the local BWM dataset, run the optional Pandas-based build
-tool; Pandas is deliberately not an `ibl-datoviz` runtime dependency:
+Run the repository checks with:
 
 ```bash
-python tools/build_bwm_probe_fixture.py \
-  ../ibl-ai-agent/reports/datasets/bwm_ephys/1.1.0 examples/data
+uv run ruff check .
+uv run pytest
+uv run mkdocs build --strict
 ```
 
-The tree is a parent-closed ontology view. Rows used only to preserve hierarchy in reduced Beryl
-or Cosmos mappings are visibly muted but remain expandable. Selecting a parent highlights all mapped descendants;
-multiple selection, search, mapping changes, surface picking, clearing, and tree reveal all share
-one authoritative selection state. Geometry remains unchanged while colors and face identities
-follow the selected mapping.
+Performance reports are host-dependent and remain build-local. The current evidence and
+reproduction commands are recorded in:
+
+- [Datoviz v0.4 atlas findings](docs/V04_ATLAS_SPIKE_FINDINGS.md)
+- [Real D070 checkpoint](docs/REAL_D070_CHECKPOINT.md)
+- [3-D feature benchmark](docs/ATLAS_3D_BENCHMARK_FINDINGS.md)
