@@ -58,6 +58,37 @@ performance threshold. No real pointer events were injected, so Datoviz correctl
 input-latency samples; the query and emphasis scenarios measure update throughput, not end-to-end
 human interaction latency.
 
+## GUI and pointer follow-up
+
+A second randomized five-process run on Datoviz `18b4840ff` decomposed the GUI and injected real
+pointer-move events through `dvz_view_emit_pointer()`. The same D070 surface, 900 x 720 viewport,
+immediate presentation mode, 30 warm-up frames, and 120 measured frames were used.
+
+| Scenario | Run ms | GUI frame ms | GUI viewport ms | Query ms | Median RSS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Empty GUI window | 0.42 | 0.20 | 0.00 | 0.00 | 338 MiB |
+| Empty embedded viewport | 1.04 | 0.31 | 0.38 | 0.00 | 341 MiB |
+| Small VISp tree (7 rows) | 0.49 | 0.26 | 0.00 | 0.00 | 338 MiB |
+| Complete grey-matter tree (875 rows) | 0.83 | 0.43 | 0.00 | 0.00 | 338 MiB |
+| D070 viewport with minimal GUI | 6.41 | 0.83 | 4.88 | 0.00 | 378 MiB |
+| Complete atlas GUI | 7.34 | 1.26 | 5.12 | 0.00 | 378 MiB |
+| One real pointer move per frame | 11.30 | 0.00 | 0.00 | 9.87 | 535 MiB |
+
+The tree is not the GUI bottleneck. Drawing all 875 retained grey-matter rows adds about 0.23 ms to
+the GUI phase relative to the empty window, while the populated embedded surface viewport accounts
+for about 4.9 ms in viewport resolution plus its image construction. The complete application adds
+less than one millisecond beyond the minimal populated-viewport case. Further ontology-specific
+optimization is therefore not justified by this measurement; the synchronous populated-viewport
+path remains the meaningful upstream target.
+
+The moving-pointer run produced 120 input samples and 120 queries. Median input-to-submit latency
+was 11.44 ms, p95 was 13.69 ms, and p99 was 15.38 ms; 102 frames hit the mesh and 46 changed the
+resolved region. A burst control emitted four moves per frame (480 events total) but still executed
+only 120 queries. Its median query cost was 10.42 ms and median run time was 11.93 ms. This confirms
+that Datoviz already applies latest-position-wins coalescing within a frame by reusing the retained
+hover request scope. No Python hover scheduler or arbitrary frequency cap is warranted. The
+remaining cost is one movement-driven face query per rendered frame, not an event backlog.
+
 ## Reproduction
 
 ```bash
@@ -75,8 +106,6 @@ counts, and aggregate ranges.
 
 ## Next measurements
 
-1. Split the remaining GUI cost into an empty GUI, empty embedded viewport, small tree, and complete tree.
-2. Measure realistic hover scheduling: pointer movement with at most one outstanding query.
-3. Separate query plan construction, command execution, and synchronous readback in a later Datoviz profiler revision.
-4. Keep the current explosion path unless ordinary slider interaction shows visible latency.
-5. Build and benchmark one isolated 2-D slice view before returning to the linked navigator.
+1. Separate query plan construction, command execution, and synchronous readback in a later
+   Datoviz profiler revision.
+2. Keep the current explosion path unless ordinary slider interaction shows visible latency.

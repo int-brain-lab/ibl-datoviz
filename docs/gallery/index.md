@@ -120,8 +120,8 @@ python tools/benchmark_region_updates.py build/atlas-d070 \
 `tools/benchmark_atlas_3d.py` runs the isolated 3-D feature ladder in fresh processes. It uses
 Datoviz's native frame instrumentation with immediate presentation, separates Python mutation time,
 and compares the opaque baseline with rotation, interaction/query capabilities, GUI embedding,
-hover/selection emphasis updates,
-and static or animated explosion:
+hover/selection emphasis updates, real and burst pointer movement, empty and populated embedded
+viewports, small and complete ontology trees, and static or animated explosion:
 
 ```bash
 python tools/benchmark_atlas_3d.py \
@@ -133,7 +133,21 @@ python tools/benchmark_atlas_3d.py \
 See [the D070 findings](../ATLAS_3D_BENCHMARK_FINDINGS.md) for the current measurements,
 limitations, and follow-up microbenchmarks.
 
-`examples/benchmark_registered_slices.py` measures cold indexed-block decode, exact registered annotation rasterization, mapping-aware boundary extraction, warm cache reuse, and retained cache bytes for all three orthogonal 10 um planes. Reports remain local because source publication and host performance are independent concerns.
+`tools/benchmark_atlas_2d.py` isolates the retained native cost of one 50 um slice. Its layer ladder
+adds linear-sampled anatomy, nearest-sampled annotation, mapping-aware vector boundaries, and the
+cursor crosshair in fresh processes:
+
+```bash
+python tools/benchmark_atlas_2d.py \
+  ../ibl-anatomy/build/allen-ccf-2017-50um \
+  --json build/atlas-2d-50um.json
+```
+
+See [the 2-D findings](../ATLAS_2D_BENCHMARK_FINDINGS.md) for the current measurements.
+`examples/benchmark_registered_slices.py` separately measures cold indexed-block decode, exact
+registered annotation rasterization, mapping-aware boundary extraction, warm cache reuse, and
+retained cache bytes for all three orthogonal 10 um planes. Reports remain local because source
+publication and host performance are independent concerns.
 
 ## Capability matrix
 

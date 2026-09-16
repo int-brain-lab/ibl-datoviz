@@ -134,3 +134,4 @@ reproduction commands are recorded in:
 - [Datoviz v0.4 atlas findings](docs/V04_ATLAS_SPIKE_FINDINGS.md)
 - [Real D070 checkpoint](docs/REAL_D070_CHECKPOINT.md)
 - [3-D feature benchmark](docs/ATLAS_3D_BENCHMARK_FINDINGS.md)
+- [2-D slice benchmark](docs/ATLAS_2D_BENCHMARK_FINDINGS.md)

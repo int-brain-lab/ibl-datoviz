@@ -30,6 +30,13 @@ SCENARIOS = (
     'rotation',
     'interaction_capability_idle',
     'face_query',
+    'pointer_hover',
+    'pointer_hover_burst',
+    'gui_empty',
+    'gui_viewport_empty',
+    'gui_viewport_surface',
+    'gui_tree_small',
+    'gui_tree_full',
     'gui_idle',
     'gui_interaction_idle',
     'hover_emphasis_update',
@@ -37,13 +44,80 @@ SCENARIOS = (
     'explode_static',
     'explode_animated',
 )
-GUI_SCENARIOS = frozenset(('gui_idle', 'gui_interaction_idle'))
+GUI_SCENARIOS = frozenset(
+    (
+        'gui_empty',
+        'gui_viewport_empty',
+        'gui_viewport_surface',
+        'gui_tree_small',
+        'gui_tree_full',
+        'gui_idle',
+        'gui_interaction_idle',
+    )
+)
+GUI_PROFILE_SCENARIOS = {
+    'gui_empty': 'empty',
+    'gui_viewport_empty': 'empty_viewport',
+    'gui_viewport_surface': 'surface_viewport',
+    'gui_tree_small': 'tree',
+    'gui_tree_full': 'tree',
+}
 INTERACTION_SCENARIOS = frozenset(
-    ('interaction_capability_idle', 'face_query', 'gui_interaction_idle')
+    (
+        'interaction_capability_idle',
+        'face_query',
+        'pointer_hover',
+        'pointer_hover_burst',
+        'gui_interaction_idle',
+    )
 )
 TIMING_PREFIX = 'app_frame_timing:'
 LATENCY_PREFIX = 'app_interaction_latency:'
 RESULT_PREFIX = 'atlas_3d_benchmark_result:'
+
+
+class _BenchmarkAtlasViewer(AtlasViewer):
+    """Atlas viewer with deliberately minimal benchmark-only GUI callbacks."""
+
+    def __init__(self, *args, gui_profile: str, **kwargs):
+        self._benchmark_gui_profile = gui_profile
+        self._benchmark_empty_figure = None
+        super().__init__(*args, **kwargs)
+
+    def _gui_callback(self, gui, _view, _user_data) -> None:
+        if self._benchmark_gui_profile not in (
+            'empty',
+            'empty_viewport',
+            'surface_viewport',
+            'tree',
+        ):
+            super()._gui_callback(gui, _view, _user_data)
+            return
+        if (
+            self.dvz.dvz_gui_begin(gui, b'Atlas benchmark', None, 0)
+            and self._benchmark_gui_profile == 'tree'
+        ):
+            self.dvz.dvz_gui_tree_draw(gui, self.region_tree)
+        self.dvz.dvz_gui_end(gui)
+        if self._benchmark_gui_profile in ('empty_viewport', 'surface_viewport'):
+            self.dvz.dvz_gui_viewport_window(self.viewport, b'Benchmark viewport', None, 0)
+
+    def use_empty_benchmark_viewport(self) -> None:
+        """Replace the displayed benchmark viewport with a figure containing no visuals."""
+        self._benchmark_empty_figure = self.dvz.dvz_figure(
+            self.scene, self.width, self.height, 0
+        )
+        if not self._benchmark_empty_figure:
+            raise RuntimeError('empty benchmark figure creation failed')
+        panel = self.dvz.dvz_panel_full(self._benchmark_empty_figure)
+        if not panel:
+            raise RuntimeError('empty benchmark panel creation failed')
+        config = self.dvz.dvz_gui_viewport_config()
+        self.viewport = self.dvz.dvz_gui_viewport(
+            self.gui, self._benchmark_empty_figure, ctypes.byref(config)
+        )
+        if not self.viewport:
+            raise RuntimeError('empty benchmark viewport creation failed')
 
 
 def _parse_key_values(line: str, prefix: str) -> dict[str, int | float | str] | None:
@@ -122,13 +196,20 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
     interaction = args.scenario in INTERACTION_SCENARIOS
     initial_explode = 0.5 if args.scenario == 'explode_static' else 0.0
     viewer_start = perf_counter()
-    viewer = AtlasViewer(
+    viewer_class = _BenchmarkAtlasViewer if args.scenario in GUI_PROFILE_SCENARIOS else AtlasViewer
+    viewer_kwargs = {}
+    if args.scenario in GUI_PROFILE_SCENARIOS:
+        viewer_kwargs['gui_profile'] = GUI_PROFILE_SCENARIOS[args.scenario]
+    if args.scenario == 'gui_tree_small':
+        viewer_kwargs['tree_root_acronym'] = 'VISp'
+    viewer = viewer_class(
         mesh,
         catalog=catalog,
         width=args.width,
         height=args.height,
         enable_interaction=interaction,
         explode=initial_explode,
+        **viewer_kwargs,
     )
     viewer_created = perf_counter()
 
@@ -137,13 +218,15 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
     measuring = [False]
     callback_index = [0]
     query_results = {'queued': 0, 'resolved': 0, 'hits': 0}
+    pointer_results = {'emitted': 0, 'hover_hit_frames': 0, 'hover_changes': 0}
+    previous_hover = [()]
     measured_request_start = [sys.maxsize]
     region_id = next(
         (int(value) for value in np.unique(mesh.mapping_ids('allen')) if int(value) != 0),
         0,
     )
 
-    def on_frame(_view, _user_data) -> None:
+    def on_frame(_view, _user_data) -> None:  # noqa: PLR0912
         index = callback_index[0]
         callback_index[0] += 1
         started = perf_counter()
@@ -182,6 +265,32 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 )
                 if measuring[0]:
                     query_results['queued'] += 1
+            elif args.scenario in ('pointer_hover', 'pointer_hover_burst'):
+                hover = viewer._mesh_hovered_region_ids()
+                if measuring[0]:
+                    pointer_results['hover_hit_frames'] += int(bool(hover))
+                    pointer_results['hover_changes'] += int(hover != previous_hover[0])
+                previous_hover[0] = hover
+                events_per_frame = 4 if args.scenario == 'pointer_hover_burst' else 1
+                for event_index in range(events_per_frame):
+                    phase = (index + event_index / events_per_frame) * 0.071
+                    x = args.width * (0.5 + 0.22 * np.sin(phase))
+                    y = args.height * (0.5 + 0.18 * np.sin(phase * 1.37))
+                    viewer._check(
+                        dvz.dvz_view_emit_pointer(
+                            viewer.view,
+                            dvz.DVZ_POINTER_EVENT_MOVE,
+                            x,
+                            y,
+                            args.width,
+                            args.height,
+                            dvz.DVZ_POINTER_BUTTON_NONE,
+                            dvz.DVZ_KEY_MODIFIER_NONE,
+                        ),
+                        'benchmark pointer move',
+                    )
+                    if measuring[0]:
+                        pointer_results['emitted'] += 1
         except Exception as error:  # ctypes callbacks cannot propagate exceptions safely
             callback_errors.append(f'{type(error).__name__}: {error}')
         finally:
@@ -192,6 +301,21 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
         view_start = perf_counter()
         viewer._create_view(offscreen=False, title=f'3-D benchmark: {args.scenario}')
         viewer_created_view = perf_counter()
+        if args.scenario == 'gui_viewport_empty':
+            viewer.use_empty_benchmark_viewport()
+        if args.scenario in ('pointer_hover', 'pointer_hover_burst'):
+            viewer._check(
+                dvz.dvz_view_emit_resize(
+                    viewer.view,
+                    args.width,
+                    args.height,
+                    args.width,
+                    args.height,
+                    1.0,
+                    1.0,
+                ),
+                'benchmark pointer viewport size',
+            )
         viewer._check(
             dvz.dvz_view_set_frame_callback(viewer.view, on_frame, None),
             'benchmark frame callback',
@@ -234,6 +358,8 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'mapping': 'allen',
                 'catalog': catalog is not None,
                 'interaction': interaction,
+                'gui_profile': GUI_PROFILE_SCENARIOS.get(args.scenario),
+                'tree_root_acronym': 'VISp' if args.scenario == 'gui_tree_small' else 'grey',
                 'initial_explode': initial_explode,
                 'mutation_upload_bytes_per_frame': (
                     mesh.positions.nbytes
@@ -277,6 +403,11 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'maximum_resident_set_kib': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             },
             'queries': query_results if args.scenario == 'face_query' else None,
+            'pointer': (
+                pointer_results
+                if args.scenario in ('pointer_hover', 'pointer_hover_burst')
+                else None
+            ),
         }
         print(f'{RESULT_PREFIX} {json.dumps(record, sort_keys=True)}')
     finally:
@@ -397,6 +528,29 @@ def _scenario_summary(runs: Sequence[dict]) -> dict[str, float | int]:
     ]
     if query_counts:
         summary['query_count_median'] = int(np.median(query_counts))
+    latency_fields = (
+        'samples',
+        'input_to_render_start_p50_ms',
+        'input_to_render_start_p95_ms',
+        'input_to_render_start_p99_ms',
+        'input_to_submit_p50_ms',
+        'input_to_submit_p95_ms',
+        'input_to_submit_p99_ms',
+    )
+    for field in latency_fields:
+        values = [
+            float(run['datoviz_interaction_latency_ms'][field])
+            for run in runs
+            if run.get('datoviz_interaction_latency_ms') is not None
+            and field in run['datoviz_interaction_latency_ms']
+        ]
+        if values:
+            summary[f'interaction_{field}_median'] = float(np.median(values))
+    pointer_fields = ('emitted', 'hover_hit_frames', 'hover_changes')
+    for field in pointer_fields:
+        values = [int(run['pointer'][field]) for run in runs if run.get('pointer') is not None]
+        if values:
+            summary[f'pointer_{field}_median'] = int(np.median(values))
     summary['observed_fps_median'] = float(np.median([run['observed_fps'] for run in runs]))
     run_values = [float(run['datoviz_frame_timing_ms']['run_ms']) for run in runs]
     fps_values = [float(run['observed_fps']) for run in runs]

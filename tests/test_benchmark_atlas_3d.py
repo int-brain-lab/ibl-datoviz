@@ -54,6 +54,16 @@ def test_scenario_summary_preserves_repeat_count():
             },
             'memory': {'maximum_resident_set_kib': 100},
             'timing': {'mutation': {'median_ms': 0.2}},
+            'datoviz_interaction_latency_ms': {
+                'samples': 120,
+                'input_to_render_start_p50_ms': 0.4,
+                'input_to_render_start_p95_ms': 0.8,
+                'input_to_render_start_p99_ms': 1.0,
+                'input_to_submit_p50_ms': 2.4,
+                'input_to_submit_p95_ms': 2.8,
+                'input_to_submit_p99_ms': 3.0,
+            },
+            'pointer': {'emitted': 120, 'hover_hit_frames': 80, 'hover_changes': 12},
         }
         for run, fps in ((4, 250), (5, 200), (6, 166.666))
     ]
@@ -64,3 +74,21 @@ def test_scenario_summary_preserves_repeat_count():
     assert summary['gui_viewport_median'] == pytest.approx(0.03)
     assert summary['query_median'] == pytest.approx(0.35)
     assert summary['query_count_median'] == 2
+    assert summary['interaction_samples_median'] == pytest.approx(120)
+    assert summary['interaction_input_to_submit_p95_ms_median'] == pytest.approx(2.8)
+    assert summary['pointer_emitted_median'] == 120
+    assert summary['pointer_hover_changes_median'] == 12
+
+
+def test_gui_decomposition_scenarios_are_profiled_without_interaction():
+    assert set(BENCHMARK.GUI_PROFILE_SCENARIOS) == {
+        'gui_empty',
+        'gui_viewport_empty',
+        'gui_viewport_surface',
+        'gui_tree_small',
+        'gui_tree_full',
+    }
+    assert set(BENCHMARK.GUI_PROFILE_SCENARIOS) <= BENCHMARK.GUI_SCENARIOS
+    assert not (set(BENCHMARK.GUI_PROFILE_SCENARIOS) & BENCHMARK.INTERACTION_SCENARIOS)
+    assert 'pointer_hover' in BENCHMARK.INTERACTION_SCENARIOS
+    assert 'pointer_hover_burst' in BENCHMARK.INTERACTION_SCENARIOS
