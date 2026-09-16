@@ -46,7 +46,7 @@ jobs:
         run: |
           uv pip install --system --editable ../ibl-anatomy
           uv pip install --system \
-            'datoviz @ git+https://github.com/datoviz/datoviz.git@d9064facf6da9de5df7df1503f99479413b56eeb' \
+            'datoviz @ git+https://github.com/datoviz/datoviz.git@3bdfee4e871d27775c471779b5f711723cd22db8' \
             'numpy>=1.24' pytest ruff
           uv pip install --system --no-deps --editable .
 
