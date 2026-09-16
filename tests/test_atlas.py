@@ -118,6 +118,32 @@ class FakeDatoviz:
     def dvz_mesh(self, *_args):
         return self._handle('mesh')
 
+    def dvz_scene_default_ambient(self, *_args):
+        return SimpleNamespace(name='ambient_light')
+
+    def dvz_light_set_intensity(self, light, intensity):
+        self.calls.append(('light_intensity', light.name, intensity))
+        return 0
+
+    @staticmethod
+    def dvz_phong_material_desc():
+        return SimpleNamespace(
+            phong=SimpleNamespace(ambient=0.24, diffuse=0.82, specular=0.24, shininess=26.0)
+        )
+
+    def dvz_visual_set_material(self, visual, material):
+        self.calls.append(
+            (
+                'material',
+                visual.name,
+                material.phong.ambient,
+                material.phong.diffuse,
+                material.phong.specular,
+                material.phong.shininess,
+            )
+        )
+        return 0
+
     def dvz_path(self, *_args):
         return self._handle('path')
 
@@ -420,6 +446,8 @@ def test_translucent_surface_uses_wboit_and_preserves_alpha(mesh):
         initial = next(call for call in fake.calls if call[:2] == ('data_many', 'mesh'))[3]
         np.testing.assert_array_equal(initial['color'][:, 3], [64] * len(mesh.positions))
         assert ('alpha_mode', 'mesh', fake.DVZ_ALPHA_WBOIT) in fake.calls
+        assert ('light_intensity', 'ambient_light', 0.65) in fake.calls
+        assert ('material', 'mesh', 1.0, 0.45, 0.08, 24.0) in fake.calls
 
         viewer.set_mapping('beryl')
         mapping_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][-1]
@@ -552,6 +580,16 @@ def test_region_data_replaces_surface_emphasis_base_cache(mesh):
         assert viewer._surface_mapping_ids_cache is not None
         color_updates = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')]
         np.testing.assert_array_equal(viewer._surface_base_colors_cache, color_updates[-2][3])
+
+
+def test_region_data_uses_readable_neutral_context(mesh):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake, surface_opacity=0.08) as viewer:
+        colors = viewer._region_surface_colors(
+            'allen', np.empty(0, dtype=np.int64), np.empty((0, 4), dtype=np.uint8)
+        )
+        np.testing.assert_array_equal(colors[:, :3], [[100, 112, 130]] * len(colors))
+        np.testing.assert_array_equal(colors[:, 3], [20] * len(colors))
 
 
 def test_mesh_hover_reads_item_interaction_hover_identity(mesh):

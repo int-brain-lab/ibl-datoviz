@@ -43,8 +43,9 @@ def main() -> int:
 
     sites, provenance = _load_fixture(args.fixture)
     regions = _aggregate_regions(sites)
-    finite = sites.values[np.isfinite(sites.values)]
-    value_range = tuple(float(value) for value in np.quantile(finite, (0.05, 0.95)))
+    # Scale the colormap to the regional summary being displayed, rather than
+    # to the individual recording sites used to derive it.
+    value_range = tuple(float(value) for value in np.quantile(regions.values, (0.05, 0.95)))
     with AtlasViewer.from_asset_set(
         args.asset_root,
         mapping=args.mapping,

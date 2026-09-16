@@ -219,6 +219,26 @@ class AtlasViewer:
         self.mesh = self.dvz.dvz_mesh(self.scene, 0)
         if not self.mesh:
             raise RuntimeError('dvz_mesh() failed')
+        # Datoviz's physically linear defaults use a deliberately weak ambient
+        # term.  That is too directional for an atlas, where every camera angle
+        # must retain anatomical context and categorical colors must stay
+        # legible.  Use a broad fill light and a restrained Phong response.
+        ambient_light = self.dvz.dvz_scene_default_ambient(self.scene)
+        if not ambient_light:
+            raise RuntimeError('Datoviz scene has no default ambient light')
+        self._check(
+            self.dvz.dvz_light_set_intensity(ambient_light, 0.65),
+            'atlas ambient light setup',
+        )
+        material = self.dvz.dvz_phong_material_desc()
+        material.phong.ambient = 1.0
+        material.phong.diffuse = 0.45
+        material.phong.specular = 0.08
+        material.phong.shininess = 24.0
+        self._check(
+            self.dvz.dvz_visual_set_material(self.mesh, material),
+            'atlas surface material setup',
+        )
         surface_colors = self._display_surface_colors()
         self._check(
             self.dvz.dvz_visual_set_data_many(
@@ -350,7 +370,7 @@ class AtlasViewer:
         """Expand one color per presentation region to dense mesh vertices."""
         alpha = int(round(255 * self.surface_opacity))
         lookup = np.tile(
-            np.asarray((46, 52, 62, alpha), dtype=np.uint8),
+            np.asarray((100, 112, 130, alpha), dtype=np.uint8),
             (len(self.mesh_data.presentations), 1),
         )
         by_region = dict(zip(region_ids, value_colors, strict=True))
