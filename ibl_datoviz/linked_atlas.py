@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+from contextlib import suppress
 from threading import RLock
 from typing import TYPE_CHECKING
 
@@ -163,15 +164,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._slice_source_id = str(
             getattr(slice_source, 'grid_id', getattr(slice_source.grid, 'grid_id', 'atlas-grid'))
         )
-        self._slice_loader = (
-            SliceScheduler(
-                self._prepare_slice,
-                notify=self._notify_slice_ready,
-                max_workers=3,
-            )
-            if slice_source is not volumes
-            else None
-        )
+        self._slice_loader = None
         self._slice_post_callback = self._drain_prepared_slices
         self._slice_error: Exception | None = None
         self.annotation_opacity = float(annotation_opacity)
@@ -213,17 +206,23 @@ class LinkedAtlasNavigator(AtlasViewer):
         )
         self._slice_zoom = {axis: 1.0 for axis in ('ap', 'ml', 'dv')}
         self._slice_wheel_accumulator = {axis: 0.0 for axis in ('ap', 'ml', 'dv')}
-        super().__init__(
-            mesh,
-            mapping=mapping,
-            catalog=volumes.regions,
-            width=width,
-            height=height,
-            surface_opacity=surface_opacity,
-            datoviz=datoviz,
-            **kwargs,
-        )
         try:
+            if slice_source is not volumes:
+                self._slice_loader = SliceScheduler(
+                    self._prepare_slice,
+                    notify=self._notify_slice_ready,
+                    max_workers=3,
+                )
+            super().__init__(
+                mesh,
+                mapping=mapping,
+                catalog=volumes.regions,
+                width=width,
+                height=height,
+                surface_opacity=surface_opacity,
+                datoviz=datoviz,
+                **kwargs,
+            )
             self._create_slices()
             self._create_anatomical_volume()
             self._create_cursor_marker()
@@ -993,6 +992,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         selection.  Callers handling an explicit selection gesture (for
         example a click in a slice) can opt in with ``select_region=True``.
         """
+        self._require_open()
         previous = self.cursor.as_index()
         current = cursor.as_index()
         for axis, value in zip(('ap', 'ml', 'dv'), current, strict=True):
@@ -1020,6 +1020,7 @@ class LinkedAtlasNavigator(AtlasViewer):
 
         Returns ``False`` when the coordinate lies outside the rendered image.
         """
+        self._require_open()
         cursor = self._cursor_at_slice_data(axis, x, y)
         if cursor is None:
             return False
@@ -1086,6 +1087,7 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def step_slice(self, axis: str, delta: int) -> bool:
         """Step one slice plane without changing committed region selection."""
+        self._require_open()
         if axis not in self.slice_panels or not delta:
             return False
         cursor = step_slice_cursor(self.cursor, axis, int(delta), self.slice_source.grid.shape)
@@ -1096,6 +1098,7 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def toggle_cursor_region_selection(self) -> None:
         """Toggle the region under the current AP/ML/DV cursor."""
+        self._require_open()
         row = self.cursor.region(self.slice_source, self.mapping)
         ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
         if ids == self._selected_region_ids:
@@ -1104,6 +1107,7 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def select_cursor_region(self) -> None:
         """Toggle the cursor region; retained as the public convenience name."""
+        self._require_open()
         self.toggle_cursor_region_selection()
 
     def set_mapping(self, mapping: str, palette=None) -> None:
@@ -1395,3 +1399,8 @@ class LinkedAtlasNavigator(AtlasViewer):
             self.dvz.dvz_input_unsubscribe(self._input_router, self._input_subscription)
             self._input_subscription = 0
         super().close()
+
+    def __del__(self) -> None:
+        """Release slice workers and native resources as a last resort."""
+        with suppress(Exception):
+            LinkedAtlasNavigator.close(self)

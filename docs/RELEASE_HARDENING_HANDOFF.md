@@ -15,6 +15,12 @@ update. Do not combine these items with Datoviz query, mesh, or presentation opt
 
 ### 1. Make viewer lifecycle failure-safe
 
+Status: implemented on the feature branch. Base and linked viewers now establish cleanup-safe
+state before native allocation, constructor cleanup bypasses virtual dispatch, slice workers have a
+linked-view finalizer path, repeated close is harmless, and public native operations reject use
+after close. Failure injection covers scene, figure, panel, mesh, and interaction construction;
+context-manager exceptions and partial-subclass cleanup are also covered.
+
 `AtlasViewer.__init__()` creates the native scene before all fallible Python setup is inside its
 cleanup boundary. For example, mapping-control construction occurs after `dvz_scene()` but before
 the constructor's `try` block. An invalid mapping or another setup failure in that interval can

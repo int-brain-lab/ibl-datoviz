@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -68,6 +69,8 @@ class AtlasViewer:
             raise ValueError('sidebar_width must be finite and positive')
         if not tree_root_acronym:
             raise ValueError('tree_root_acronym must not be empty')
+        if mapping not in mesh.mapping_names:
+            raise ValueError(f'unknown atlas mapping: {mapping}')
         self.camera_angles = self._validated_camera_angles(camera_angles)
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
@@ -85,10 +88,10 @@ class AtlasViewer:
         self.sidebar_width = float(sidebar_width)
         self.tree_root_acronym = tree_root_acronym
         self.enable_interaction = bool(enable_interaction)
-        self.scene = self.dvz.dvz_scene()
-        if not self.scene:
-            raise RuntimeError('dvz_scene() failed')
+        self._closed = False
+        self.scene = None
         self.app, self.view, self.arcball, self.arcball_controller = None, None, None, None
+        self.figure, self.panel, self.mesh, self.probe = None, None, None, None
         self.host_figure = None
         self.viewport = None
         self.interaction = None
@@ -120,8 +123,10 @@ class AtlasViewer:
         self._surface_emphasis_work: NDArray[np.uint8] | None = None
         self._surface_alpha_mode: int | None = None
         self._last_mesh_region_ids: tuple[int, ...] = ()
-        self._closed = False
         try:
+            self.scene = self.dvz.dvz_scene()
+            if not self.scene:
+                raise RuntimeError('dvz_scene() failed')
             self._create_layout()
             self._create_surface()
             if self.enable_interaction:
@@ -132,15 +137,19 @@ class AtlasViewer:
                 )
                 if not self.interaction:
                     raise RuntimeError('dvz_item_interaction() failed')
-            self.probe = None
         except Exception:
-            self.close()
+            # Avoid virtual dispatch into a partially initialized subclass.
+            AtlasViewer.close(self)
             raise
 
     def _create_layout(self) -> None:
         """Create the figure and primary 3-D panel."""
         self.figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
+        if not self.figure:
+            raise RuntimeError('dvz_figure() failed')
         self.panel = self.dvz.dvz_panel_full(self.figure)
+        if not self.panel:
+            raise RuntimeError('dvz_panel_full() failed')
         self.dvz.dvz_panel_set_background_color(self.panel, self.dvz.DvzColor(29, 33, 39, 255))
         self._configure_3d_camera()
 
@@ -196,6 +205,7 @@ class AtlasViewer:
 
     def set_camera_angles(self, angles: Sequence[float]) -> None:
         """Set stored arcball Euler angles and update an active view immediately."""
+        self._require_open()
         self.camera_angles = self._validated_camera_angles(angles)
         if self.arcball is not None:
             native = (ctypes.c_float * 3)(*self.camera_angles)
@@ -278,8 +288,7 @@ class AtlasViewer:
 
     def set_explode(self, amount: float) -> None:
         """Explode mesh components along their canonical centroid displacement vectors."""
-        if self._closed:
-            raise RuntimeError('viewer is closed')
+        self._require_open()
         if not np.isfinite(amount) or not 0 <= amount <= 1:
             raise ValueError('explode must be between zero and one')
         amount = float(amount)
@@ -298,8 +307,7 @@ class AtlasViewer:
         self, mapping: str, palette: Mapping[int, Sequence[int]] | None = None
     ) -> None:
         """Change presentation colors and link identity without re-uploading geometry."""
-        if self._closed:
-            raise RuntimeError('viewer is closed')
+        self._require_open()
         effective_palette = self.palette if palette is None else palette
         if self.catalog is not None and palette is None:
             self.tree_model = AtlasTreeModel.from_catalog(self.catalog, mapping)
@@ -391,6 +399,7 @@ class AtlasViewer:
         mapping_reduction: Literal['weighted_mean'],
     ) -> None:
         """Color surfaces, explicitly reducing mapping collisions by weighted mean."""
+        self._require_open()
         if self.catalog is None:
             raise ValueError('linked region data requires an atlas region catalog')
         if color_scheme not in ('diverging', 'sequential'):
@@ -505,6 +514,7 @@ class AtlasViewer:
         width_px: float = 4.0,
     ) -> None:
         """Add or replace a probe trajectory in atlas world micrometres."""
+        self._require_open()
         positions = self.mesh_data.normalize_points(points_um)
         if len(positions) < 2:
             raise ValueError('a probe path needs at least two points')
@@ -539,6 +549,7 @@ class AtlasViewer:
         color_scheme: Literal['diverging', 'sequential'] = 'diverging',
     ) -> None:
         """Add or replace probe sites, optionally colored by one scalar feature."""
+        self._require_open()
         positions = self.mesh_data.normalize_points(points_um)
         count = len(positions)
         if count == 0:
@@ -597,6 +608,7 @@ class AtlasViewer:
         color_scheme: Literal['diverging', 'sequential'] = 'diverging',
     ) -> None:
         """Display a typed probe payload and link its Allen labels to atlas presentation."""
+        self._require_open()
         if self.catalog is None:
             raise ValueError('linked probe data requires an atlas region catalog')
         mapped_ids = self._mapped_probe_region_ids(data)
@@ -730,6 +742,7 @@ class AtlasViewer:
 
     def set_selected_region_ids(self, region_ids: Sequence[int]) -> None:
         """Select signed or logical atlas regions and highlight their mapped descendants."""
+        self._require_open()
         selected = tuple(dict.fromkeys(int(region_id) for region_id in region_ids if region_id))
         if self.tree_model is not None:
             available = {abs(int(region_id)) for region_id in self.tree_model.region_ids}
@@ -1406,6 +1419,7 @@ class AtlasViewer:
 
     def render_offscreen(self, output: str | Path | None = None) -> NDArray[np.uint8]:
         """Render exactly one frame and return a copied RGBA image."""
+        self._require_open()
         self._create_view(offscreen=True, title='')
         self._check(self.dvz.dvz_view_render_once(self.view), 'offscreen render')
         rgba = np.array(self.dvz.dvz_view_capture_rgba(self.view), copy=True)
@@ -1424,30 +1438,37 @@ class AtlasViewer:
 
     def show(self, *, title: str = 'IBL atlas', frame_count: int = 0) -> None:
         """Run an interactive arcball and region-picking view."""
+        self._require_open()
         self._create_view(offscreen=False, title=title)
         self.dvz.dvz_app_run(self.app, frame_count)
 
+    def _require_open(self) -> None:
+        """Reject operations that require live native viewer state."""
+        if self._closed:
+            raise RuntimeError('viewer is closed')
+
     def close(self) -> None:
         """Destroy app before scene; scene owns all remaining handles."""
-        if self._closed:
+        if getattr(self, '_closed', False):
             return
-        if self.viewport is not None:
+        datoviz = getattr(self, 'dvz', None)
+        if datoviz is not None and getattr(self, 'viewport', None) is not None:
             self.dvz.dvz_panel_connect_input(self.panel, None)
             self.dvz.dvz_gui_viewport_destroy(self.viewport)
             self.viewport = None
-        if self.app:
+        if datoviz is not None and getattr(self, 'app', None):
             self.dvz.dvz_app_destroy(self.app)
             self.app = None
-        if self.region_tree is not None:
+        if datoviz is not None and getattr(self, 'region_tree', None) is not None:
             self.dvz.dvz_gui_tree_destroy(self.region_tree)
             self.region_tree = None
-        if self.probe_table is not None:
+        if datoviz is not None and getattr(self, 'probe_table', None) is not None:
             self.dvz.dvz_gui_table_destroy(self.probe_table)
             self.probe_table = None
-        if self.region_table is not None:
+        if datoviz is not None and getattr(self, 'region_table', None) is not None:
             self.dvz.dvz_gui_table_destroy(self.region_table)
             self.region_table = None
-        if self.scene:
+        if datoviz is not None and getattr(self, 'scene', None):
             self.dvz.dvz_scene_destroy(self.scene)
             self.scene = None
         self._closed = True
@@ -1463,4 +1484,5 @@ class AtlasViewer:
     def __del__(self) -> None:
         """Release native resources as a last-resort safeguard."""
         if hasattr(self, '_closed'):
-            self.close()
+            with suppress(Exception):
+                AtlasViewer.close(self)

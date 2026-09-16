@@ -66,14 +66,18 @@ class FakeDatoviz:
     DVZ_GUI_TABLE_COLUMN_FLAGS_SEARCHABLE = 2
     DVZ_GUI_TABLE_COLUMN_FLAGS_STRETCH = 4
 
-    def __init__(self):
+    def __init__(self, *, fail_on=None):
         self.calls = []
+        self.fail_on = fail_on
         self.mesh_selection = []
         self.mesh_hover = None
         self.tree_selection = []
         self.table_selection = []
 
     def _handle(self, name):
+        if name == self.fail_on:
+            self.calls.append((f'{name}_failed',))
+            return None
         value = SimpleNamespace(name=name)
         self.calls.append((name,))
         return value
@@ -380,6 +384,75 @@ def test_viewer_switches_mapping_without_geometry_upload(mesh):
     assert viewer.selected_region_ids() == ()
     viewer.close()
     assert fake.calls[-1] == ('destroy_scene',)
+
+
+@pytest.mark.parametrize(
+    ('stage', 'message', 'destroy_count'),
+    [
+        ('scene', 'dvz_scene', 0),
+        ('figure', 'dvz_figure', 1),
+        ('panel', 'dvz_panel_full', 1),
+        ('mesh', 'dvz_mesh', 1),
+        ('interaction', 'dvz_item_interaction', 1),
+    ],
+)
+def test_viewer_constructor_failure_releases_scene(mesh, stage, message, destroy_count):
+    fake = FakeDatoviz(fail_on=stage)
+    with pytest.raises(RuntimeError, match=message):
+        AtlasViewer(mesh, datoviz=fake)
+    assert sum(call == ('destroy_scene',) for call in fake.calls) == destroy_count
+
+
+def test_invalid_mapping_fails_before_native_allocation(mesh):
+    fake = FakeDatoviz()
+    with pytest.raises(ValueError, match='unknown atlas mapping'):
+        AtlasViewer(mesh, datoviz=fake, mapping='unknown')
+    assert ('scene',) not in fake.calls
+
+
+def test_constructor_cleanup_avoids_partial_subclass_dispatch(mesh):
+    class PartialViewer(AtlasViewer):
+        def close(self):
+            raise AssertionError('partial subclass close must not be dispatched')
+
+    fake = FakeDatoviz(fail_on='figure')
+    with pytest.raises(RuntimeError, match='dvz_figure'):
+        PartialViewer(mesh, datoviz=fake)
+    assert sum(call == ('destroy_scene',) for call in fake.calls) == 1
+
+
+def test_context_manager_exception_closes_viewer(mesh):
+    fake = FakeDatoviz()
+    with pytest.raises(RuntimeError, match='body failure'), AtlasViewer(mesh, datoviz=fake):
+        raise RuntimeError('body failure')
+    assert sum(call == ('destroy_scene',) for call in fake.calls) == 1
+
+
+def test_closed_viewer_rejects_native_operations(mesh):
+    fake = FakeDatoviz()
+    viewer = AtlasViewer(mesh, datoviz=fake)
+    viewer.close()
+    viewer.close()
+    assert sum(call == ('destroy_scene',) for call in fake.calls) == 1
+    before = len(fake.calls)
+    region_data = AtlasRegionValues.from_arrays([-315], [1.0])
+    probe_data = ProbeSites.from_arrays([[0, 0, 0]], [1.0], [-315])
+    operations = (
+        lambda: viewer.set_camera_angles((0, 0, 0)),
+        lambda: viewer.set_explode(0.2),
+        lambda: viewer.set_mapping('beryl'),
+        lambda: viewer.set_probe([[0, 0, 0], [1, 1, 1]]),
+        lambda: viewer.set_probe_sites([[0, 0, 0]]),
+        lambda: viewer.set_probe_data(probe_data),
+        lambda: viewer.set_region_data(region_data, mapping_reduction='weighted_mean'),
+        lambda: viewer.set_selected_region_ids((-315,)),
+        lambda: viewer.render_offscreen(),
+        lambda: viewer.show(),
+    )
+    for operation in operations:
+        with pytest.raises(RuntimeError, match='viewer is closed'):
+            operation()
+    assert len(fake.calls) == before
 
 
 def test_minimal_surface_viewer_can_disable_item_interaction(mesh):
