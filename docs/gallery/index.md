@@ -3,6 +3,24 @@
 These examples are executable checkpoints, not static mock-ups. Capability labels distinguish
 what works in the current native renderer from future browser exports.
 
+## Focused review batch
+
+Six small programs isolate the first interaction vocabulary before it is composed into the linked
+navigator. They are review candidates rather than accepted showcase images:
+
+| Program | One capability | Data |
+| --- | --- | --- |
+| `real_atlas_surface.py` | orbit one surface | verified D070 asset set |
+| `atlas_mapping_switch.py` | switch Allen/Beryl/Cosmos | verified D070 catalog and mesh |
+| `atlas_region_picking.py` | hover/select one region | D070 face identities |
+| `bwm_probe_geometry.py` | inspect trajectory and sites | pinned BWM insertion fixture |
+| `bwm_probe_firing_rate.py` | inspect sequential site values and missing data | pinned BWM insertion fixture |
+| `atlas_slice_scroll.py` | scroll one AP/ML/DV plane | verified 50 um volume pack |
+
+Every program opens an interactive native window by default and accepts `--offscreen PNG` for a
+deterministic review artifact. The gallery manifest records reproducible commands; no image is
+promoted here until its interaction and visual encoding have been reviewed live.
+
 <div class="gallery-grid" markdown>
 
 <div class="gallery-card" markdown>
@@ -153,6 +171,7 @@ publication and host performance are independent concerns.
 
 | Entry | Native | Offscreen | WebGPU |
 | --- | --- | --- | --- |
+| Focused review batch | Available | Available | Candidate except native volume slice |
 | Linked atlas navigator | Available | Available | Not available: volume visual is native-only |
 | Offline contract smoke test | Available | Available | C/WASM portability spike |
 | Allen atlas explorer | Available | Available | Candidate; not exported |

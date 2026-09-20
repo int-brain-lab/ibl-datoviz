@@ -19,6 +19,72 @@
       ]
     },
     {
+      "id": "real-atlas-surface",
+      "title": "Real D070 atlas surface",
+      "script": "examples/real_atlas_surface.py",
+      "asset": "d070",
+      "native": "available",
+      "webgpu": "candidate",
+      "output": "real-atlas-surface.png",
+      "arguments": ["{asset_root}", "--offscreen", "{output}"]
+    },
+    {
+      "id": "atlas-mapping-switch",
+      "title": "Allen, Beryl, and Cosmos mapping",
+      "script": "examples/atlas_mapping_switch.py",
+      "asset": "d070",
+      "native": "available",
+      "webgpu": "candidate",
+      "output": "atlas-mapping-switch.png",
+      "arguments": ["{asset_root}", "--mapping", "beryl", "--offscreen", "{output}"]
+    },
+    {
+      "id": "atlas-region-picking",
+      "title": "Atlas region picking",
+      "script": "examples/atlas_region_picking.py",
+      "asset": "d070",
+      "native": "available",
+      "webgpu": "candidate",
+      "output": "atlas-region-picking.png",
+      "arguments": ["{asset_root}", "--offscreen", "{output}"]
+    },
+    {
+      "id": "bwm-probe-geometry",
+      "title": "BWM probe geometry",
+      "script": "examples/bwm_probe_geometry.py",
+      "asset": "d070",
+      "native": "available",
+      "webgpu": "candidate",
+      "output": "bwm-probe-geometry.png",
+      "arguments": ["{asset_root}", "--offscreen", "{output}"]
+    },
+    {
+      "id": "bwm-probe-firing-rate",
+      "title": "BWM probe firing rate",
+      "script": "examples/bwm_probe_firing_rate.py",
+      "asset": "d070",
+      "native": "available",
+      "webgpu": "candidate",
+      "output": "bwm-probe-firing-rate.png",
+      "arguments": ["{asset_root}", "--offscreen", "{output}"]
+    },
+    {
+      "id": "atlas-slice-scroll",
+      "title": "Atlas slice scrolling",
+      "script": "examples/atlas_slice_scroll.py",
+      "asset": "d070",
+      "volume": "allen-ccf-2017-50um",
+      "native": "available",
+      "webgpu": "not-available-volume",
+      "output": "atlas-slice-scroll.png",
+      "arguments": [
+        "{asset_root}/mesh-pack",
+        "{volume_root}",
+        "--offscreen",
+        "{output}"
+      ]
+    },
+    {
       "id": "linked-atlas-navigator",
       "title": "Linked atlas navigator",
       "script": "examples/linked_atlas_navigator.py",

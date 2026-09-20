@@ -39,8 +39,9 @@ the Python viewer, GUI, picking, WBOIT, or volume rendering.
 
 ## Work order
 
-Progress: viewer lifecycle failure safety is implemented. Input validation is the next hardening
-task before starting the first example batch.
+Progress: viewer lifecycle failure safety, navigator factory behavior, and input validation are
+implemented. The first six focused example programs and reproducible gallery commands are now in
+place; live review is the next gate before any image or interaction is promoted.
 
 1. Fix lifecycle failure safety and input validation before expanding interactive usage.
 2. Build and review the first batch of focused real-data examples.
