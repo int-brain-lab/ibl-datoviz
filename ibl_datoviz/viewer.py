@@ -518,7 +518,19 @@ class AtlasViewer:
         positions = self.mesh_data.normalize_points(points_um)
         if len(positions) < 2:
             raise ValueError('a probe path needs at least two points')
-        rgba = tuple(color) if len(color) == 4 else tuple(color) + (255,)
+        if not np.isfinite(width_px) or width_px <= 0:
+            raise ValueError('probe width must be finite and positive')
+        raw_color = np.asarray(color)
+        if (
+            raw_color.shape not in ((3,), (4,))
+            or not np.issubdtype(raw_color.dtype, np.integer)
+            or np.any(raw_color < 0)
+            or np.any(raw_color > 255)
+        ):
+            raise ValueError('probe color must contain three or four 8-bit integer channels')
+        rgba = tuple(int(channel) for channel in raw_color)
+        if len(rgba) == 3:
+            rgba += (255,)
         colors = np.tile(np.asarray(rgba, dtype=np.uint8), (len(positions), 1))
         widths = np.full(len(positions), width_px, dtype=np.float32)
         if self.probe is None:
@@ -552,10 +564,8 @@ class AtlasViewer:
         self._require_open()
         positions = self.mesh_data.normalize_points(points_um)
         count = len(positions)
-        if count == 0:
-            raise ValueError('probe sites cannot be empty')
-        if radius_um <= 0:
-            raise ValueError('probe site radius must be positive')
+        if not np.isfinite(radius_um) or radius_um <= 0:
+            raise ValueError('probe site radius must be finite and positive')
         if values is not None and colors is not None:
             raise ValueError('provide probe values or colors, not both')
 
@@ -576,8 +586,8 @@ class AtlasViewer:
             rgba = np.ascontiguousarray(rgba, dtype=np.uint8)
         elif values is not None:
             scalar = np.asarray(values, dtype=np.float64)
-            if scalar.shape != (count,):
-                raise ValueError('probe values must have shape (n,)')
+            if scalar.shape != (count,) or np.isinf(scalar).any():
+                raise ValueError('probe values must have shape (n,) and contain no infinities')
             rgba = self._probe_value_colors(scalar, value_range, color_scheme)
         else:
             rgba = np.tile(np.asarray((255, 205, 72, 255), dtype=np.uint8), (count, 1))
@@ -645,6 +655,9 @@ class AtlasViewer:
     ) -> NDArray[np.uint8]:
         if color_scheme not in ('diverging', 'sequential'):
             raise ValueError(f'unknown probe color scheme: {color_scheme}')
+        values = np.asarray(values, dtype=np.float64)
+        if values.ndim != 1 or np.isinf(values).any():
+            raise ValueError('probe values must be one-dimensional and contain no infinities')
         finite = np.isfinite(values)
         if value_range is None:
             if not np.any(finite):
@@ -652,7 +665,10 @@ class AtlasViewer:
             else:
                 limits = (float(np.min(values[finite])), float(np.max(values[finite])))
         else:
-            limits = (float(value_range[0]), float(value_range[1]))
+            raw_limits = np.asarray(value_range, dtype=np.float64)
+            if raw_limits.shape != (2,):
+                raise ValueError('probe value range must contain exactly two values')
+            limits = (float(raw_limits[0]), float(raw_limits[1]))
         constant = value_range is None and limits[1] == limits[0]
         if (
             not np.isfinite(limits).all()

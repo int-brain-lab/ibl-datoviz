@@ -165,7 +165,9 @@ class AtlasMesh:
     def normalize_points(self, points_um: Sequence[Sequence[float]]) -> NDArray[np.float32]:
         """Transform world-space micrometre points into this mesh's display space."""
         points = np.asarray(points_um, dtype=np.float32)
-        if points.ndim != 2 or points.shape[1] != 3:
-            raise ValueError('points must have shape (n, 3)')
+        if points.ndim != 2 or points.shape[1] != 3 or len(points) == 0:
+            raise ValueError('points must have non-empty shape (n, 3)')
+        if not np.isfinite(points).all():
+            raise ValueError('points must contain finite coordinates')
         centre = (self.positions_um.min(axis=0) + self.positions_um.max(axis=0)) / 2
         return np.ascontiguousarray((points - centre) * self.display_scale, dtype=np.float32)

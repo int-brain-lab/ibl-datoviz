@@ -348,6 +348,23 @@ def test_mesh_pack_preserves_signed_presentation_identity(mesh):
     )
 
 
+@pytest.mark.parametrize(
+    'points',
+    [
+        [],
+        [0, 1, 2],
+        [[0, 1]],
+        [[0, 1, 2, 3]],
+        [[np.nan, 0, 0]],
+        [[np.inf, 0, 0]],
+        [[-np.inf, 0, 0]],
+    ],
+)
+def test_mesh_rejects_invalid_world_points(mesh, points):
+    with pytest.raises(ValueError, match='points must'):
+        mesh.normalize_points(points)
+
+
 def test_explode_uses_canonical_component_displacements(mesh):
     assert mesh.exploded_positions(0) is mesh.positions
     np.testing.assert_allclose(
@@ -683,6 +700,26 @@ def test_probe_uses_same_display_transform(mesh):
     np.testing.assert_allclose(positions[:, 0], [-0.8, 0.8])
 
 
+@pytest.mark.parametrize(
+    ('points', 'kwargs', 'message'),
+    [
+        ([[0, 0, np.nan], [1, 1, 1]], {}, 'finite coordinates'),
+        ([[0, 0, 0], [1, 1, 1]], {'width_px': 0}, 'finite and positive'),
+        ([[0, 0, 0], [1, 1, 1]], {'width_px': np.nan}, 'finite and positive'),
+        ([[0, 0, 0], [1, 1, 1]], {'width_px': np.inf}, 'finite and positive'),
+        ([[0, 0, 0], [1, 1, 1]], {'color': (1, 2)}, '8-bit integer'),
+        ([[0, 0, 0], [1, 1, 1]], {'color': (1.5, 2, 3)}, '8-bit integer'),
+        ([[0, 0, 0], [1, 1, 1]], {'color': (1, 2, 256)}, '8-bit integer'),
+        ([[0, 0, 0], [1, 1, 1]], {'color': (True, False, True)}, '8-bit integer'),
+    ],
+)
+def test_probe_rejects_invalid_upload_inputs_before_allocation(mesh, points, kwargs, message):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake) as viewer, pytest.raises(ValueError, match=message):
+        viewer.set_probe(points, **kwargs)
+    assert not any(call[0] == 'path' for call in fake.calls)
+
+
 def test_probe_sites_use_world_transform_and_scalar_colors(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake) as viewer:
@@ -721,6 +758,29 @@ def test_probe_sites_use_world_transform_and_scalar_colors(mesh):
         ][3]
         np.testing.assert_array_equal(sequential['color'][0], [88, 70, 180, 255])
         np.testing.assert_array_equal(sequential['color'][1], [253, 231, 73, 255])
+
+
+@pytest.mark.parametrize(
+    ('points', 'kwargs', 'message'),
+    [
+        ([[np.inf, 0, 0]], {}, 'finite coordinates'),
+        ([[0, 0, 0]], {'radius_um': 0}, 'finite and positive'),
+        ([[0, 0, 0]], {'radius_um': np.nan}, 'finite and positive'),
+        ([[0, 0, 0]], {'radius_um': np.inf}, 'finite and positive'),
+        ([[0, 0, 0]], {'values': [np.inf]}, 'no infinities'),
+        ([[0, 0, 0]], {'values': [-np.inf]}, 'no infinities'),
+        ([[0, 0, 0]], {'values': [1], 'value_range': (0,)}, 'exactly two'),
+        ([[0, 0, 0]], {'colors': [[1.5, 2, 3]]}, 'probe colors'),
+        ([[0, 0, 0]], {'colors': [[True, False, True]]}, 'probe colors'),
+    ],
+)
+def test_probe_sites_reject_invalid_upload_inputs_before_allocation(
+    mesh, points, kwargs, message
+):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake) as viewer, pytest.raises(ValueError, match=message):
+        viewer.set_probe_sites(points, **kwargs)
+    assert not any(call[0] == 'sphere' for call in fake.calls)
 
 
 def test_typed_probe_sites_link_table_and_mapping(mesh):
