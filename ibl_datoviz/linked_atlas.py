@@ -5,7 +5,7 @@ from __future__ import annotations
 import ctypes
 from contextlib import suppress
 from threading import RLock
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 import numpy as np
 
@@ -229,6 +229,36 @@ class LinkedAtlasNavigator(AtlasViewer):
         except Exception:
             self.close()
             raise
+
+    @classmethod
+    def from_pack(cls, path: str | Path, **kwargs) -> NoReturn:
+        """Reject the surface-only factory, which cannot supply atlas volumes."""
+        raise TypeError(
+            'LinkedAtlasNavigator.from_pack() requires atlas volumes; '
+            'use from_packs(), from_multiresolution_packs(), or from_anatomy_packs()'
+        )
+
+    @classmethod
+    def from_assets(cls, assets: object, **kwargs) -> NoReturn:
+        """Reject the surface-only factory, which cannot supply atlas volumes."""
+        raise TypeError(
+            'LinkedAtlasNavigator.from_assets() requires atlas volumes; '
+            'use from_packs(), from_multiresolution_packs(), or from_anatomy_packs()'
+        )
+
+    @classmethod
+    def from_asset_set(
+        cls,
+        root: str | Path,
+        *,
+        asset_set: object | None = None,
+        **kwargs,
+    ) -> NoReturn:
+        """Reject the surface-only factory, which cannot supply atlas volumes."""
+        raise TypeError(
+            'LinkedAtlasNavigator.from_asset_set() requires atlas volumes; '
+            'use from_packs(), from_multiresolution_packs(), or from_anatomy_packs()'
+        )
 
     @classmethod
     def from_packs(

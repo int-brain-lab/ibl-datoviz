@@ -126,6 +126,20 @@ def test_navigator_rejects_palette_that_would_desynchronize_slices(volumes):
         LinkedAtlasNavigator(mesh, volumes, palette={315: (1, 2, 3, 255)})
 
 
+@pytest.mark.parametrize(
+    ('factory_name', 'args'),
+    [
+        ('from_pack', (MESH_FIXTURE,)),
+        ('from_assets', (object(),)),
+        ('from_asset_set', (MESH_FIXTURE,)),
+    ],
+)
+def test_navigator_rejects_inherited_surface_only_factories(factory_name, args):
+    factory = getattr(LinkedAtlasNavigator, factory_name)
+    with pytest.raises(TypeError, match=r'requires atlas volumes.*from_packs\(\)'):
+        factory(*args)
+
+
 def test_composed_slice_is_rgba_and_preserves_void_template(volumes):
     image = compose_atlas_slice(volumes, 'dv', 1, annotation_opacity=1.0)
     assert image.shape == (4, 5, 4)
