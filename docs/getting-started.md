@@ -2,10 +2,13 @@
 
 ## Install a development checkout
 
-The project currently pins release-candidate dependencies. From the repository root:
+The project is an unreleased source snapshot. Its committed `uv.lock` and `[tool.uv.sources]`
+entries pin the exact Datoviz and `ibl-anatomy` Git revisions currently under test; the dependency
+ranges in package metadata are provisional bounds for a later distributable release. From the
+repository root:
 
 ```bash
-uv sync --group dev
+uv sync --group dev --locked
 ```
 
 When developing the three adjacent repositories together, point Python at the local sources and

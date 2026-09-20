@@ -11,6 +11,8 @@ readme = "README.md"
 license = {text = "MIT"}
 
 dependencies = [
+    # Provisional release bounds for the eventual distributable package. During
+    # incubation, the immutable [tool.uv.sources] revisions below are authoritative.
     "datoviz>=0.4.0rc2,<0.5",
     "ibl-anatomy>=0.1.0,<0.2",
     "numpy>=1.24",
@@ -27,7 +29,8 @@ distribution = true
 testpaths = ["tests"]
 
 [tool.uv.sources]
-# Immutable revisions define the spike. Adjacent source checkouts may override via PYTHONPATH.
+# Immutable revisions define this unreleased source snapshot. Adjacent source
+# checkouts may override them only through an explicit PYTHONPATH development command.
 datoviz = { git = "https://github.com/datoviz/datoviz.git", rev = "3bdfee4e871d27775c471779b5f711723cd22db8" }
 ibl-anatomy = { git = "https://github.com/int-brain-lab/ibl-anatomy.git", rev = "c66486c7f38f0751848dde0f12a718c8d49e81aa" }
 

@@ -46,6 +46,10 @@ probe, region, cursor, and slice operations).
 
 ### 2. Resolve incompatible inherited navigator factories
 
+Status: implemented on the feature branch. The three surface-only factories are explicitly
+rejected on `LinkedAtlasNavigator` before loading or native allocation, and their errors direct
+callers to the three volume-aware navigator factories.
+
 `LinkedAtlasNavigator` inherits `AtlasViewer.from_pack()`, `from_assets()`, and
 `from_asset_set()`. Those class methods instantiate `cls` with only a mesh (and sometimes a
 catalog), but `LinkedAtlasNavigator.__init__()` also requires `volumes`. Calls such as
@@ -63,6 +67,10 @@ valid instance or the intentional, documented error. Type annotations and docstr
 the runtime behavior.
 
 ### 3. Enforce validation at probe and position boundaries
+
+Status: implemented on the feature branch. World positions, trajectory widths, site radii, color
+channels, scalar infinities, and value ranges are validated before native allocation or upload;
+`NaN` remains the supported missing scalar value.
 
 Validation is split between `AtlasMesh.normalize_points()`, `AtlasViewer.set_probe()`,
 `AtlasViewer.set_probe_sites()`, and `ProbeSites.from_arrays()`. The paths are inconsistent. In
@@ -85,6 +93,12 @@ upload.
 
 ### 4. Align package metadata with CI
 
+Status: the development checkout is now internally reproducible as an explicitly unreleased source
+snapshot. Its committed lock and Git revisions are authoritative, and CI performs a normal locked
+resolution on Python 3.10 and 3.13 without `--no-deps`. A distributable release remains blocked
+until Datoviz publishes the required post-rc2 fixes and `ibl-anatomy` deliberately publishes its
+first supported package; only then should the provisional version ranges become authoritative.
+
 The declared project dependencies are release ranges (`datoviz>=0.4.0rc2,<0.5` and
 `ibl-anatomy>=0.1.0,<0.2`), while CI manually installs exact Git revisions and then installs this
 package with `--no-deps`. Consequently CI does not prove that the package can be installed and
@@ -105,6 +119,11 @@ suite, Ruff, and strict documentation build. Verify the installed distributions 
 CI so an adjacent checkout cannot accidentally satisfy the test.
 
 ### 5. Freeze one public API and document it consistently
+
+Status: implemented on the feature branch. Ten workflow-level and advanced composition names form
+the tested top-level compatibility surface. Transport parsers, link-key codecs, concrete slice
+records, and renderer-local cursor helpers remain available from implementation modules without a
+top-level compatibility promise.
 
 The API overview says the public surface is intentionally small, but `ibl_datoviz.__all__` also
 exports lower-level slice source types, cursor/composer helpers, encoding helpers, and

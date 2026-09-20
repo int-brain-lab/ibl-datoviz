@@ -7,8 +7,9 @@ records the correctness, lifecycle, packaging, and API blockers that precede a r
 ## Checks
 
 ```bash
-ruff check .
-pytest
+uv sync --group dev --locked
+uv run --frozen ruff check .
+uv run --frozen pytest
 ```
 
 The adjacent-source command in [Getting started](getting-started.md) is useful while Datoviz and
@@ -20,8 +21,7 @@ Install the exact documentation tool versions without changing the project lock,
 strict mode:
 
 ```bash
-uv pip install --requirements docs/requirements.txt
-mkdocs build --strict
+uv run --frozen --with-requirements docs/requirements.txt mkdocs build --strict
 ```
 
 Generated HTML is written to ignored `site/`.
