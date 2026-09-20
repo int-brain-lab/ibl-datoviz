@@ -32,6 +32,23 @@ materialize_asset_set(bundled_asset_set(), "build/atlas-d070")
 PY
 ```
 
+The registered 10 um projection graph has its own bundled lock. Materialize it through
+`ibl-anatomy` so every transitive resource is checked before Datoviz sees it:
+
+```bash
+PYTHONPATH=../ibl-anatomy/src python - <<'PY'
+from ibl_anatomy import bundled_registered_asset_set, materialize_registered_asset_set
+
+materialize_registered_asset_set(
+    bundled_registered_asset_set(), "build/atlas-registered-10um"
+)
+PY
+```
+
+The lock names an immutable Ephys Atlas deployment, but that deployment layout is not the
+consumer API. Python consumers use the verified result/root through `ibl-anatomy`. Direct fetches
+from a different browser origin currently require an approved CORS policy or same-origin proxy.
+
 ## Open the atlas browser
 
 Start with the isolated 3-D surface baseline. It contains one opaque mesh, one perspective camera,
@@ -102,7 +119,7 @@ python examples/linked_atlas_navigator.py \
   ../ibl-anatomy/build/allen-ccf-2017-50um \
   --slice-resolution registered \
   --slice-intensity-pack ../ibl-anatomy/build/allen-ccf-2017-10um-intensity \
-  --anatomy-pack ../ephys-atlas-web-v2/web/public/atlas/anatomy/allen-ccfv3-10um-bilateral-exact-599b5e0bbab1
+  --registered-asset-root build/atlas-registered-10um
 ```
 
 In this mode the authoritative cursor lives in the 10 um grid and is transformed through ML/AP/DV

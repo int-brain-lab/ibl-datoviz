@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import MappingProxyType, SimpleNamespace
 
 import numpy as np
 import pytest
 
-from ibl_anatomy import open_volume_pack
+from ibl_anatomy import MaterializedRegisteredAssets, open_volume_pack
 from ibl_datoviz import AtlasMesh, LinkedAtlasNavigator
 from ibl_datoviz.linked_atlas import volume_render_geometry
 from ibl_datoviz.navigator import (
@@ -138,6 +139,66 @@ def test_navigator_rejects_inherited_surface_only_factories(factory_name, args):
     factory = getattr(LinkedAtlasNavigator, factory_name)
     with pytest.raises(TypeError, match=r'requires atlas volumes.*from_packs\(\)'):
         factory(*args)
+
+
+def test_registered_asset_factory_consumes_verified_projection_readers(monkeypatch):
+    projections = MappingProxyType(
+        {
+            name: SimpleNamespace(world_slice_axis=axis)
+            for name, axis in (
+                ('coronal', 'ap'),
+                ('sagittal', 'ml'),
+                ('horizontal', 'dv'),
+            )
+        }
+    )
+    assets = MaterializedRegisteredAssets(
+        Path('/verified'),
+        'registered-pack',
+        MappingProxyType({'immutable': True}),
+        projections,
+        59,
+        5_700_497,
+    )
+    volumes = SimpleNamespace(regions=object())
+    intensity = object()
+    mesh = object()
+    slice_source = object()
+    monkeypatch.setattr(
+        'ibl_datoviz.linked_atlas.open_volume_pack',
+        lambda path: SimpleNamespace(load_volumes=lambda: volumes),
+    )
+    monkeypatch.setattr(
+        'ibl_datoviz.linked_atlas.open_intensity_block_pack', lambda path: intensity
+    )
+    monkeypatch.setattr('ibl_datoviz.linked_atlas.AtlasMesh.from_pack', lambda path: mesh)
+
+    def fake_slice_source(actual_intensity, actual_projections, actual_regions):
+        assert actual_intensity is intensity
+        assert actual_projections == {
+            'ap': projections['coronal'],
+            'ml': projections['sagittal'],
+            'dv': projections['horizontal'],
+        }
+        assert actual_regions is volumes.regions
+        return slice_source
+
+    def fake_init(self, actual_mesh, actual_volumes, *, slice_source, **kwargs):
+        self.factory_inputs = (actual_mesh, actual_volumes, slice_source, kwargs)
+
+    monkeypatch.setattr('ibl_datoviz.linked_atlas.AtlasSliceSource', fake_slice_source)
+    monkeypatch.setattr(LinkedAtlasNavigator, '__init__', fake_init)
+
+    navigator = LinkedAtlasNavigator.from_registered_assets(
+        'mesh', 'volume', 'intensity', assets, width=640
+    )
+
+    assert navigator.factory_inputs == (mesh, volumes, slice_source, {'width': 640})
+
+
+def test_registered_asset_factory_rejects_unverified_input():
+    with pytest.raises(TypeError, match='verified MaterializedRegisteredAssets'):
+        LinkedAtlasNavigator.from_registered_assets('mesh', 'volume', 'intensity', object())
 
 
 def test_composed_slice_is_rgba_and_preserves_void_template(volumes):

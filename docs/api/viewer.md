@@ -11,6 +11,7 @@ colors are three or four integer channels in `[0, 255]`.
     options:
       members:
         - from_packs
+        - from_registered_assets
         - from_multiresolution_packs
         - from_anatomy_packs
         - set_cursor
@@ -23,12 +24,13 @@ colors are three or four integer channels in `[0, 255]`.
         - show
         - close
 
-`LinkedAtlasNavigator.from_anatomy_packs()` combines an independently bounded dense volume with one
-complete registered high-resolution anatomy pack and its scalar intensity transport. The
-lower-level `from_multiresolution_packs()` remains available when callers intentionally manage
-three projection manifests themselves. `ibl-anatomy` owns integrity, affine, and decoded
-geometry contracts; `ibl-datoviz` owns raster composition, latest-wins preparation, and
-owner-thread GPU updates.
+`LinkedAtlasNavigator.from_registered_assets()` is the shared publication path. It combines an
+independently bounded dense volume and scalar intensity transport with a verified
+`MaterializedRegisteredAssets` result from `ibl-anatomy`; Datoviz does not infer resources from
+the Ephys Atlas deployment layout. The older `from_anatomy_packs()` and lower-level
+`from_multiresolution_packs()` remain available for deliberate local inputs. `ibl-anatomy` owns
+integrity, affine, and decoded geometry contracts; `ibl-datoviz` owns raster composition,
+latest-wins preparation, and owner-thread GPU updates.
 
 The three slice panels use increasing atlas world coordinates from left to right and bottom to top:
 AP slices show ML/dorsal, ML slices show AP/dorsal, and DV slices show ML/anterior. Clicking a

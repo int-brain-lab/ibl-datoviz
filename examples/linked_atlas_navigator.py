@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from ibl_anatomy import bundled_registered_asset_set, verify_materialized_registered_asset_set
 from ibl_datoviz import LinkedAtlasNavigator
 
 
@@ -18,6 +19,11 @@ def main() -> int:
         '--slice-intensity-pack', type=Path, help='registered high-resolution intensity pack'
     )
     parser.add_argument('--anatomy-pack', type=Path, help='complete registered anatomy-v2 pack')
+    parser.add_argument(
+        '--registered-asset-root',
+        type=Path,
+        help='materialized root graph verified by the bundled ibl-anatomy lock',
+    )
     parser.add_argument('--slice-resolution', choices=('volume', 'registered'), default='volume')
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
     parser.add_argument('--annotation-opacity', type=float, default=0.58)
@@ -32,11 +38,15 @@ def main() -> int:
     args = parser.parse_args()
 
     high_resolution = args.slice_resolution == 'registered'
-    if high_resolution and (args.slice_intensity_pack is None or args.anatomy_pack is None):
-        parser.error('registered slices require --slice-intensity-pack and --anatomy-pack')
-    if not high_resolution and (
-        args.slice_intensity_pack is not None or args.anatomy_pack is not None
-    ):
+    registered_source_count = sum(
+        value is not None for value in (args.anatomy_pack, args.registered_asset_root)
+    )
+    if high_resolution and (args.slice_intensity_pack is None or registered_source_count != 1):
+        parser.error(
+            'registered slices require --slice-intensity-pack and exactly one of '
+            '--registered-asset-root or --anatomy-pack'
+        )
+    if not high_resolution and (args.slice_intensity_pack is not None or registered_source_count):
         parser.error('high-resolution pack options require --slice-resolution registered')
     common = {
         'mapping': args.mapping,
@@ -44,7 +54,18 @@ def main() -> int:
         'volume_opacity': args.volume_opacity,
         'ui_scale': args.ui_scale,
     }
-    if high_resolution:
+    if args.registered_asset_root is not None:
+        assets = verify_materialized_registered_asset_set(
+            bundled_registered_asset_set(), args.registered_asset_root
+        )
+        navigator = LinkedAtlasNavigator.from_registered_assets(
+            args.mesh_pack,
+            args.volume_pack,
+            args.slice_intensity_pack,
+            assets,
+            **common,
+        )
+    elif high_resolution:
         navigator = LinkedAtlasNavigator.from_anatomy_packs(
             args.mesh_pack,
             args.volume_pack,

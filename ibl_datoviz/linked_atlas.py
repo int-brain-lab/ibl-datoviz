@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, NoReturn
 import numpy as np
 
 from ibl_anatomy import (
+    MaterializedRegisteredAssets,
     open_anatomy_pack,
     open_intensity_block_pack,
     open_registered_projection,
@@ -243,7 +244,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         """Reject the surface-only factory, which cannot supply atlas volumes."""
         raise TypeError(
             'LinkedAtlasNavigator.from_assets() requires atlas volumes; '
-            'use from_packs(), from_multiresolution_packs(), or from_anatomy_packs()'
+            'use from_packs(), from_registered_assets(), from_multiresolution_packs(), '
+            'or from_anatomy_packs()'
         )
 
     @classmethod
@@ -257,7 +259,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         """Reject the surface-only factory, which cannot supply atlas volumes."""
         raise TypeError(
             'LinkedAtlasNavigator.from_asset_set() requires atlas volumes; '
-            'use from_packs(), from_multiresolution_packs(), or from_anatomy_packs()'
+            'use from_packs(), from_registered_assets(), from_multiresolution_packs(), '
+            'or from_anatomy_packs()'
         )
 
     @classmethod
@@ -283,6 +286,33 @@ class LinkedAtlasNavigator(AtlasViewer):
         projections = {
             axis: open_registered_projection(path) for axis, path in registered_projections.items()
         }
+        slices = AtlasSliceSource(intensity, projections, volumes.regions)
+        return cls(AtlasMesh.from_pack(mesh_pack), volumes, slice_source=slices, **kwargs)
+
+    @classmethod
+    def from_registered_assets(
+        cls,
+        mesh_pack: str | Path,
+        volume_pack: str | Path,
+        intensity_pack: str | Path,
+        assets: MaterializedRegisteredAssets,
+        **kwargs,
+    ) -> LinkedAtlasNavigator:
+        """Use an ``ibl-anatomy`` verified registered-asset result.
+
+        The caller materializes or verifies the immutable root graph through
+        ``ibl-anatomy``. Datoviz consumes the resulting projection readers without
+        inferring files from an Ephys Atlas URL layout.
+        """
+        if not isinstance(assets, MaterializedRegisteredAssets):
+            raise TypeError('assets must be verified MaterializedRegisteredAssets')
+        volumes = open_volume_pack(volume_pack).load_volumes()
+        intensity = open_intensity_block_pack(intensity_pack)
+        projections = {
+            projection.world_slice_axis: projection for projection in assets.projections.values()
+        }
+        if set(projections) != {'ap', 'ml', 'dv'}:
+            raise ValueError('registered assets must contain one ap/ml/dv projection')
         slices = AtlasSliceSource(intensity, projections, volumes.regions)
         return cls(AtlasMesh.from_pack(mesh_pack), volumes, slice_source=slices, **kwargs)
 
