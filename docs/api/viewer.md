@@ -1,5 +1,10 @@
 # Atlas viewer
 
+Viewer objects own their Datoviz scene, application, GUI, and interaction resources. Use them as
+context managers or call `close()` explicitly. Closing is idempotent; rendering or mutation after
+close raises `RuntimeError`. Positions are atlas-world micrometres, visual widths are pixels, and
+colors are three or four integer channels in `[0, 255]`.
+
 ## Linked atlas navigator
 
 ::: ibl_datoviz.linked_atlas.LinkedAtlasNavigator
@@ -42,10 +47,6 @@ limited by the current 64-entry GPU categorical palette.
         - compose
 
 ::: ibl_datoviz.navigator.compose_atlas_slice
-
-::: ibl_datoviz.navigator.cursor_from_slice_fraction
-
-::: ibl_datoviz.navigator.slice_index_fraction
 
 ## Surface viewer
 

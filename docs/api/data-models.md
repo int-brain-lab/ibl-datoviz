@@ -2,6 +2,11 @@
 
 ## Atlas mesh
 
+`AtlasMesh` owns contiguous display-ready arrays derived from verified `ibl-anatomy` geometry.
+World positions and point inputs use micrometres; normalized positions are renderer coordinates.
+Malformed shapes, non-finite coordinates, unknown mappings, and invalid colors raise `ValueError`
+or `KeyError` before native upload.
+
 ::: ibl_datoviz.atlas.AtlasMesh
     options:
       members:
@@ -16,6 +21,10 @@
 
 ## Registered atlas slices
 
+`AtlasSliceSource` adapts verified registered projections and scalar intensity blocks. It owns its
+byte-accounted decoded cache; callers may clear that cache explicitly. Returned arrays use the
+source grid and declared anatomical axes rather than an inferred transpose.
+
 ::: ibl_datoviz.atlas_slice_source.AtlasSliceSource
     options:
       members:
@@ -27,6 +36,9 @@
 
 ## Ontology tree
 
+`AtlasTreeModel` is an advanced presentation model derived from a verified region catalog. Signed
+atlas IDs remain identities; labels are never used as keys.
+
 ::: ibl_datoviz.ontology.AtlasTreeModel
     options:
       members:
@@ -36,11 +48,11 @@
         - expanded_logical_ids
         - describe
 
-::: ibl_datoviz.ontology.encode_region_key
-
-::: ibl_datoviz.ontology.decode_region_key
-
 ## Probe sites
+
+`ProbeSites` copies caller arrays into immutable storage. Positions are atlas-world micrometres;
+values may contain `NaN` for missing observations but never infinities. IDs must be unique positive
+integers and Allen region IDs remain signed.
 
 ::: ibl_datoviz.probe.ProbeSites
     options:
@@ -48,6 +60,9 @@
         - from_arrays
 
 ## Regional values
+
+`AtlasRegionValues` copies immutable signed-Allen scalar rows and optional aggregation weights.
+Missing scalar values use `NaN`; cross-mapping reduction remains an explicit caller choice.
 
 ::: ibl_datoviz.regions.AtlasRegionValues
     options:

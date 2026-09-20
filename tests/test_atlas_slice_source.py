@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import RegisteredSlice, RegisteredSlicePath
-from ibl_datoviz import AtlasSliceSource, parse_svg_path
-from ibl_datoviz.atlas_slice_source import _rasterize
+from ibl_datoviz import AtlasSliceSource
+from ibl_datoviz.atlas_slice_source import _rasterize, parse_svg_path
 from ibl_datoviz.navigator import oriented_slice
 
 

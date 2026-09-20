@@ -15,9 +15,8 @@ from ibl_datoviz import (
     AtlasTreeModel,
     AtlasViewer,
     ProbeSites,
-    decode_region_key,
-    encode_region_key,
 )
+from ibl_datoviz.ontology import decode_region_key, encode_region_key
 
 FIXTURE = (
     Path(__file__).resolve().parents[2]
