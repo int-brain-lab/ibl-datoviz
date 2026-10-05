@@ -19,7 +19,8 @@ from ibl_anatomy import (
 )
 
 from .atlas import AtlasMesh
-from .ontology import ROOT_PARENT, AtlasTreeModel, decode_region_key, encode_region_key
+from .gui_data import create_probe_table, create_region_table, create_region_tree
+from .ontology import AtlasTreeModel, decode_region_key, encode_region_key
 from .presentation import region_presentation, scalar_colors
 
 if TYPE_CHECKING:
@@ -108,6 +109,7 @@ class AtlasViewer:
         self.interaction = None
         self.region_tree, self.region_table = None, None
         self.probe_table = None
+        self._gui_widgets = {}
         self.gui = None
         self.probe_sites = None
         self.probe_data: ProbeSites | None = None
@@ -732,7 +734,7 @@ class AtlasViewer:
         if self.region_tree is None:
             return ()
         return tuple(
-            decode_region_key(key) for key in self.dvz.dvz_gui_tree_get_selection(self.region_tree)
+            decode_region_key(key) for key in self._gui_widgets['region_tree'].selected_keys()
         )
 
     def set_selected_region_ids(self, region_ids: Sequence[int]) -> None:
@@ -752,103 +754,48 @@ class AtlasViewer:
         """Clear tree, surface, and highlight selection state."""
         self.set_selected_region_ids(())
 
+    def _close_gui_widget(self, name: str, kind: str) -> None:
+        """Coordinate helper destruction, including partially initialized viewers."""
+        owner = getattr(self, '_gui_widgets', {}).pop(name, None)
+        handle = getattr(self, name, None)
+        setattr(self, name, None)
+        if owner is not None:
+            owner.close()
+        elif handle is not None:
+            getattr(self.dvz, f'dvz_gui_{kind}_destroy')(handle)
+
+    def _retain_gui_widget(self, name: str, owner) -> None:
+        if not hasattr(self, '_gui_widgets'):
+            self._gui_widgets = {}
+        self._gui_widgets[name] = owner
+        setattr(self, name, owner.handle)
+
     def _replace_probe_table(self) -> None:
-        if self.probe_table is not None:
-            self.dvz.dvz_gui_table_destroy(self.probe_table)
-            self.probe_table = None
+        self._close_gui_widget('probe_table', 'table')
         data = self.probe_data
         if data is None:
-            self.probe_table = None
             return
-        columns = [
-            {
-                'column_id': 1,
-                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_TEXT,
-                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SEARCHABLE
-                | self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_STRETCH,
-                'title': 'Site',
-            },
-            {
-                'column_id': 2,
-                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_DOUBLE,
-                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SORTABLE,
-                'title': 'DV (µm)',
-                'format': '%.0f',
-            },
-            {
-                'column_id': 3,
-                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_DOUBLE,
-                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SORTABLE,
-                'title': data.value_name,
-                'format': '%.3f',
-            },
-            {
-                'column_id': 4,
-                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_TEXT,
-                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SEARCHABLE
-                | self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_STRETCH,
-                'title': 'Region',
-            },
-            {'column_id': 5, 'type': self.dvz.DVZ_GUI_TABLE_COLUMN_COLOR, 'title': ''},
-        ]
-        self.probe_table = self.dvz.dvz_gui_table(
-            b'ibl_probe_sites',
-            columns,
-            self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_FILTER
-            | self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_MULTI_SELECT,
-        )
-        if not self.probe_table:
-            raise RuntimeError('dvz_gui_table() failed')
         mapped_ids = self._mapped_probe_region_ids()
-        region_labels = tuple(
+        labels = tuple(
             self.tree_model.describe(region_id) if self.tree_model else str(region_id)
             for region_id in mapped_ids
         )
-        setters = (
-            (
-                self.dvz.dvz_gui_table_set_rows,
-                (self.probe_table, data.site_ids, self.dvz.DVZ_GUI_DATA_SET_FLAGS_RESET_STATE),
-                'probe table rows',
-            ),
-            (
-                self.dvz.dvz_gui_table_set_column_text,
-                (self.probe_table, 1, data.labels),
-                'probe table labels',
-            ),
-            (
-                self.dvz.dvz_gui_table_set_column_double,
-                (self.probe_table, 2, data.positions_um[:, 2].astype(np.float64)),
-                'probe table depth',
-            ),
-            (
-                self.dvz.dvz_gui_table_set_column_double,
-                (self.probe_table, 3, data.values),
-                'probe table values',
-            ),
-            (
-                self.dvz.dvz_gui_table_set_column_text,
-                (self.probe_table, 4, region_labels),
-                'probe table regions',
-            ),
-            (
-                self.dvz.dvz_gui_table_set_column_color,
-                (self.probe_table, 5, self._probe_colors),
-                'probe table colors',
-            ),
+        self._retain_gui_widget(
+            'probe_table',
+            create_probe_table(self.dvz, data, mapped_ids, labels, self._probe_colors),
         )
-        for setter, args, action in setters:
-            self._check(setter(*args), action)
         self._set_probe_table_selection(self._selected_region_ids)
 
     def _probe_table_selected_region_ids(self) -> tuple[int, ...]:
         if self.probe_table is None or self.probe_data is None:
             return ()
-        selected_keys = set(self.dvz.dvz_gui_table_get_selection(self.probe_table))
-        mapped_ids = self._mapped_probe_region_ids()
+        selected_keys = set(self._gui_widgets['probe_table'].selected_keys())
+        rows = self._gui_widgets['probe_table'].rows
+        mapped_ids = rows.region_ids
         return tuple(
             dict.fromkeys(
                 int(region_id)
-                for site_id, region_id in zip(self.probe_data.site_ids, mapped_ids, strict=True)
+                for site_id, region_id in zip(rows.keys, mapped_ids, strict=True)
                 if int(site_id) in selected_keys and region_id
             )
         )
@@ -861,97 +808,41 @@ class AtlasViewer:
             if self.tree_model is not None
             else tuple(abs(int(region_id)) for region_id in region_ids)
         )
-        mapped_ids = self._mapped_probe_region_ids()
-        keys = self.probe_data.site_ids[np.isin(np.abs(mapped_ids), logical_ids)]
-        self._check(
-            self.dvz.dvz_gui_table_set_selection(self.probe_table, keys),
-            'probe table selection sync',
-        )
+        rows = self._gui_widgets['probe_table'].rows
+        keys = rows.keys[np.isin(np.abs(rows.region_ids), logical_ids)]
+        self._gui_widgets['probe_table'].set_selection(keys, 'probe table selection sync')
 
     def _replace_region_table(self) -> None:
-        if self.region_table is not None:
-            self.dvz.dvz_gui_table_destroy(self.region_table)
+        self._close_gui_widget('region_table', 'table')
         data = self.region_data
         if data is None:
-            self.region_table = None
             return
-        columns = [
-            {
-                'column_id': 1,
-                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_TEXT,
-                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SEARCHABLE
-                | self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_STRETCH,
-                'title': 'Region',
-            },
-            {
-                'column_id': 2,
-                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_DOUBLE,
-                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SORTABLE,
-                'title': data.value_name,
-                'format': '%.3f',
-            },
-            {
-                'column_id': 3,
-                'type': self.dvz.DVZ_GUI_TABLE_COLUMN_DOUBLE,
-                'flags': self.dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SORTABLE,
-                'title': data.weight_name,
-                'format': '%.0f',
-            },
-            {'column_id': 4, 'type': self.dvz.DVZ_GUI_TABLE_COLUMN_COLOR, 'title': ''},
-        ]
-        self.region_table = self.dvz.dvz_gui_table(
-            b'ibl_region_values',
-            columns,
-            self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_FILTER
-            | self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_MULTI_SELECT,
-        )
-        if not self.region_table:
-            raise RuntimeError('dvz_gui_table() failed')
-        region_ids, values, weights, labels, colors = self._mapped_region_values()
-        keys = np.ascontiguousarray(region_ids.view(np.uint64))
-        setters = (
-            (
-                self.dvz.dvz_gui_table_set_rows,
-                (self.region_table, keys, self.dvz.DVZ_GUI_DATA_SET_FLAGS_RESET_STATE),
-                'region table rows',
-            ),
-            (
-                self.dvz.dvz_gui_table_set_column_text,
-                (self.region_table, 1, labels),
-                'region table labels',
-            ),
-            (
-                self.dvz.dvz_gui_table_set_column_double,
-                (self.region_table, 2, values),
-                'region table values',
-            ),
-            (
-                self.dvz.dvz_gui_table_set_column_double,
-                (self.region_table, 3, weights),
-                'region table weights',
-            ),
-            (
-                self.dvz.dvz_gui_table_set_column_color,
-                (self.region_table, 4, colors),
-                'region table colors',
+        view = self._mapped_region_values()
+        self._retain_gui_widget(
+            'region_table',
+            create_region_table(
+                self.dvz,
+                data,
+                view.region_ids,
+                view.values,
+                view.weights,
+                view.labels,
+                view.colors,
             ),
         )
-        for setter, args, action in setters:
-            self._check(setter(*args), action)
         self._set_region_table_selection(self._selected_region_ids)
 
     def _region_table_selected_region_ids(self) -> tuple[int, ...]:
         if self.region_table is None:
             return ()
         return tuple(
-            decode_region_key(key)
-            for key in self.dvz.dvz_gui_table_get_selection(self.region_table)
+            decode_region_key(key) for key in self._gui_widgets['region_table'].selected_keys()
         )
 
     def _set_region_table_selection(self, region_ids: Sequence[int]) -> None:
         if self.region_table is None:
             return
-        available, _, _, _, _ = self._mapped_region_values()
+        available = self._gui_widgets['region_table'].rows.region_ids
         logical_ids = (
             self.tree_model.expanded_logical_ids(tuple(region_ids))
             if self.tree_model is not None
@@ -960,77 +851,17 @@ class AtlasViewer:
         keys = np.ascontiguousarray(
             available[np.isin(np.abs(available), logical_ids)].view(np.uint64)
         )
-        self._check(
-            self.dvz.dvz_gui_table_set_selection(self.region_table, keys),
-            'region table selection sync',
-        )
+        self._gui_widgets['region_table'].set_selection(keys, 'region table selection sync')
 
     def _replace_region_tree(self) -> None:
-        if self.region_tree is not None:
-            self.dvz.dvz_gui_tree_destroy(self.region_tree)
-        model = self.tree_model
-        if model is None:
-            self.region_tree = None
+        self._close_gui_widget('region_tree', 'tree')
+        if self.tree_model is None:
             return
-        self.region_tree = self.dvz.dvz_gui_tree(
-            b'ibl_atlas_ontology',
-            self.dvz.DVZ_GUI_DATA_WIDGET_FLAGS_MULTI_SELECT,
-        )
-        if not self.region_tree:
-            raise RuntimeError('dvz_gui_tree() failed')
-        row_indices = model.subtree_row_indices(self.tree_root_acronym)
-        old_to_new = {int(old): new for new, old in enumerate(row_indices)}
-        parents = np.ascontiguousarray(
-            [
-                ROOT_PARENT
-                if int(model.parents[old]) == ROOT_PARENT
-                or int(model.parents[old]) not in old_to_new
-                else old_to_new[int(model.parents[old])]
-                for old in row_indices
-            ],
-            dtype=np.uint32,
-        )
-        labels = tuple(model.acronyms[index] for index in row_indices)
-        names = tuple(model.names[index] for index in row_indices)
-        self._check(
-            self.dvz.dvz_gui_tree_set_rows(
-                self.region_tree,
-                model.keys[row_indices],
-                parents,
-                labels,
-                names,
-                self.dvz.DVZ_GUI_DATA_SET_FLAGS_RESET_STATE,
+        self._retain_gui_widget(
+            'region_tree',
+            create_region_tree(
+                self.dvz, self.tree_model, self.tree_root_acronym, self._tree_filter.value
             ),
-            'atlas ontology rows',
-        )
-        self._check(
-            self.dvz.dvz_gui_tree_set_swatches(self.region_tree, model.colors[row_indices]),
-            'atlas ontology colors',
-        )
-        if self._tree_filter.value:
-            self._check(
-                self.dvz.dvz_gui_tree_set_filter(self.region_tree, self._tree_filter.value),
-                'atlas ontology filter restore',
-            )
-        styles = []
-        for region_id, member in zip(
-            model.region_ids[row_indices], model.mapping_members[row_indices], strict=True
-        ):
-            if member:
-                continue
-            style = self.dvz.dvz_gui_data_style()
-            style.flags = self.dvz.DVZ_GUI_DATA_STYLE_FLAGS_FOREGROUND
-            style.row_key = encode_region_key(int(region_id))
-            style.foreground = self.dvz.DvzColor(118, 126, 137, 255)
-            styles.append(style)
-        if styles:
-            self._check(
-                self.dvz.dvz_gui_tree_set_styles(self.region_tree, styles),
-                'atlas ontology hierarchy styles',
-            )
-        self._check(
-            self.dvz.dvz_gui_tree_expand_to_depth(self.region_tree, 3),
-            'atlas ontology expansion',
         )
         self._set_tree_selection(self._selected_region_ids)
 
@@ -1153,8 +984,9 @@ class AtlasViewer:
     def _set_tree_selection(self, region_ids: Sequence[int]) -> None:
         if self.region_tree is None or self.tree_model is None:
             return
-        row_indices = self.tree_model.subtree_row_indices(self.tree_root_acronym)
-        tree_ids = {int(self.tree_model.region_ids[index]) for index in row_indices}
+        tree_ids = {
+            int(region_id) for region_id in self._gui_widgets['region_tree'].rows.region_ids
+        }
         keys = np.asarray(
             [
                 encode_region_key(-abs(int(region_id)))
@@ -1163,15 +995,7 @@ class AtlasViewer:
             ],
             dtype=np.uint64,
         )
-        self._check(
-            self.dvz.dvz_gui_tree_set_selection(self.region_tree, keys),
-            'atlas ontology selection sync',
-        )
-        if len(keys) == 1:
-            self._check(
-                self.dvz.dvz_gui_tree_reveal(self.region_tree, int(keys[0])),
-                'atlas ontology selection reveal',
-            )
+        self._gui_widgets['region_tree'].set_selection(keys, 'atlas ontology selection sync')
 
     def _apply_selected_region_ids(
         self,
@@ -1455,15 +1279,10 @@ class AtlasViewer:
         if datoviz is not None and getattr(self, 'app', None):
             self.dvz.dvz_app_destroy(self.app)
             self.app = None
-        if datoviz is not None and getattr(self, 'region_tree', None) is not None:
-            self.dvz.dvz_gui_tree_destroy(self.region_tree)
-            self.region_tree = None
-        if datoviz is not None and getattr(self, 'probe_table', None) is not None:
-            self.dvz.dvz_gui_table_destroy(self.probe_table)
-            self.probe_table = None
-        if datoviz is not None and getattr(self, 'region_table', None) is not None:
-            self.dvz.dvz_gui_table_destroy(self.region_table)
-            self.region_table = None
+        if datoviz is not None:
+            self._close_gui_widget('region_tree', 'tree')
+            self._close_gui_widget('probe_table', 'table')
+            self._close_gui_widget('region_table', 'table')
         if datoviz is not None and getattr(self, 'scene', None):
             self.dvz.dvz_scene_destroy(self.scene)
             self.scene = None
