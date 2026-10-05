@@ -98,3 +98,24 @@ def test_viewer_simultaneous_events_use_region_table_and_keep_hover(monkeypatch)
     assert applied == [((-8,), {'update_tree': True, 'update_table': False, 'clear_mesh': True})]
     assert propagated == [(-8,)]
     assert viewer._hovered_region_ids == (-315,)
+
+
+def test_probe_event_propagates_region_table_without_reselecting_probe_rows(monkeypatch):
+    viewer = AtlasViewer.__new__(AtlasViewer)
+    viewer._selected_region_ids = ()
+    propagated = []
+    monkeypatch.setattr(viewer, '_probe_table_selected_region_ids', lambda: (-8,))
+
+    def apply(ids, **flags):
+        assert flags == {'update_tree': True, 'update_table': False, 'clear_mesh': True}
+        viewer._selected_region_ids = ids
+
+    def unexpected(_ids):
+        raise AssertionError('probe source rows were reselected')
+
+    monkeypatch.setattr(viewer, '_apply_selected_region_ids', apply)
+    monkeypatch.setattr(viewer, '_set_probe_table_selection', unexpected)
+    monkeypatch.setattr(viewer, '_set_region_table_selection', propagated.append)
+    viewer._sync_selection_highlight(table_changed=True)
+    assert propagated == [(-8,)]
+    assert selection_decision(table_changed=True).sync_region_table

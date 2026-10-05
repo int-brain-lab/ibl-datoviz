@@ -22,6 +22,7 @@ class SelectionDecision:
     update_tables: bool
     clear_mesh: bool
     sync_probe_table: bool = False
+    sync_region_table: bool = False
 
 
 def selection_decision(
@@ -35,7 +36,7 @@ def selection_decision(
     if region_table_changed:
         return SelectionDecision('region_table', True, False, True, True)
     if table_changed:
-        return SelectionDecision('probe_table', True, False, True)
+        return SelectionDecision('probe_table', True, False, True, sync_region_table=True)
     if tree_changed:
         return SelectionDecision('tree', False, True, True)
     if mesh_changed:

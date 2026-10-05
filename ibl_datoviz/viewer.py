@@ -1185,6 +1185,8 @@ class AtlasViewer:
         )
         if decision.sync_probe_table:
             self._set_probe_table_selection(self._selected_region_ids)
+        if decision.sync_region_table:
+            self._set_region_table_selection(self._selected_region_ids)
 
     def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0912, PLR0915
         if self.app is not None:
