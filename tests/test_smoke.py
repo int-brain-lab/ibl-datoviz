@@ -5,7 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ibl_datoviz import AtlasViewer, LinkedAtlasNavigator
+from ibl_anatomy import open_region_catalog
+from ibl_datoviz import AtlasViewer, LinkedAtlasNavigator, ProbeSites
 
 FIXTURE = (
     Path(__file__).resolve().parents[2]
@@ -86,3 +87,22 @@ def test_offscreen_multiresolution_atlas_smoke(tmp_path):
     assert rgba.shape == (240, 320, 4)
     assert output.stat().st_size > 0
     assert np.count_nonzero(np.any(rgba[..., :3] != [29, 33, 39], axis=2)) > 200
+
+
+def test_offscreen_probe_sites_replacement(tmp_path):
+    catalog = open_region_catalog(FIXTURE.parents[1] / 'atlas-regions-v1' / 'regions.json')
+    data = ProbeSites.from_arrays([[-1, 0, 0], [1, 0, 0]], [1, 2], [-8, 8])
+    try:
+        with AtlasViewer.from_pack(FIXTURE, catalog=catalog, width=256, height=192) as viewer:
+            viewer.set_probe_data(data)
+            viewer.set_probe_sites([[0, 0, 0]])
+            viewer.set_mapping('beryl')
+            assert viewer.probe_data is None
+            viewer.set_mapping('allen')
+            viewer.set_probe_data(data)
+            rgba = viewer.render_offscreen(tmp_path / 'probe-sites.png')
+    except RuntimeError as error:
+        _skip_without_native_datoviz(error)
+        raise
+    assert rgba.shape == (192, 256, 4)
+    assert np.count_nonzero(np.any(rgba[..., :3] != [29, 33, 39], axis=2)) > 40

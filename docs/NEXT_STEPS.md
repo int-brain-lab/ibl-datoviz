@@ -10,6 +10,12 @@ Already implemented: verified D070 assets, Allen/Beryl/Cosmos presentation, link
 
 The audit passed a normal locked development install, Ruff, strict MkDocs, wheel/sdist builds, and 125 tests against the Datoviz baseline above. Two tests skipped because the real D070 and registered 10 um roots were unavailable. All three synthetic native offscreen tests passed after activating the Datoviz Vulkan environment. The synthetic gallery render and three-frame GUI startup/cleanup checks for both viewer classes passed too. These checks do not establish full real-data interaction quality, cross-platform rendering, or current D070 performance; historical benchmarks retain their original commit and host scope.
 
+## Implementation progress
+
+- Payload ownership fixed in `91db67e`: all retained numeric buffers are independent C-order copies; 22 focused tests pass.
+- Probe replacement fixed: successful raw replacement clears typed payload, colors, per-site link keys, and linked table; typed uploads commit identity after validation. Path constructor, caps, and joins now report native failures. 67 atlas/replacement tests and four native offscreen smokes pass, including typed/raw/mapping/typed transitions.
+- Native checks use Datoviz source main `066a745` and the local built library with its Vulkan SDK environment. Real assets and live interaction review remain separate evidence.
+
 ## Correctness fixes
 
 ### 1 Preserve successful slice results when another axis fails

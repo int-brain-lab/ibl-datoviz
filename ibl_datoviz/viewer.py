@@ -534,14 +534,23 @@ class AtlasViewer:
         colors = np.tile(np.asarray(rgba, dtype=np.uint8), (len(positions), 1))
         widths = np.full(len(positions), width_px, dtype=np.float32)
         if self.probe is None:
-            self.probe = self.dvz.dvz_path(self.scene, 0)
+            probe = self.dvz.dvz_path(self.scene, 0)
+            if not probe:
+                raise RuntimeError('dvz_path() failed')
             self._check(
-                self.dvz.dvz_panel_add_visual(self.panel, self.probe, None), 'probe attach'
+                self.dvz.dvz_panel_add_visual(self.panel, probe, None), 'probe attach'
             )
-            self.dvz.dvz_path_set_caps(
-                self.probe, self.dvz.DVZ_SEGMENT_CAP_ROUND, self.dvz.DVZ_SEGMENT_CAP_ROUND
+            self._check(
+                self.dvz.dvz_path_set_caps(
+                    probe, self.dvz.DVZ_SEGMENT_CAP_ROUND, self.dvz.DVZ_SEGMENT_CAP_ROUND
+                ),
+                'probe caps',
             )
-            self.dvz.dvz_path_set_join(self.probe, self.dvz.DVZ_PATH_JOIN_ROUND, 4.0)
+            self._check(
+                self.dvz.dvz_path_set_join(probe, self.dvz.DVZ_PATH_JOIN_ROUND, 4.0),
+                'probe join',
+            )
+            self.probe = probe
         self._check(
             self.dvz.dvz_visual_set_data_many(
                 self.probe,
@@ -560,7 +569,31 @@ class AtlasViewer:
         radius_um: float = 45.0,
         color_scheme: Literal['diverging', 'sequential'] = 'diverging',
     ) -> None:
-        """Add or replace probe sites, optionally colored by one scalar feature."""
+        """Replace sites and clear any typed payload and its linked table on success."""
+        self._upload_probe_sites(
+            points_um,
+            values=values,
+            colors=colors,
+            value_range=value_range,
+            radius_um=radius_um,
+            color_scheme=color_scheme,
+        )
+        self.probe_data = None
+        self._probe_colors = None
+        self._replace_probe_table()
+
+    def _upload_probe_sites(
+        self,
+        points_um,
+        *,
+        values=None,
+        colors=None,
+        value_range=None,
+        radius_um=45.0,
+        color_scheme='diverging',
+        mapped_ids=None,
+    ) -> None:
+        """Validate and upload geometry and link identity before committing typed state."""
         self._require_open()
         positions = self.mesh_data.normalize_points(points_um)
         count = len(positions)
@@ -608,6 +641,13 @@ class AtlasViewer:
             ),
             'probe sites upload',
         )
+        keys = (
+            np.zeros(count, dtype=np.uint64) if mapped_ids is None else mapped_ids.view(np.uint64)
+        )
+        self._check(
+            self.dvz.dvz_visual_set_link_keys(self.probe_sites, self.link_channel, keys),
+            'probe site link keys',
+        )
 
     def set_probe_data(
         self,
@@ -623,15 +663,11 @@ class AtlasViewer:
             raise ValueError('linked probe data requires an atlas region catalog')
         mapped_ids = self._mapped_probe_region_ids(data)
         colors = self._probe_value_colors(data.values, value_range, color_scheme)
-        self.set_probe_sites(data.positions_um, colors=colors, radius_um=radius_um)
+        self._upload_probe_sites(
+            data.positions_um, colors=colors, radius_um=radius_um, mapped_ids=mapped_ids
+        )
         self.probe_data = data
         self._probe_colors = colors
-        self._check(
-            self.dvz.dvz_visual_set_link_keys(
-                self.probe_sites, self.link_channel, mapped_ids.view(np.uint64)
-            ),
-            'probe site link keys',
-        )
         if self.gui is not None:
             self._replace_probe_table()
 
@@ -776,6 +812,7 @@ class AtlasViewer:
     def _replace_probe_table(self) -> None:
         if self.probe_table is not None:
             self.dvz.dvz_gui_table_destroy(self.probe_table)
+            self.probe_table = None
         data = self.probe_data
         if data is None:
             self.probe_table = None
