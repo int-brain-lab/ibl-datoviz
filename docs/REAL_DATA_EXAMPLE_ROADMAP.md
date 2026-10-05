@@ -118,8 +118,9 @@ visual presentation and interaction.
 ## October 5 follow-up evidence
 
 The three reproduced correctness bugs, source dependency/onboarding alignment, and R1–R5
-extractions have landed in focused commits. Synthetic native offscreen checks and bounded GUI
-startup/cleanup pass; both real asset contract checks pass against verified roots. These checks
+extractions have landed in focused commits. The final full suite passes 239 tests without skips with matching native runtime and both verified
+real roots. Synthetic native offscreen checks, bounded table GUI startup/cleanup, and standard
+sequential 2-D/3-D benchmarks pass at implementation revision `4c7788a`. These checks
 still do not supply live feedback for the first six examples, sorting/filtering, HiDPI, or docking.
 Keep those review gates open and retain the text-first presentation.
 

@@ -18,16 +18,90 @@ The original audit passed a normal locked development install, Ruff, strict MkDo
 ## Implementation progress
 
 - Dependency/onboarding alignment landed in `c381fc2`: locked clean install, strict MkDocs, source pairing, materialization recipes, and historical browser labels validated. Complete real-data materialization still needs asset/GPU review.
-- R5 complete: input adapter owns subscription/callback lifetime; pure wheel, keyboard, zoom, and resize/content-scale decisions preserve interactions. 63 focused input/slice/navigator tests and both three-frame native GUI runs pass. Manual HiDPI/docking review remains outstanding.
-- R4 complete: immutable requests feed renderer-independent per-axis preparation; named prepared buffers are copied and read-only. Sync and async refresh share preparation/upload. 49 focused tests and two linked native offscreen smokes pass; stale cursor/mapping/selection results and joined shutdown covered.
-- R3 complete: explicit pure selection decisions preserve region-table/probe-table/tree/mesh precedence and propagation; ID/key helpers retain signed hemispheres and stable site keys. 112 selection/GUI/viewer/navigator tests pass. Hover remains independent.
-- R2 complete: GUI helpers own typed retained rows and native handles, clean partial failures, and destroy each handle once. Viewer retains authoritative selection, callbacks, and borrowed control buffers. 105 focused tests pass, including 16 GUI ownership/failure regressions. Live sorting/filtering review remains outstanding.
-- R1 complete: pure scalar interpolation and weighted mapping reduction live in `presentation.py`; viewer retains named tuple-compatible adapters and label formatting. 112 focused tests pass, including 23 direct presentation regressions.
+- R5 complete (`bbe940a`): input adapter owns subscription/callback lifetime; pure wheel, keyboard, zoom, and resize/content-scale decisions preserve interactions. 63 focused input/slice/navigator tests and both three-frame native GUI runs pass. Manual HiDPI/docking review remains outstanding.
+- R4 complete (`e6390f3`): immutable requests feed renderer-independent per-axis preparation; named prepared buffers are copied and read-only. Sync and async refresh share preparation/upload. 49 focused tests and two linked native offscreen smokes pass; stale cursor/mapping/selection results and joined shutdown covered.
+- R3 complete (`c838e44`): explicit pure selection decisions preserve region-table/probe-table/tree/mesh precedence and propagation; ID/key helpers retain signed hemispheres and stable site keys. 112 selection/GUI/viewer/navigator tests pass. Hover remains independent.
+- R2 complete (`48dd405`): GUI helpers own typed retained rows and native handles, clean partial failures, and destroy each handle once. Viewer retains authoritative selection, callbacks, and borrowed control buffers. 105 focused tests pass, including 16 GUI ownership/failure regressions. Live sorting/filtering review remains outstanding.
+- R1 complete (`0ba5dae`): pure scalar interpolation and weighted mapping reduction live in `presentation.py`; viewer retains named tuple-compatible adapters and label formatting. 112 focused tests pass, including 23 direct presentation regressions.
 
 - Payload ownership fixed in `91db67e`: all retained numeric buffers are independent C-order copies; 22 focused tests pass.
 - Native failure recovery added in `eaad3ed`: one owned upload snapshot restores both geometry and identity after setter failure; failed restoration closes the viewer explicitly. Null construction and failed setup/attachment retry safely with at most one pending scene-owned candidate. 126 targeted tests pass, including 13 added recovery/retry cases.
 - Probe replacement fixed in `7cf5988`: successful raw replacement clears typed payload, colors, per-site link keys, and linked table; typed uploads commit identity after validation. Path constructor, caps, and joins now report native failures. 67 atlas/replacement tests and four native offscreen smokes pass, including typed/raw/mapping/typed transitions.
 - Native checks use Datoviz source main `066a745` and the local built library with its Vulkan SDK environment. Real assets and live interaction review remain separate evidence.
+
+## Final validation — October 5, 2026
+
+The final implementation revision tested was `4c7788a`; subsequent handoff edits are documentation
+only. Additional native review landed `6834a03` (probe selection propagates to the regional table
+without reselecting source site rows) and `4c7788a` (empty slice boundaries hide their visual;
+nonempty updates restore it). The latter respects the frozen engine's nonzero attribute-count
+contract across creation, synchronous refresh, and asynchronous upload.
+
+- Full suite with matching native runtime and both verified real roots: **239 passed, zero skips**.
+- Normal locked resolved installation, Ruff, strict MkDocs, wheel/sdist build, and diff checks pass.
+- Both viewer classes pass automatic three-frame GUI checks with typed and regional tables,
+  raw/typed probe replacement, mapping changes, and repeated cleanup.
+- The regenerated synthetic 900×720 gallery image was inspected; tracked canonical images were
+  not replaced.
+- D070 was verified from `../ibl-anatomy/build/d070-published`; the registered graph was freshly
+  materialized into `build/handoff-registered-10um` (59 files, 5,700,497 bytes). Complete fresh
+  downloads/builds of the 50 um and 10 um NRRD transports were not rerun; their documented builder
+  entry points and the installed readers against existing packs were checked.
+
+Exact local pairing: Python 3.10.17, NumPy 2.2.6, Datoviz source main `066a7451195b38c5e95dcf7af7383b89ec5ec903`
+with distribution metadata `0.4.0rc2`, and anatomy source `119457b68fae6967c54d549d9d44e4a4e49c74f8`
+with metadata `0.1.0`. The imported Datoviz facade is `~/GIT/Viz/datoviz/datoviz/__init__.py`;
+anatomy comes from the locked environment. The library is
+`~/GIT/Viz/datoviz/build/src/libdatoviz.so`, SHA256
+`2b11f53ba0c891be99a3223747ec1837319580e5112ae11964e6d48c3e8549b1`.
+The clean frozen checkout's Debug/Ninja target reports no pending build work. The native environment
+uses Vulkan SDK 1.4.328.1 on Linux, NVIDIA GeForce RTX 5090, driver 595.84. Other platforms and the
+Python 3.13 CI configuration were not exercised locally during this follow-up.
+
+### Performance evidence
+
+Standard 2-D (25 runs) and 3-D (85 runs) ladders completed sequentially at clean revision `4c7788a`,
+with all scenarios, five repeats, 30 warmup frames, 120 measured frames, and 900×720 windows.
+The regional update workload ran 100 iterations over 2,194 source regions and 486,674 vertices.
+These are host-specific measurements, not portable thresholds or evidence of a renderer speedup.
+Historical benchmark results and their original revision/host scope remain intact.
+
+| Workload | Measured time |
+| --- | --- |
+| Complete 2-D slice, median frame | 8.30 ms |
+| 3-D baseline, median frame | 9.32 ms |
+| 3-D GUI idle, median frame | 10.34 ms |
+| 3-D face query / pointer hover, median frame | 15.44 / 15.48 ms |
+| 3-D selection / explosion, median frame | 11.09 / 11.82 ms |
+| Regional weighted updates, mean | 8.886 ms |
+| Registered AP 660, cold / warm composition | 303 / 16.8 ms |
+| Registered ML 566, cold / warm composition | 255 / 19.0 ms |
+| Registered DV 401, cold / warm composition | 470 / 28.3 ms |
+
+The registered measurements are a **distinct sampled-graph workload**, not a rerun of the legacy
+complete anatomy-v2 benchmark. The bundled graph has AP 165/1320, ML 142/1140, and DV 100/800
+sections, with offsets 4, 6, and 1 modulo 8. Default ML 570 and DV 400 are absent. The onboarding
+route now previews available sections and makes a complete navigator conditional on a compatible
+complete pack. No interpolation, snapping, or substitute scientific annotation was introduced.
+
+Commands and complete logs/results are retained locally in `build/handoff-validation-evidence.json`,
+`build/handoff-final-{pytest,gui,gallery}.log`, and
+`build/handoff-final-benchmark-{2d,3d,regions,registered-graph}.json`.
+The standard benchmark commands are reproducible with the native environment above:
+
+```bash
+xvfb-run -a uv run --frozen python tools/benchmark_atlas_2d.py ../ibl-anatomy/build/allen-ccf-2017-50um --repeats 5 --warmup 30 --frames 120 --width 900 --height 720 --json build/handoff-final-benchmark-2d.json
+xvfb-run -a uv run --frozen python tools/benchmark_atlas_3d.py ../ibl-anatomy/build/d070-published/mesh-pack --regions ../ibl-anatomy/build/d070-published/regions.json --repeats 5 --warmup 30 --frames 120 --width 900 --height 720 --json build/handoff-final-benchmark-3d.json
+uv run --frozen python tools/benchmark_region_updates.py ../ibl-anatomy/build/d070-published --mapping allen --iterations 100 --json build/handoff-final-benchmark-regions.json
+```
+
+### Remaining gates
+
+Live review of the first six real-data examples, scientific encoding, sorting/filtering, HiDPI,
+and docking is still outstanding. Automatic GUI lifecycle checks and screenshots do not replace
+that review. Complete registered-section availability or an explicitly designed absent-section
+policy is also outstanding. Verify actual RC3/anatomy distribution artifacts before making release
+metadata authoritative; the locked source snapshot does not establish index-package compatibility.
 
 ## Correctness fixes (completed regression specifications)
 
