@@ -13,6 +13,7 @@ The audit passed a normal locked development install, Ruff, strict MkDocs, wheel
 ## Implementation progress
 
 - Dependency/onboarding alignment landed in `c381fc2`: locked clean install, strict MkDocs, source pairing, materialization recipes, and historical browser labels validated. Complete real-data materialization still needs asset/GPU review.
+- R5 complete: input adapter owns subscription/callback lifetime; pure wheel, keyboard, zoom, and resize/content-scale decisions preserve interactions. 63 focused input/slice/navigator tests and both three-frame native GUI runs pass. Manual HiDPI/docking review remains outstanding.
 - R4 complete: immutable requests feed renderer-independent per-axis preparation; named prepared buffers are copied and read-only. Sync and async refresh share preparation/upload. 49 focused tests and two linked native offscreen smokes pass; stale cursor/mapping/selection results and joined shutdown covered.
 - R3 complete: explicit pure selection decisions preserve region-table/probe-table/tree/mesh precedence and propagation; ID/key helpers retain signed hemispheres and stable site keys. 112 selection/GUI/viewer/navigator tests pass. Hover remains independent.
 - R2 complete: GUI helpers own typed retained rows and native handles, clean partial failures, and destroy each handle once. Viewer retains authoritative selection, callbacks, and borrowed control buffers. 105 focused tests pass, including 16 GUI ownership/failure regressions. Live sorting/filtering review remains outstanding.

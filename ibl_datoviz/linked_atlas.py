@@ -27,6 +27,7 @@ from .navigator import (
     slice_index_fraction,
     step_slice_cursor,
 )
+from .slice_input import SliceInputAdapter
 from .slice_preparation import PreparedSliceLayers, SlicePreparation, prepare_slice_layers
 from .slice_scheduler import SliceRequest, SliceScheduler
 from .viewer import AtlasViewer
@@ -194,6 +195,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._annotation_visible_control = ctypes.c_bool(self.annotation_visible)
         self._boundaries_visible_control = ctypes.c_bool(self.boundaries_visible)
         self._boundary_opacity_control = ctypes.c_float(self.boundary_opacity)
+        self._slice_input = None
         self._input_router = None
         self._input_subscription = 0
         self._input_callback = None
@@ -1273,157 +1275,34 @@ class LinkedAtlasNavigator(AtlasViewer):
         if self._slice_error is not None:
             self.dvz.dvz_gui_text(gui, f'Slice load failed: {self._slice_error}'.encode())
 
-    def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0915
+    def _create_view(self, *, offscreen: bool, title: str) -> None:
         super()._create_view(offscreen=offscreen, title=title)
         if offscreen:
             return
         self._input_router = self.dvz.dvz_gui_viewport_input(self.viewport)
         if not self._input_router:
             raise RuntimeError('dvz_view_input() failed')
-
-        def slice_data_at_pointer(pointer):
-            figure_position = self._pointer_figure_position(pointer)
-            if figure_position is None:
-                return None
-            for axis, panel in self.slice_panels.items():
-                figure_pos = (ctypes.c_double * 2)(*figure_position)
-                panel_pos = (ctypes.c_double * 2)()
-                inside = self.dvz.dvz_panel_transform_point(
-                    panel,
-                    self.dvz.DVZ_PANEL_COORD_FIGURE_PX,
-                    self.dvz.DVZ_PANEL_COORD_PANEL_PX,
-                    figure_pos,
-                    panel_pos,
-                )
-                if not inside:
-                    continue
-                data_pos = (ctypes.c_double * 2)()
-                if not self.dvz.dvz_panel_position_to_data(
-                    panel, self.dvz.DVZ_PANEL_COORD_PANEL_PX, panel_pos, data_pos
-                ):
-                    continue
-                return axis, float(data_pos[0]), float(data_pos[1])
-            return None
-
-        def on_input(_router, event_ptr, _user_data) -> None:  # noqa: PLR0911, PLR0912
-            event = event_ptr.contents
-            if event.type == self.dvz.DVZ_INPUT_EVENT_KEYBOARD:
-                keyboard = event.content.keyboard
-                if (
-                    keyboard.type
-                    not in (
-                        self.dvz.DVZ_KEYBOARD_EVENT_PRESS,
-                        self.dvz.DVZ_KEYBOARD_EVENT_REPEAT,
-                    )
-                    or self._hovered_slice_axis is None
-                ):
-                    return
-                step = (
-                    1
-                    if keyboard.key in (self.dvz.DVZ_KEY_RIGHT_BRACKET, self.dvz.DVZ_KEY_PAGE_UP)
-                    else -1
-                )
-                if keyboard.key not in (
-                    self.dvz.DVZ_KEY_LEFT_BRACKET,
-                    self.dvz.DVZ_KEY_RIGHT_BRACKET,
-                    self.dvz.DVZ_KEY_PAGE_UP,
-                    self.dvz.DVZ_KEY_PAGE_DOWN,
-                ):
-                    return
-                if keyboard.mods & self.dvz.DVZ_KEY_MODIFIER_SHIFT:
-                    step *= 5
-                if self.step_slice(self._hovered_slice_axis, step):
-                    self.dvz.dvz_view_request_frame(self.view)
-                return
-            if event.type != self.dvz.DVZ_INPUT_EVENT_POINTER:
-                return
-            pointer = event.content.pointer
-            hit = slice_data_at_pointer(pointer)
-            if hit is None:
-                if pointer.type == self.dvz.DVZ_POINTER_EVENT_MOVE and self._set_slice_hover(None):
-                    self.dvz.dvz_view_request_frame(self.view)
-                return
-            axis, x, y = hit
-            if pointer.type == self.dvz.DVZ_POINTER_EVENT_MOVE:
-                if self._set_slice_hover(axis, x, y):
-                    self.dvz.dvz_view_request_frame(self.view)
-                return
-            if pointer.type == self.dvz.DVZ_POINTER_EVENT_WHEEL:
-                amount = float(pointer.content.w.dir[1])
-                if pointer.mods & self.dvz.DVZ_KEY_MODIFIER_CONTROL:
-                    if amount:
-                        factor = 1.08**amount
-                        self._slice_zoom[axis] = float(
-                            np.clip(self._slice_zoom[axis] * factor, 1.0, 8.0)
-                        )
-                        self._update_slice_geometry(axis)
-                        self.dvz.dvz_view_request_frame(self.view)
-                    return
-                if amount:
-                    sensitivity = 10.0 if pointer.mods & self.dvz.DVZ_KEY_MODIFIER_SHIFT else 2.0
-                    self._slice_wheel_accumulator[axis] += amount * sensitivity
-                    step = int(np.trunc(self._slice_wheel_accumulator[axis]))
-                    self._slice_wheel_accumulator[axis] -= step
-                    if step and self.step_slice(axis, step):
-                        self.dvz.dvz_view_request_frame(self.view)
-                return
-            if pointer.type == self.dvz.DVZ_POINTER_EVENT_DOUBLE_CLICK:
-                self._slice_zoom[axis] = 1.0
-                self._update_slice_geometry(axis)
-                self.dvz.dvz_view_request_frame(self.view)
-                return
-            if (
-                pointer.type == self.dvz.DVZ_POINTER_EVENT_CLICK
-                and pointer.button == self.dvz.DVZ_POINTER_BUTTON_LEFT
-                and self.set_cursor_from_slice_data(axis, x, y, select_region=False)
-            ):
-                self.dvz.dvz_view_request_frame(self.view)
-
-        self._input_callback = on_input
-        self._input_subscription = self.dvz.dvz_input_subscribe_event(
-            self._input_router, self._input_callback, None
-        )
-        if self._input_subscription == 0:
-            raise RuntimeError('dvz_input_subscribe_event() failed')
+        self._slice_input = SliceInputAdapter(self, self._input_router)
+        self._input_callback = self._slice_input.callback
+        self._slice_input.subscribe()
+        self._input_subscription = self._slice_input.subscription
 
     def _pointer_figure_position(self, pointer) -> tuple[float, float] | None:
-        """Convert raw logical-window pointer coordinates to figure layout pixels."""
-        window_width, window_height = (float(value) for value in pointer.window_size)
-        content_scale = float(pointer.content_scale)
-        content_scale_x = content_scale_y = (
-            content_scale if np.isfinite(content_scale) and content_scale > 0 else 1.0
-        )
-        resize = self.dvz.DvzInputResizeEvent()
-        if self.dvz.dvz_input_router_last_resize(self._input_router, ctypes.byref(resize)):
-            if not np.isfinite(window_width) or window_width <= 0:
-                window_width = float(resize.window_width)
-            if not np.isfinite(window_height) or window_height <= 0:
-                window_height = float(resize.window_height)
-            if resize.content_scale_x > 0:
-                content_scale_x = float(resize.content_scale_x)
-            if resize.content_scale_y > 0:
-                content_scale_y = float(resize.content_scale_y)
-        figure_x = ctypes.c_float()
-        figure_y = ctypes.c_float()
-        converted = self.dvz.dvz_figure_window_to_layout(
-            self.figure,
-            float(pointer.pos[0]),
-            float(pointer.pos[1]),
-            window_width,
-            window_height,
-            content_scale_x,
-            content_scale_y,
-            ctypes.byref(figure_x),
-            ctypes.byref(figure_y),
-        )
-        return (figure_x.value, figure_y.value) if converted else None
+        """Retain the coordinate adapter for raw logical-window pointers."""
+        adapter = self._slice_input or SliceInputAdapter(self, self._input_router)
+        return adapter.pointer_figure_position(pointer)
 
     def close(self) -> None:
         """Unsubscribe slice input before releasing the base viewer."""
         if getattr(self, '_slice_loader', None) is not None:
             self._slice_loader.close()
             self._slice_loader = None
-        if getattr(self, '_input_subscription', 0) and self._input_router:
+        if getattr(self, '_slice_input', None) is not None:
+            self._slice_input.close()
+            self._slice_input = None
+            self._input_subscription = 0
+            self._input_callback = None
+        elif getattr(self, '_input_subscription', 0) and self._input_router:
             self.dvz.dvz_input_unsubscribe(self._input_router, self._input_subscription)
             self._input_subscription = 0
         super().close()
