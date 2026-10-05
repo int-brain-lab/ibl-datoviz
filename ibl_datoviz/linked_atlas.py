@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ctypes
 from contextlib import suppress
-from threading import RLock
 from typing import TYPE_CHECKING, NoReturn
 
 import numpy as np
@@ -28,6 +27,7 @@ from .navigator import (
     slice_index_fraction,
     step_slice_cursor,
 )
+from .slice_preparation import PreparedSliceLayers, SlicePreparation, prepare_slice_layers
 from .slice_scheduler import SliceRequest, SliceScheduler
 from .viewer import AtlasViewer
 
@@ -157,10 +157,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self.volume_resolution_label = _resolution_label(volumes.grid)
         self.cursor = AtlasCursor.centre(slice_source)
         self.slice_composer = AtlasSliceComposer(slice_source, mapping)
-        self._slice_worker_composers = {
-            axis: AtlasSliceComposer(slice_source, mapping) for axis in ('ap', 'ml', 'dv')
-        }
-        self._slice_worker_locks = {axis: RLock() for axis in ('ap', 'ml', 'dv')}
+        self._slice_preparation = SlicePreparation(slice_source, mapping)
         self._slice_revisions = {axis: 0 for axis in ('ap', 'ml', 'dv')}
         self._slice_source_id = str(
             getattr(slice_source, 'grid_id', getattr(slice_source.grid, 'grid_id', 'atlas-grid'))
@@ -210,7 +207,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         try:
             if slice_source is not volumes:
                 self._slice_loader = SliceScheduler(
-                    self._prepare_slice,
+                    self._slice_preparation,
                     notify=self._notify_slice_ready,
                     max_workers=3,
                 )
@@ -404,7 +401,8 @@ class LinkedAtlasNavigator(AtlasViewer):
             attach = self.dvz.dvz_visual_attach_desc()
             attach.controller_mode = self.dvz.DVZ_CONTROLLER_APPLY
             attach.coord_space = self.dvz.DVZ_VISUAL_COORD_DATA
-            anatomy_data, annotation_data = self._slice_layers(axis)
+            payload = prepare_slice_layers(self.slice_composer, self._slice_request(axis))
+            anatomy_data, annotation_data = payload.anatomy, payload.annotation
             field = self.dvz.dvz_sampled_field_from_array(
                 self.scene,
                 anatomy_data,
@@ -523,7 +521,9 @@ class LinkedAtlasNavigator(AtlasViewer):
             boundaries = self.dvz.dvz_segment(self.scene, 0)
             if not boundaries:
                 raise RuntimeError('slice boundary segment creation failed')
-            boundary_starts, boundary_ends = self._boundary_positions(axis)
+            boundary_starts, boundary_ends = self._map_boundary_segments(
+                axis, payload.boundary_starts, payload.boundary_ends
+            )
             boundary_count = len(boundary_starts)
             self._check(
                 self.dvz.dvz_visual_set_data_many(
@@ -622,43 +622,32 @@ class LinkedAtlasNavigator(AtlasViewer):
             selection_dim_factor=self.selection_dim_factor,
         )
 
+    def _slice_request(self, axis: str, index: int | None = None) -> SliceRequest:
+        """Capture mutable presentation state on the owner thread."""
+        if index is None:
+            index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
+        return SliceRequest(
+            axis=axis,
+            index=index,
+            revision=self._slice_revisions[axis],
+            source_id=self._slice_source_id,
+            mapping=self.mapping,
+            annotation_opacity=self.annotation_opacity,
+            anatomy_visible=self.anatomy_visible,
+            annotation_visible=self.annotation_visible,
+            selected_region_ids=tuple(self._selected_region_ids),
+            selection_dim_factor=self.selection_dim_factor,
+        )
+
     def _slice_layers(
         self, axis: str, index: int | None = None
     ) -> tuple[NDArray[np.uint8], NDArray[np.uint8]]:
-        if index is None:
-            index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
-        anatomy, annotation = self.slice_composer.compose_layers(
-            axis,
-            index,
-            annotation_opacity=self.annotation_opacity,
-            selected_region_ids=self._selected_region_ids,
-            selection_dim_factor=self.selection_dim_factor,
-        )
-        if not self.anatomy_visible:
-            anatomy[..., 3] = 0
-        if not self.annotation_visible:
-            annotation[..., 3] = 0
-        return anatomy, annotation
+        payload = prepare_slice_layers(self.slice_composer, self._slice_request(axis, index))
+        return payload.anatomy, payload.annotation
 
-    def _prepare_slice(self, request: SliceRequest):
-        """Prepare one complete slice payload without touching Datoviz state."""
-        composer = self._slice_worker_composers[request.axis]
-        with self._slice_worker_locks[request.axis]:
-            if composer.mapping != request.mapping:
-                composer.set_mapping(request.mapping)
-            anatomy, annotation = composer.compose_layers(
-                request.axis,
-                request.index,
-                annotation_opacity=request.annotation_opacity,
-                selected_region_ids=request.selected_region_ids,
-                selection_dim_factor=request.selection_dim_factor,
-            )
-            starts, ends = composer.boundary_segments(request.axis, request.index)
-        if not request.anatomy_visible:
-            anatomy[..., 3] = 0
-        if not request.annotation_visible:
-            annotation[..., 3] = 0
-        return anatomy, annotation, starts, ends
+    def _prepare_slice(self, request: SliceRequest) -> PreparedSliceLayers:
+        """Retain the adapter; workers use the independent preparation object."""
+        return self._slice_preparation(request)
 
     def _notify_slice_ready(self, _axis: str) -> None:
         """Wake the owner thread after a worker finishes a current request."""
@@ -669,10 +658,12 @@ class LinkedAtlasNavigator(AtlasViewer):
         ):
             self.dvz.dvz_view_wake(self.view)
 
-    def _upload_slice_payload(self, request: SliceRequest, payload) -> None:
+    def _upload_slice_payload(
+        self, request: SliceRequest, payload: PreparedSliceLayers
+    ) -> None:
         """Upload one fully prepared slice payload on the view owner thread."""
         axis = request.axis
-        anatomy, annotation, starts_normalized, ends_normalized = payload
+        anatomy, annotation = payload.anatomy, payload.annotation
         expected = self._slice_shapes[axis]
         if anatomy.shape != expected or annotation.shape != expected:
             raise RuntimeError(
@@ -693,7 +684,9 @@ class LinkedAtlasNavigator(AtlasViewer):
             semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
             dim=self.dvz.DVZ_FIELD_DIM_2D,
         )
-        starts, ends = self._map_boundary_segments(axis, starts_normalized, ends_normalized)
+        starts, ends = self._map_boundary_segments(
+            axis, payload.boundary_starts, payload.boundary_ends
+        )
         colors = np.tile(self._boundary_rgba(), (len(starts), 1))
         widths = np.full(len(starts), self.boundary_width_px, dtype=np.float32)
         self._check(
@@ -980,42 +973,14 @@ class LinkedAtlasNavigator(AtlasViewer):
         if not self._slice_fields:
             return
         refresh_axes = tuple(self._slice_fields) if axes is None else tuple(axes)
-        if self._slice_loader is not None and self.view is not None:
-            for axis in refresh_axes:
-                index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
-                self._slice_revisions[axis] += 1
-                self._slice_loader.submit(
-                    SliceRequest(
-                        axis=axis,
-                        index=index,
-                        revision=self._slice_revisions[axis],
-                        source_id=self._slice_source_id,
-                        mapping=self.mapping,
-                        annotation_opacity=self.annotation_opacity,
-                        anatomy_visible=self.anatomy_visible,
-                        annotation_visible=self.annotation_visible,
-                        selected_region_ids=self._selected_region_ids,
-                        selection_dim_factor=self.selection_dim_factor,
-                    )
-                )
-        else:
-            for axis in refresh_axes:
-                anatomy, annotation = self._slice_layers(axis)
-                self.dvz.dvz_sampled_field_update_from_array(
-                    self._slice_fields[axis],
-                    anatomy,
-                    format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                    semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                    dim=self.dvz.DVZ_FIELD_DIM_2D,
-                )
-                self.dvz.dvz_sampled_field_update_from_array(
-                    self._annotation_fields[axis],
-                    annotation,
-                    format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                    semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                    dim=self.dvz.DVZ_FIELD_DIM_2D,
-                )
-                self._refresh_boundaries(axis)
+        for axis in refresh_axes:
+            self._slice_revisions[axis] += 1
+            request = self._slice_request(axis)
+            if self._slice_loader is not None and self.view is not None:
+                self._slice_loader.submit(request)
+            else:
+                payload = prepare_slice_layers(self.slice_composer, request)
+                self._upload_slice_payload(request, payload)
         for axis in self._slice_fields:
             starts, ends = self._crosshair_positions(axis)
             self._check(
