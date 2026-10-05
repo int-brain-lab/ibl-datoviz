@@ -526,20 +526,8 @@ class LinkedAtlasNavigator(AtlasViewer):
             boundary_starts, boundary_ends = self._map_boundary_segments(
                 axis, payload.boundary_starts, payload.boundary_ends
             )
-            boundary_count = len(boundary_starts)
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
-                    boundaries,
-                    {
-                        'position_start': boundary_starts,
-                        'position_end': boundary_ends,
-                        'color': np.tile(self._boundary_rgba(), (boundary_count, 1)),
-                        'stroke_width_px': np.full(
-                            boundary_count, self.boundary_width_px, dtype=np.float32
-                        ),
-                    },
-                ),
-                'slice boundaries upload',
+            self._upload_boundaries(
+                boundaries, boundary_starts, boundary_ends, 'slice boundaries upload'
             )
             self._check(self.dvz.dvz_visual_set_depth_test(boundaries, False), 'boundary depth')
             self._check(
@@ -689,19 +677,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         starts, ends = self._map_boundary_segments(
             axis, payload.boundary_starts, payload.boundary_ends
         )
-        colors = np.tile(self._boundary_rgba(), (len(starts), 1))
-        widths = np.full(len(starts), self.boundary_width_px, dtype=np.float32)
-        self._check(
-            self.dvz.dvz_visual_set_data_many(
-                self._boundary_visuals[axis],
-                {
-                    'position_start': starts,
-                    'position_end': ends,
-                    'color': colors,
-                    'stroke_width_px': widths,
-                },
-            ),
-            f'{axis} prepared boundaries update',
+        self._upload_boundaries(
+            self._boundary_visuals[axis], starts, ends, f'{axis} prepared boundaries update'
         )
 
     def _refresh_hover_overlays(self, axes=None) -> None:
@@ -795,18 +772,32 @@ class LinkedAtlasNavigator(AtlasViewer):
     def _refresh_boundaries(self, axis: str) -> None:
         """Upload the current slice's cached, mapping-aware boundary segments."""
         starts, ends = self._boundary_positions(axis)
+        self._upload_boundaries(
+            self._boundary_visuals[axis], starts, ends, f'{axis} slice boundaries update'
+        )
+
+    def _upload_boundaries(self, visual, starts, ends, context: str) -> None:
+        """Hide empty layers; native attribute setters require nonzero counts."""
         count = len(starts)
+        if count:
+            self._check(
+                self.dvz.dvz_visual_set_data_many(
+                    visual,
+                    {
+                        'position_start': starts,
+                        'position_end': ends,
+                        'color': np.tile(self._boundary_rgba(), (count, 1)),
+                        'stroke_width_px': np.full(
+                            count, self.boundary_width_px, dtype=np.float32
+                        ),
+                    },
+                ),
+                context,
+            )
+        # Keeping previous nonempty storage is safe while hidden. A subsequent
+        # nonempty upload replaces it before making the layer visible again.
         self._check(
-            self.dvz.dvz_visual_set_data_many(
-                self._boundary_visuals[axis],
-                {
-                    'position_start': starts,
-                    'position_end': ends,
-                    'color': np.tile(self._boundary_rgba(), (count, 1)),
-                    'stroke_width_px': np.full(count, self.boundary_width_px, dtype=np.float32),
-                },
-            ),
-            f'{axis} slice boundaries update',
+            self.dvz.dvz_visual_set_visible(visual, bool(count)), f'{context} visibility'
         )
 
     def _create_anatomical_volume(self) -> None:

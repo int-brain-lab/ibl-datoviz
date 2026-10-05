@@ -106,3 +106,34 @@ def test_offscreen_probe_sites_replacement(tmp_path):
         raise
     assert rgba.shape == (192, 256, 4)
     assert np.count_nonzero(np.any(rgba[..., :3] != [29, 33, 39], axis=2)) > 40
+
+
+def test_offscreen_linked_boundaries_mapping_empty_and_restore(tmp_path):
+    output = tmp_path / 'boundaries-restored.png'
+    try:
+        # Beryl collapses this fixture's boundaries, including initial creation.
+        with LinkedAtlasNavigator.from_packs(
+            FIXTURE, VOLUME_FIXTURE, mapping='beryl', width=320, height=240
+        ) as navigator:
+            for axis in ('ap', 'ml', 'dv'):
+                assert len(navigator._boundary_positions(axis)[0]) == 0
+                navigator._refresh_boundaries(axis)
+            navigator.render_offscreen()
+            navigator.set_mapping('allen')
+            assert len(navigator._boundary_positions('dv')[0]) > 0
+            navigator._check(navigator.dvz.dvz_view_render_once(navigator.view), 'Allen render')
+            navigator.set_mapping('beryl')
+            navigator._refresh_boundaries('dv')
+            navigator._check(navigator.dvz.dvz_view_render_once(navigator.view), 'Beryl render')
+            navigator.set_mapping('allen')
+            navigator._check(navigator.dvz.dvz_view_render_once(navigator.view), 'restored render')
+            rgba = np.array(navigator.dvz.dvz_view_capture_rgba(navigator.view), copy=True)
+            navigator._check(
+                navigator.dvz.dvz_view_capture_png(navigator.view, str(output).encode()),
+                'restored capture',
+            )
+    except RuntimeError as error:
+        _skip_without_native_datoviz(error)
+        raise
+    assert rgba.shape == (240, 320, 4)
+    assert output.stat().st_size > 0

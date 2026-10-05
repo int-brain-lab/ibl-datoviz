@@ -178,3 +178,39 @@ def test_navigator_close_joins_preparation_before_destroying_scene(monkeypatch):
         release.set()
         close_thread.join(2)
         real_close()
+
+
+def test_empty_boundary_upload_hides_without_native_zero_count_updates():
+    viewer = LinkedAtlasNavigator.__new__(LinkedAtlasNavigator)
+    events = []
+    visual = object()
+    viewer.boundary_color = (238, 242, 247)
+    viewer.boundary_opacity = 0.82
+    viewer.boundaries_visible = True
+    viewer.boundary_width_px = 0.7
+    viewer.dvz = SimpleNamespace(
+        dvz_visual_set_data_many=lambda handle, data: events.append(('data', handle, data)) or 0,
+        dvz_visual_set_visible=lambda handle, shown: (
+            events.append(('visible', handle, shown)) or 0
+        ),
+    )
+    empty = np.empty((0, 3), dtype=np.float32)
+    viewer._upload_boundaries(visual, empty, empty, 'boundaries')
+    assert events == [('visible', visual, False)]
+    events.clear()
+    nonempty = np.zeros((2, 3), dtype=np.float32)
+    viewer._upload_boundaries(visual, nonempty, nonempty, 'boundaries')
+    assert [event[0] for event in events] == ['data', 'visible']
+    assert events[-1] == ('visible', visual, True)
+    assert all(len(values) == 2 for values in events[0][2].values())
+    events.clear()
+    viewer._upload_boundaries(visual, empty, empty, 'boundaries')
+    assert events == [('visible', visual, False)]
+
+
+def test_boundary_visibility_failure_is_checked():
+    viewer = LinkedAtlasNavigator.__new__(LinkedAtlasNavigator)
+    viewer.dvz = SimpleNamespace(dvz_visual_set_visible=lambda *_args: -1)
+    empty = np.empty((0, 3), dtype=np.float32)
+    with pytest.raises(RuntimeError, match='boundaries visibility'):
+        viewer._upload_boundaries(object(), empty, empty, 'boundaries')
