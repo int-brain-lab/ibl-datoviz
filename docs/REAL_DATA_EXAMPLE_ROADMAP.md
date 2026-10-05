@@ -31,13 +31,13 @@ The strongest implemented path is the native linked atlas workflow:
 - native interactive windows, deterministic offscreen capture, gallery generation, and diagnostic
   benchmarks.
 
-This is still a development branch rather than a stable library. Lifecycle safety, navigator factory behavior, input validation, the public API freeze, and source-snapshot dependency/CI alignment are implemented. Follow [the audit handoff](NEXT_STEPS.md) for current correctness fixes, refactoring, documentation repairs, and release validation; the [earlier release handoff](RELEASE_HARDENING_HANDOFF.md) records the original review. The small WebGPU fixture proof is historical and its reproduction route needs reconciliation against current Datoviz main; parity for the Python viewer, GUI, picking, WBOIT, and volume rendering is not established.
+This is still a development branch rather than a stable library. Lifecycle safety, navigator factory behavior, input validation, the public API freeze, and source-snapshot dependency/CI alignment are implemented. Follow [the audit handoff](NEXT_STEPS.md) for current correctness fixes, refactoring, documentation repairs, and release validation; the [earlier release handoff](RELEASE_HARDENING_HANDOFF.md) records the original review. The small WebGPU fixture proof is historical; the gallery now records that its old build route is absent from frozen Datoviz main; parity for the Python viewer, GUI, picking, WBOIT, and volume rendering is not established.
 
 ## Work order
 
 Progress: viewer lifecycle failure safety, navigator factory behavior, input validation, the ten-name public API, and reproducible source-snapshot CI are implemented. The first six focused example programs and reproducible gallery commands are in place; live review remains the next product gate before any image or interaction is promoted.
 
-1. Fix the reproduced correctness issues and undertake the staged refactors in [the audit handoff](NEXT_STEPS.md).
+1. Validate the landed correctness fixes and staged refactors against the frozen pre-RC3 baseline; see [the audit handoff](NEXT_STEPS.md) for evidence and remaining release gates.
 2. Review the implemented first batch of focused real-data examples interactively.
 3. Iterate on controls, feedback, visual encodings, and scientific descriptions.
 4. Add the linked and higher-resolution examples once their component interactions are accepted.
@@ -114,6 +114,21 @@ scientific capabilities should be driven by additional real use cases rather tha
 synthetic metrics to that fixture. Coordinate-to-annotation lookup and scientific atlas
 computation remain outside `ibl-datoviz`; this package consumes resolved identities and owns their
 visual presentation and interaction.
+
+## October 5 follow-up evidence
+
+The three reproduced correctness bugs, source dependency/onboarding alignment, and R1–R5
+extractions have landed in focused commits. Synthetic native offscreen checks and bounded GUI
+startup/cleanup pass; both real asset contract checks pass against verified roots. These checks
+still do not supply live feedback for the first six examples, sorting/filtering, HiDPI, or docking.
+Keep those review gates open and retain the text-first presentation.
+
+The bundled registered graph `ibl-atlas-projections-05b9f3f85db9` contains sampled sections:
+AP 165/1320, ML 142/1140, and DV 100/800, at offsets 4, 6, and 1 modulo 8 respectively.
+The center ML index 570 is absent. A complete 10 um navigator therefore needs a compatible
+complete registered pack; the current sampled deployment cannot establish arbitrary cursor
+navigation. Define absent-section behavior or supply complete assets before promoting that route.
+No interpolation or alternative scientific geometry was introduced during these refactors.
 
 ## Feedback loop
 

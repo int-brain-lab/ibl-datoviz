@@ -36,7 +36,12 @@ Three orthogonal anatomical/annotation slices share one AP/ML/DV cursor with the
 scalar template volume, ontology tree, mapping selector, and linked selections. Slice clicks and GUI
 sliders update every panel; Allen, Beryl, and Cosmos retain their official colors.
 
-The same entry accepts an optional exact 10 um slice source while retaining the 50 um dense 3-D volume. The exact registered geometry is published; the intensity transport is built locally as described in [Getting started](../getting-started.md#build-the-volume-and-intensity-packs). These larger assets are optional gallery inputs; the renderer never uploads the complete 10 um volume.
+The same entry supports a complete compatible registered slice source over the 50 um dense
+volume. The bundled 10 um publication graph contains sampled sections only and cannot start the
+current unrestricted navigator at its default cursor. It supports individual published-section
+previews, as documented in [Getting started](../getting-started.md#open-the-atlas-browser).
+Full real-data registered navigation requires a complete compatible local anatomy-v2 pack and
+still awaits interaction review. The renderer never uploads the complete 10 um volume.
 
 ```bash
 uv run --frozen python examples/linked_atlas_navigator.py \
@@ -164,8 +169,11 @@ uv run --frozen python tools/benchmark_atlas_2d.py \
 See [the 2-D findings](../ATLAS_2D_BENCHMARK_FINDINGS.md) for the dated measurements.
 `examples/benchmark_registered_slices.py` separately measures cold indexed-block decode, exact
 registered annotation rasterization, mapping-aware boundary extraction, warm cache reuse, and
-retained cache bytes for all three orthogonal 10 um planes. Reports remain local because source
-publication and host performance are independent concerns.
+retained cache bytes for all three orthogonal 10 um planes using a complete legacy anatomy-v2
+input. The sampled bundled publication is a distinct workload: measure only available sections
+and record their indices rather than comparing those measurements as equivalent to a complete
+source. Reports remain local because source publication and host performance are independent
+concerns.
 
 ## Capability matrix
 

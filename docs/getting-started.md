@@ -58,8 +58,9 @@ materialize_asset_set(bundled_asset_set(), "build/atlas-d070")
 PY
 ```
 
-The registered 10 um projection graph has its own bundled lock. Materialize it through
-`ibl-anatomy` so every transitive resource is checked before Datoviz sees it:
+The registered 10 um projection graph has its own bundled lock. It publishes sampled exact
+geometry for preview and validation, rather than every section of the 10 um grid. Materialize it
+through `ibl-anatomy` to verify every transitive resource:
 
 ```bash
 uv run --frozen python - <<'PY'
@@ -170,9 +171,49 @@ ontology tree, and any attached probe or regional tables. The scalar anatomical 
 volume-rendered in the 3-D panel on native Datoviz; volume rendering is not currently claimed for
 the WebGPU export.
 
-The slice grid and dense 3-D volume are independent. When a 10 um intensity block pack and the
-exact registered anatomy pack have been materialized, keep the 50 um pack as the bounded dense
-volume and opt into 10 um slices explicitly:
+The slice grid and dense 3-D volume are independent. A complete compatible 10 um registered
+anatomy source supports high-resolution slices over the bounded 50 um volume without uploading a
+complete 10 um volume to the GPU.
+
+The bundled published graph is **sampled geometry only**: 165 of 1320 AP sections (indices
+4, 12, ...), 142 of 1140 ML sections (6, 14, ...), and 100 of 800 DV sections (1, 9, ...).
+It cannot start the current unrestricted navigator: the default cursor requests ML 570 and DV 400,
+which have no registered resource and raise `KeyError`. Do not pass the bundled root through
+`--registered-asset-root` as a full-navigator onboarding command. The source does not interpolate,
+snap to another section, or silently substitute 50 um annotation for missing registered geometry.
+
+With the intensity transport built above, preview an actually published section without a native
+scene:
+
+```bash
+uv run --frozen python - <<'PY'
+from ibl_anatomy import (
+    bundled_registered_asset_set, open_intensity_block_pack, open_volume_pack,
+    verify_materialized_registered_asset_set,
+)
+from ibl_datoviz import AtlasSliceComposer, AtlasSliceSource
+
+assets = verify_materialized_registered_asset_set(
+    bundled_registered_asset_set(), "build/atlas-registered-10um"
+)
+intensity = open_intensity_block_pack("build/allen-ccf-2017-10um-intensity")
+catalog = open_volume_pack("build/allen-ccf-2017-50um").load_volumes().regions
+source = AtlasSliceSource(
+    intensity,
+    {projection.world_slice_axis: projection for projection in assets.projections.values()},
+    catalog,
+)
+composer = AtlasSliceComposer(source, "allen")
+for axis, index in (("ap", 660), ("ml", 566), ("dv", 401)):
+    anatomy, annotation = composer.compose_layers(axis, index)
+    print(axis, index, anatomy.shape, annotation.shape)
+PY
+```
+
+For deliberate local inputs, `--anatomy-pack` accepts a **complete** compatible legacy anatomy-v2
+pack. Its reference space, grid, affine, signed identities, and intensity alignment must match,
+and every requested slice needs geometry. Such a real complete pack is not supplied by the bundled
+publication lock; the following is conditional on obtaining one:
 
 ```bash
 uv run --frozen python examples/linked_atlas_navigator.py \
@@ -180,14 +221,13 @@ uv run --frozen python examples/linked_atlas_navigator.py \
   build/allen-ccf-2017-50um \
   --slice-resolution registered \
   --slice-intensity-pack build/allen-ccf-2017-10um-intensity \
-  --registered-asset-root build/atlas-registered-10um
+  --anatomy-pack path/to/complete-anatomy-v2.json
 ```
 
-In this mode the authoritative cursor lives in the 10 um grid and is transformed through ML/AP/DV
-world micrometres to the D070 surface and 50 um volume. Anatomy blocks and exact signed Allen
-geometry are decoded lazily, cached within explicit bounds, and prepared through a latest-wins
-worker queue; only completed current slices mutate Datoviz state on the view owner thread. No
-complete 10 um volume is uploaded to the GPU.
+This path is covered by synthetic native smoke tests; complete real-data interaction still awaits
+review. The authoritative cursor lives in the high-resolution grid and transforms through ML/AP/DV
+world micrometres to the surface and dense volume. Prepared current slices mutate Datoviz only on
+the view owner thread.
 
 For a non-interactive smoke render, add an output path:
 

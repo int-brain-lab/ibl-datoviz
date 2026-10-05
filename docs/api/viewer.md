@@ -24,13 +24,22 @@ colors are three or four integer channels in `[0, 255]`.
         - show
         - close
 
-`LinkedAtlasNavigator.from_registered_assets()` is the shared publication path. It combines an
+`LinkedAtlasNavigator.from_registered_assets()` accepts a verified publication result. It combines an
 independently bounded dense volume and scalar intensity transport with a verified
 `MaterializedRegisteredAssets` result from `ibl-anatomy`; Datoviz does not infer resources from
 the Ephys Atlas deployment layout. The older `from_anatomy_packs()` and lower-level
 `from_multiresolution_packs()` remain available for deliberate local inputs. `ibl-anatomy` owns
 integrity, affine, and decoded geometry contracts; `ibl-datoviz` owns raster composition,
 latest-wins preparation, and owner-thread GPU updates.
+
+A verified graph need not contain every native-grid section. The bundled 10 um graph contains
+sampled sections only; its missing default ML 570 and DV 400 resources prevent unrestricted
+navigator startup. Integrity verification does not establish complete section coverage.
+`from_anatomy_packs()` supports a complete compatible legacy anatomy-v2 source, and all registered
+routes require geometry for every requested section. `AtlasSliceSource.slice()` raises `KeyError`
+when a valid grid index has no published resource; it does not interpolate or snap geometry.
+See [Getting started](../getting-started.md#open-the-atlas-browser) for sampled previews and the
+conditional complete-source route.
 
 The three slice panels use increasing atlas world coordinates from left to right and bottom to top:
 AP slices show ML/dorsal, ML slices show AP/dorsal, and DV slices show ML/anterior. Clicking a

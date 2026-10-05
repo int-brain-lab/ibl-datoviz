@@ -23,7 +23,10 @@ or `KeyError` before native upload.
 
 `AtlasSliceSource` adapts verified registered projections and scalar intensity blocks. It owns its
 byte-accounted decoded cache; callers may clear that cache explicitly. Returned arrays use the
-source grid and declared anatomical axes rather than an inferred transpose.
+source grid and declared anatomical axes rather than an inferred transpose. Valid grid indices
+without registered geometry raise `KeyError`. The bundled real publication includes sampled
+sections, not complete 10 um coverage; callers must request available sections for previews or
+supply a complete compatible source for unrestricted navigation.
 
 ::: ibl_datoviz.atlas_slice_source.AtlasSliceSource
     options:

@@ -90,10 +90,10 @@ uv run --frozen python examples/linked_atlas_navigator.py \
 ```
 
 The navigator shares one AP/ML/DV cursor and one region selection across the three slices, 3-D
-view, volume, and ontology. Registered 10 um slices are supported without uploading a complete
-10 um volume. The published projection root is materialized and verified through the bundled
-`ibl-anatomy` lock rather than inferred from the Ephys Atlas URL layout; the detailed command and
-interaction controls are documented in
+view, volume, and ontology. Complete compatible registered sources support 10 um slices without
+uploading a complete 10 um volume. The bundled verified publication contains sampled geometry
+only and cannot start unrestricted registered navigation; full real-data interaction remains
+unreviewed. Sampled previews, the conditional complete-source route, and controls are documented in
 [Getting started](docs/getting-started.md#open-the-atlas-browser).
 
 ## Real-data examples

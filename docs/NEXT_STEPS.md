@@ -1,14 +1,19 @@
 # Audit follow up and implementation handoff
 
-This is the current implementation queue following the October 5, 2026 repository audit. Fix the three reproduced correctness issues first, make onboarding reproducible, and then refactor the large viewer modules in separate changes. The work belongs in this package; the current Datoviz main checkout is the pre-RC3 compatibility baseline, and the maintainer expects essentially no engine code changes before RC3.
+The October 5, 2026 implementation queue has landed: the three reproduced correctness fixes,
+documentation/dependency alignment, and R1–R5 extractions are complete. The specifications and
+original reproductions below are retained as regression acceptance criteria, not unresolved defects.
+Remaining work is live interaction review, complete registered-section coverage, and verification
+of eventual distributable RC3/anatomy artifacts. All package changes target frozen Datoviz main;
+no engine source changes were made.
 
 ## Baseline and completed work
 
-The audited package revision is `e8bf9f5` on `main`, version `0.2.0.dev0`. The local checkout has now been fast-forwarded to that revision; the January v0.1 checkout and its removed object API are obsolete. The Datoviz baseline is `066a7451195b38c5e95dcf7af7383b89ec5ec903`, and this package now pins that same revision. The anatomy revision is `119457b68fae6967c54d549d9d44e4a4e49c74f8`.
+The original audited package revision was `e8bf9f5` on `main`, version `0.2.0.dev0`. Focused follow-up commits are recorded below; the January v0.1 checkout and its removed object API are obsolete. The Datoviz baseline is `066a7451195b38c5e95dcf7af7383b89ec5ec903`, and this package now pins that same revision. The anatomy revision is `119457b68fae6967c54d549d9d44e4a4e49c74f8`.
 
 Already implemented: verified D070 assets, Allen/Beryl/Cosmos presentation, linked ontology and probe/regional tables, orthogonal slices, bounded native volume rendering, registered 10 um slices, latest-wins preparation, lifecycle failure safety, navigator factory restrictions, probe validation, ten supported top-level exports, and locked source-snapshot CI on Python 3.10 and 3.13. Do not reimplement the original five hardening items; [the earlier handoff](RELEASE_HARDENING_HANDOFF.md) records their history.
 
-The audit passed a normal locked development install, Ruff, strict MkDocs, wheel/sdist builds, and 125 tests against the Datoviz baseline above. Two tests skipped because the real D070 and registered 10 um roots were unavailable. All three synthetic native offscreen tests passed after activating the Datoviz Vulkan environment. The synthetic gallery render and three-frame GUI startup/cleanup checks for both viewer classes passed too. These checks do not establish full real-data interaction quality, cross-platform rendering, or current D070 performance; historical benchmarks retain their original commit and host scope.
+The original audit passed a normal locked development install, Ruff, strict MkDocs, wheel/sdist builds, and 125 tests against the Datoviz baseline above. Two tests skipped because the real D070 and registered 10 um roots were unavailable. All three synthetic native offscreen tests passed after activating the Datoviz Vulkan environment. The synthetic gallery render and three-frame GUI startup/cleanup checks for both viewer classes passed too. These checks do not establish full real-data interaction quality, cross-platform rendering, or current D070 performance; historical benchmarks retain their original commit and host scope.
 
 ## Implementation progress
 
@@ -20,10 +25,11 @@ The audit passed a normal locked development install, Ruff, strict MkDocs, wheel
 - R1 complete: pure scalar interpolation and weighted mapping reduction live in `presentation.py`; viewer retains named tuple-compatible adapters and label formatting. 112 focused tests pass, including 23 direct presentation regressions.
 
 - Payload ownership fixed in `91db67e`: all retained numeric buffers are independent C-order copies; 22 focused tests pass.
-- Probe replacement fixed: successful raw replacement clears typed payload, colors, per-site link keys, and linked table; typed uploads commit identity after validation. Path constructor, caps, and joins now report native failures. 67 atlas/replacement tests and four native offscreen smokes pass, including typed/raw/mapping/typed transitions.
+- Native failure recovery added in `eaad3ed`: one owned upload snapshot restores both geometry and identity after setter failure; failed restoration closes the viewer explicitly. Null construction and failed setup/attachment retry safely with at most one pending scene-owned candidate. 126 targeted tests pass, including 13 added recovery/retry cases.
+- Probe replacement fixed in `7cf5988`: successful raw replacement clears typed payload, colors, per-site link keys, and linked table; typed uploads commit identity after validation. Path constructor, caps, and joins now report native failures. 67 atlas/replacement tests and four native offscreen smokes pass, including typed/raw/mapping/typed transitions.
 - Native checks use Datoviz source main `066a745` and the local built library with its Vulkan SDK environment. Real assets and live interaction review remain separate evidence.
 
-## Correctness fixes
+## Correctness fixes (completed regression specifications)
 
 ### 1 Preserve successful slice results when another axis fails
 
@@ -43,6 +49,8 @@ Acceptance: add deterministic event-based coverage for mixed success/failure, mu
 
 ### 2 Give data payloads independent array storage
 
+Completed in `91db67e`; independent ownership coverage passes for every retained array.
+
 Locations: `ProbeSites.from_arrays()` in `ibl_datoviz/probe.py` and `AtlasRegionValues.from_arrays()` in `ibl_datoviz/regions.py`.
 
 Both constructors promise copied storage, but `np.ascontiguousarray()` can return a caller's existing correctly typed contiguous array. Marking it read-only changes the caller's write flags. The caller can then re-enable writes and mutate the retained payload. This was reproduced for probe positions and regional values.
@@ -53,6 +61,8 @@ Acceptance: correctly typed contiguous inputs keep their original write flags; i
 
 ### 3 Keep raw and typed probe replacement consistent
 
+Completed in `7cf5988`, with additional transactional native-failure recovery following final ownership review.
+
 Locations: `AtlasViewer.set_probe_sites()`, `set_probe_data()`, `_mapped_probe_region_ids()`, `_replace_probe_table()`, and `set_mapping()` in `ibl_datoviz/viewer.py`.
 
 Reproduction: attach two typed probe sites with `set_probe_data()`, replace them with one raw site using `set_probe_sites()`, then change mapping. The rendered geometry has one site, but `probe_data` still contains the old two rows and mapping changes rebind their identities. An existing probe table and cached colors also describe the previous payload.
@@ -61,16 +71,16 @@ Define replacement semantics explicitly. Recommended behavior: a successful raw 
 
 Acceptance: test typed-to-raw and raw-to-typed transitions with equal and different row counts, subsequent mapping changes, existing GUI tables, selection synchronization, and rejected input preserving the previous state. Extend a native smoke or add a bounded native example exercising typed sites, raw replacement, mapping change, and typed replacement. The existing offscreen probe smoke tests only the trajectory line and cannot verify this sites transition.
 
-## Documentation and dependency alignment
+## Documentation and dependency alignment (completed source snapshot)
 
 1. Update the Datoviz source pin and lock to the intended pre-RC3 baseline, then validate the normal resolved install and the local source/native pairing. Keep the immutable anatomy pin unless a required anatomy change is independently justified. When RC3 is published, verify the actual package artifact and update the supported lower bound accordingly; wheel metadata currently permits RC2 even though the source snapshot uses post-RC2 fixes. A distributable release also needs a deliberately supported anatomy distribution. Do not infer package-index availability from source metadata.
-2. Make [Getting started](getting-started.md) one executable fresh-checkout sequence: use `uv run` consistently, use one documented D070 root, include the exact 50 um volume and 10 um intensity materialization commands or an explicit linked upstream recipe, and explain the local Python/native-library pairing. The current instructions create `build/atlas-d070` but later assume an unrelated adjacent `d070-published` root. Avoid relying on globally installed dependencies or undisclosed existing assets.
+2. Make [Getting started](getting-started.md) one executable fresh-checkout sequence: use `uv run` consistently, use one documented D070 root, include the exact 50 um volume and 10 um intensity materialization commands or an explicit linked upstream recipe, and explain the local Python/native-library pairing. The audited instructions created `build/atlas-d070` but later assumed an unrelated adjacent `d070-published` root; the corrected sequence uses the former consistently. Avoid relying on globally installed dependencies or undisclosed existing assets.
 3. Correct the README and historical handoff MkDocs command to use the pinned documentation requirements. Reconcile old present-tense defects, completed API/CI work, and historical test counts. Keep dated benchmark results and exact revisions, but remove claims that old revisions are the current tested baseline.
 4. Reconcile [the gallery](gallery/index.md) and its manifest: `lab_ibl_atlas_webgpu_spike` and `wasm-ibl-atlas-spike` are absent from the audited Datoviz main. Label the old proof historical and correct the advertised current reproduction route/capability. Browser feature expansion is a separate later decision, not a prerequisite for these native fixes.
 
 Acceptance: the install and documentation commands work from a clean environment; strict MkDocs passes; all advertised paths and capabilities match their recorded baseline; no completed hardening task is presented as an unresolved defect.
 
-## Refactoring tasks
+## Refactoring tasks (R1–R5 completed)
 
 `viewer.py` and `linked_atlas.py` are each approximately 1,500 lines. Refactor after the relevant correctness regressions pass, preserving the ten names tested by `tests/test_public_api.py`, factory behavior, coordinate units, signed region identities, cached update paths, and native ownership. Keep each extraction independently reviewable and avoid a renderer rewrite or a generic framework.
 
