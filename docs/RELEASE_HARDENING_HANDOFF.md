@@ -1,5 +1,7 @@
 # Release-hardening handoff
 
+Current continuation: [Audit follow up and implementation handoff](NEXT_STEPS.md). Lifecycle safety, navigator factory restrictions, input validation, the public API freeze, and locked source-snapshot CI are implemented on `main`. The original defect descriptions and commit sequence below are historical review context, not a list of still-open defects. Published dependency compatibility remains a separate release gate; use the new handoff for current fixes, refactoring, documentation, and candidate validation.
+
 This note records the API-review work that should be completed before an `ibl-datoviz` release.
 It is intentionally separate from the Datoviz v0.4 performance work: the current performance
 evidence is sufficient for the release candidate, while the items below are correctness and

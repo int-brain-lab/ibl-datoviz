@@ -56,6 +56,7 @@ nav:
       - Atlas viewer: api/viewer.md
       - Data models: api/data-models.md
   - Development:
+      - Audit follow up: NEXT_STEPS.md
       - Guide: development.md
       - Real-data example roadmap: REAL_DATA_EXAMPLE_ROADMAP.md
       - Release-hardening handoff: RELEASE_HARDENING_HANDOFF.md

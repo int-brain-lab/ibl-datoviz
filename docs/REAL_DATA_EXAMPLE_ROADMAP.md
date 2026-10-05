@@ -31,24 +31,18 @@ The strongest implemented path is the native linked atlas workflow:
 - native interactive windows, deterministic offscreen capture, gallery generation, and diagnostic
   benchmarks.
 
-This is still a development branch rather than a stable library. The release blockers in
-[Release-hardening handoff](RELEASE_HARDENING_HANDOFF.md) remain authoritative: lifecycle safety,
-navigator factory behavior, input validation, dependency/CI alignment, and public API definition.
-WebGPU currently proves only a small fixture-based portability path; it does not provide parity for
-the Python viewer, GUI, picking, WBOIT, or volume rendering.
+This is still a development branch rather than a stable library. Lifecycle safety, navigator factory behavior, input validation, the public API freeze, and source-snapshot dependency/CI alignment are implemented. Follow [the audit handoff](NEXT_STEPS.md) for current correctness fixes, refactoring, documentation repairs, and release validation; the [earlier release handoff](RELEASE_HARDENING_HANDOFF.md) records the original review. The small WebGPU fixture proof is historical and its reproduction route needs reconciliation against current Datoviz main; parity for the Python viewer, GUI, picking, WBOIT, and volume rendering is not established.
 
 ## Work order
 
-Progress: viewer lifecycle failure safety, navigator factory behavior, and input validation are
-implemented. The first six focused example programs and reproducible gallery commands are now in
-place; live review is the next gate before any image or interaction is promoted.
+Progress: viewer lifecycle failure safety, navigator factory behavior, input validation, the ten-name public API, and reproducible source-snapshot CI are implemented. The first six focused example programs and reproducible gallery commands are in place; live review remains the next product gate before any image or interaction is promoted.
 
-1. Fix lifecycle failure safety and input validation before expanding interactive usage.
-2. Build and review the first batch of focused real-data examples.
+1. Fix the reproduced correctness issues and undertake the staged refactors in [the audit handoff](NEXT_STEPS.md).
+2. Review the implemented first batch of focused real-data examples interactively.
 3. Iterate on controls, feedback, visual encodings, and scientific descriptions.
 4. Add the linked and higher-resolution examples once their component interactions are accepted.
-5. Freeze the supported public Python API from the workflows that proved useful.
-6. Align package metadata, clean-environment CI, documentation, and release notes.
+5. Preserve the tested ten-name public Python API while reviewing the workflows.
+6. Complete published dependency compatibility, reproducible onboarding, current documentation, and release notes; source-snapshot CI alignment is already implemented.
 7. Treat browser/WebGPU expansion as a later product decision, not as a prerequisite for native
    feedback.
 

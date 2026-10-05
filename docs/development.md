@@ -1,8 +1,6 @@
 # Development and documentation
 
-The [real-data interactive example roadmap](REAL_DATA_EXAMPLE_ROADMAP.md) records the planned
-capability ladder and review process. The [release-hardening handoff](RELEASE_HARDENING_HANDOFF.md)
-records the correctness, lifecycle, packaging, and API blockers that precede a release.
+Start with [the audit follow up and implementation handoff](NEXT_STEPS.md) for the current correctness fixes, staged refactoring tasks, and validation requirements. The [real-data interactive example roadmap](REAL_DATA_EXAMPLE_ROADMAP.md) records the capability ladder and live review process. The [earlier release-hardening handoff](RELEASE_HARDENING_HANDOFF.md) records the original review and completed hardening work.
 
 ## Checks
 
