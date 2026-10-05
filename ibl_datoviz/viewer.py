@@ -52,6 +52,19 @@ class RegionalView(NamedTuple):
     colors: NDArray[np.uint8]
 
 
+class ProbeUpload(NamedTuple):
+    """One owned upload snapshot for recovery after a native setter failure."""
+
+    positions: NDArray[np.float32]
+    colors: NDArray[np.uint8]
+    radii: NDArray[np.float32]
+    keys: NDArray[np.uint64]
+
+    def attributes(self):
+        """Return the native sphere attributes without copying the snapshot."""
+        return {'position': self.positions, 'color': self.colors, 'radius': self.radii}
+
+
 class AtlasViewer:
     """Own one Datoviz scene displaying an immutable atlas mesh pack."""
 
@@ -120,6 +133,9 @@ class AtlasViewer:
         self._gui_widgets = {}
         self.gui = None
         self.probe_sites = None
+        self._probe_sites_pending = None
+        self._probe_pending = None
+        self._probe_upload: ProbeUpload | None = None
         self.probe_data: ProbeSites | None = None
         self.region_data: AtlasRegionValues | None = None
         self._probe_colors: NDArray[np.uint8] | None = None
@@ -372,6 +388,10 @@ class AtlasViewer:
                 ),
                 'probe site mapping link keys',
             )
+            if self._probe_upload is not None:
+                keys = np.array(mapped_ids.view(np.uint64), copy=True)
+                keys.setflags(write=False)
+                self._probe_upload = self._probe_upload._replace(keys=keys)
             if self.probe_table is not None:
                 self._replace_probe_table()
         if self.region_data is not None and self.region_table is not None:
@@ -532,11 +552,14 @@ class AtlasViewer:
             rgba += (255,)
         colors = np.tile(np.asarray(rgba, dtype=np.uint8), (len(positions), 1))
         widths = np.full(len(positions), width_px, dtype=np.float32)
-        if self.probe is None:
-            probe = self.dvz.dvz_path(self.scene, 0)
-            if not probe:
-                raise RuntimeError('dvz_path() failed')
-            self._check(self.dvz.dvz_panel_add_visual(self.panel, probe, None), 'probe attach')
+        probe = self.probe
+        if probe is None:
+            probe = self._probe_pending
+            if probe is None:
+                probe = self.dvz.dvz_path(self.scene, 0)
+                if not probe:
+                    raise RuntimeError('dvz_path() failed')
+                self._probe_pending = probe
             self._check(
                 self.dvz.dvz_path_set_caps(
                     probe, self.dvz.DVZ_SEGMENT_CAP_ROUND, self.dvz.DVZ_SEGMENT_CAP_ROUND
@@ -547,14 +570,17 @@ class AtlasViewer:
                 self.dvz.dvz_path_set_join(probe, self.dvz.DVZ_PATH_JOIN_ROUND, 4.0),
                 'probe join',
             )
-            self.probe = probe
         self._check(
             self.dvz.dvz_visual_set_data_many(
-                self.probe,
+                probe,
                 {'position': positions, 'color': colors, 'stroke_width_px': widths},
             ),
             'probe upload',
         )
+        if self.probe is None:
+            self._check(self.dvz.dvz_panel_add_visual(self.panel, probe, None), 'probe attach')
+        self.probe = probe
+        self._probe_pending = None
 
     def set_probe_sites(
         self,
@@ -623,28 +649,62 @@ class AtlasViewer:
             rgba = np.tile(np.asarray((255, 205, 72, 255), dtype=np.uint8), (count, 1))
 
         radii = np.full(count, radius_um * self.mesh_data.display_scale, dtype=np.float32)
-        if self.probe_sites is None:
-            self.probe_sites = self.dvz.dvz_sphere(self.scene, 0)
-            if not self.probe_sites:
-                raise RuntimeError('dvz_sphere() failed')
-            self._check(
-                self.dvz.dvz_panel_add_visual(self.panel, self.probe_sites, None),
-                'probe sites attach',
-            )
-        self._check(
-            self.dvz.dvz_visual_set_data_many(
-                self.probe_sites,
-                {'position': positions, 'color': rgba, 'radius': radii},
-            ),
-            'probe sites upload',
-        )
         keys = (
             np.zeros(count, dtype=np.uint64) if mapped_ids is None else mapped_ids.view(np.uint64)
         )
-        self._check(
-            self.dvz.dvz_visual_set_link_keys(self.probe_sites, self.link_channel, keys),
-            'probe site link keys',
+        snapshot = ProbeUpload(
+            *(np.array(array, order='C', copy=True) for array in (positions, rgba, radii, keys))
         )
+        for array in snapshot:
+            array.setflags(write=False)
+        self._commit_probe_upload(snapshot)
+
+    def _commit_probe_upload(self, snapshot: ProbeUpload) -> None:
+        """Commit geometry and identities, restoring the prior snapshot on failure."""
+        previous = self._probe_upload
+        visual = self.probe_sites
+        if visual is None:
+            visual = self._probe_sites_pending
+            if visual is None:
+                visual = self.dvz.dvz_sphere(self.scene, 0)
+                if not visual:
+                    raise RuntimeError('dvz_sphere() failed')
+                # Scene owns the candidate even if a setter or attachment fails.
+                self._probe_sites_pending = visual
+        try:
+            self._check(
+                self.dvz.dvz_visual_set_data_many(visual, snapshot.attributes()),
+                'probe sites upload',
+            )
+            self._check(
+                self.dvz.dvz_visual_set_link_keys(visual, self.link_channel, snapshot.keys),
+                'probe site link keys',
+            )
+            if self.probe_sites is None:
+                self._check(
+                    self.dvz.dvz_panel_add_visual(self.panel, visual, None),
+                    'probe sites attach',
+                )
+        except Exception as error:
+            if previous is not None:
+                try:
+                    self._check(
+                        self.dvz.dvz_visual_set_data_many(visual, previous.attributes()),
+                        'probe sites geometry rollback',
+                    )
+                    self._check(
+                        self.dvz.dvz_visual_set_link_keys(
+                            visual, self.link_channel, previous.keys
+                        ),
+                        'probe sites identity rollback',
+                    )
+                except Exception:
+                    self.close()
+                    raise RuntimeError('probe sites rollback failed; viewer closed') from error
+            raise
+        self.probe_sites = visual
+        self._probe_sites_pending = None
+        self._probe_upload = snapshot
 
     def set_probe_data(
         self,
