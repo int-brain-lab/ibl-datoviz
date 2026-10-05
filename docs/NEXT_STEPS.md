@@ -14,6 +14,12 @@ The audit passed a normal locked development install, Ruff, strict MkDocs, wheel
 
 ### 1 Preserve successful slice results when another axis fails
 
+Completed: drains now consume one failure at a time while preserving successful
+results and other failures. The navigator schedules another owner-thread frame
+after a failure, so coalesced notifications cannot strand another axis. The 15
+focused queue/scheduler/consumer tests pass, including simultaneous outcomes,
+stale failures, and resumed work; Ruff passes for the changed code.
+
 Location: `LatestWinsExecutor.drain_ready()` in `ibl_datoviz/latest_wins.py`, consumed by `ibl_datoviz/slice_scheduler.py` and `LinkedAtlasNavigator._drain_prepared_slices()`.
 
 Reproduction: submit independent keys with two workers, let one preparation return a valid payload and the other raise, and wait for both completion notifications before draining. The first drain raises the worker exception after clearing every ready payload; the next drain returns an empty list. A successfully prepared slice is permanently lost. Multiple simultaneous errors are also cleared even though only the first is reported.

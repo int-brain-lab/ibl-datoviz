@@ -116,3 +116,86 @@ def _append(values, lock, value):
 def _notified(values, lock):
     with lock:
         return bool(values)
+
+
+def test_mixed_outcomes_preserve_success_and_report_every_failure():
+    release = Event()
+    notified = {key: Event() for key in ('good', 'bad', 'worse')}
+
+    def prepare(token):
+        assert release.wait(2)
+        if token != 'good':
+            raise ValueError(token)
+        return 42
+
+    queue = LatestWinsExecutor(
+        prepare, notify=lambda key: notified[key].set(), max_workers=3
+    )
+    try:
+        for key in notified:
+            queue.request(key, key)
+        release.set()
+        for event in notified.values():
+            assert event.wait(2)
+        for message in ('bad', 'worse'):
+            with pytest.raises(ValueError, match=message):
+                queue.drain_ready()
+        assert [(item.key, item.result) for item in queue.drain_ready()] == [('good', 42)]
+        assert queue.drain_ready() == []
+        # A key that failed can resume, without disturbing another axis.
+        notified['bad'].clear()
+        queue.request('bad', 'good')
+        assert notified['bad'].wait(2)
+        assert [(item.key, item.result) for item in queue.drain_ready()] == [('bad', 42)]
+    finally:
+        release.set()
+        queue.close()
+
+
+def test_stale_inflight_failure_is_superseded():
+    started = Event()
+    release = Event()
+    notified = Event()
+    calls = []
+
+    def prepare(token):
+        calls.append(token)
+        if token == 1:
+            started.set()
+            assert release.wait(2)
+            raise ValueError('stale failure')
+        return token
+
+    queue = LatestWinsExecutor(prepare, notify=lambda _key: notified.set(), max_workers=1)
+    try:
+        queue.request('axis', 1)
+        assert started.wait(2)
+        queue.request('axis', 2)
+        release.set()
+        assert notified.wait(2)
+        assert [item.result for item in queue.drain_ready()] == [2]
+        assert calls == [1, 2]
+        assert queue.drain_ready() == []
+    finally:
+        release.set()
+        queue.close()
+
+
+def test_ready_failure_is_superseded_by_new_request():
+    notified = Event()
+
+    def prepare(token):
+        if token == 1:
+            raise ValueError('stale failure')
+        return token
+
+    queue = LatestWinsExecutor(prepare, notify=lambda _key: notified.set(), max_workers=1)
+    try:
+        queue.request('axis', 1)
+        assert notified.wait(2)
+        notified.clear()
+        queue.request('axis', 2)
+        assert notified.wait(2)
+        assert [item.result for item in queue.drain_ready()] == [2]
+    finally:
+        queue.close()

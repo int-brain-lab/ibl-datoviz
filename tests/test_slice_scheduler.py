@@ -102,3 +102,27 @@ def test_prepared_slice_is_request_result_pair():
     item = PreparedSlice(SliceRequest('ap', 1, 1), b'payload')
     assert item.request.axis == 'ap'
     assert item.payload == b'payload'
+
+
+def test_failed_axis_preserves_another_axis_and_can_resume():
+    notified = {axis: Event() for axis in ('ap', 'dv')}
+
+    def prepare(request):
+        if request.axis == 'ap' and request.revision == 1:
+            raise ValueError('AP preparation failed')
+        return request.index
+
+    scheduler = SliceScheduler(prepare, notify=lambda axis: notified[axis].set())
+    try:
+        scheduler.submit(SliceRequest('dv', 9, 1))
+        scheduler.submit(SliceRequest('ap', 4, 1))
+        assert all(event.wait(2) for event in notified.values())
+        with pytest.raises(ValueError, match='AP preparation failed'):
+            scheduler.drain_ready()
+        assert scheduler.drain_ready() == [PreparedSlice(SliceRequest('dv', 9, 1), 9)]
+        notified['ap'].clear()
+        scheduler.submit(SliceRequest('ap', 5, 2))
+        assert notified['ap'].wait(2)
+        assert scheduler.drain_ready() == [PreparedSlice(SliceRequest('ap', 5, 2), 5)]
+    finally:
+        scheduler.close()

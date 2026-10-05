@@ -105,7 +105,11 @@ class SliceScheduler(Generic[Payload]):
             return self._latest_revision.get(axis)
 
     def drain_ready(self) -> list[PreparedSlice[Payload]]:
-        """Return current results, excluding anything no longer current."""
+        """Return current results, excluding anything no longer current.
+
+        A worker failure is raised once and preserves other queued outcomes.
+        The owner must drain again after catching it, even without a new request.
+        """
         ready = self._executor.drain_ready()
         with self._lock:
             return [

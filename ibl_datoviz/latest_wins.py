@@ -148,23 +148,25 @@ class LatestWinsExecutor(Generic[Key, Token, Result]):
             self._notify(key)
 
     def drain_ready(self) -> list[ReadyResult[Key, Token, Result]]:
-        """Return current ready results, raising any current worker failure.
+        """Return current results, or consume and raise one worker failure.
 
-        Results are removed before returning.  A request arriving concurrently
-        is therefore never accidentally drained as an older result.
+        Failures take precedence, but leave successful results and other
+        failures queued for the next drain. Callers catching a failure must
+        drain again without waiting for another preparation notification.
+        Each outcome is removed under the lock, so a concurrent request cannot
+        accidentally be drained as an older result.
         """
         with self._lock:
+            for state in self._states.values():
+                if state.error is not None:
+                    error = state.error
+                    state.error = None
+                    raise error
             ready: list[ReadyResult[Key, Token, Result]] = []
-            errors: list[Exception] = []
             for _key, state in list(self._states.items()):
                 if state.ready is not None:
                     ready.append(state.ready)  # type: ignore[arg-type]
                     state.ready = None
-                if state.error is not None:
-                    errors.append(state.error)
-                    state.error = None
-            if errors:
-                raise errors[0]
             return ready
 
     def close(self) -> None:

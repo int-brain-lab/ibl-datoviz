@@ -735,6 +735,9 @@ class LinkedAtlasNavigator(AtlasViewer):
             ready = self._slice_loader.drain_ready()
         except Exception as error:  # callback boundaries must not leak exceptions
             self._slice_error = error
+            # Other axes (and failures) remain queued; retry on the owner thread
+            # even if every worker notification arrived in this frame.
+            self.dvz.dvz_view_request_frame(self.view)
             return
         for item in ready:
             self._upload_slice_payload(item.request, item.payload)
