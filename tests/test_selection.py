@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from ibl_datoviz import AtlasViewer
 from ibl_datoviz.ontology import encode_region_key
 from ibl_datoviz.selection import (
     mesh_ids_from_keys,
@@ -65,3 +66,35 @@ def test_tree_keys_preserve_ontology_hemisphere_convention():
     keys = tree_selection_keys([8, -315, 997], [-8, -315])
     assert region_ids_from_keys(keys) == (-8, -315)
     assert mesh_ids_from_keys([0, *keys, keys[0]]) == (-8, -315)
+
+
+def test_viewer_simultaneous_events_use_region_table_and_keep_hover(monkeypatch):
+    viewer = AtlasViewer.__new__(AtlasViewer)
+    viewer._hovered_region_ids = (-315,)
+    viewer._selected_region_ids = ()
+    viewer._last_mesh_region_ids = (997,)
+    applied, propagated = [], []
+    monkeypatch.setattr(viewer, '_region_table_selected_region_ids', lambda: (-8,))
+
+    def unexpected():
+        raise AssertionError('lower priority widget or mesh was read')
+
+    for name in (
+        '_probe_table_selected_region_ids',
+        '_tree_selected_region_ids',
+        '_mesh_selected_region_ids',
+    ):
+        monkeypatch.setattr(viewer, name, unexpected)
+
+    def apply(ids, **flags):
+        applied.append((ids, flags))
+        viewer._selected_region_ids = ids
+
+    monkeypatch.setattr(viewer, '_apply_selected_region_ids', apply)
+    monkeypatch.setattr(viewer, '_set_probe_table_selection', propagated.append)
+    viewer._sync_selection_highlight(
+        region_table_changed=True, table_changed=True, tree_changed=True
+    )
+    assert applied == [((-8,), {'update_tree': True, 'update_table': False, 'clear_mesh': True})]
+    assert propagated == [(-8,)]
+    assert viewer._hovered_region_ids == (-315,)
