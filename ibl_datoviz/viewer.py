@@ -20,8 +20,16 @@ from ibl_anatomy import (
 
 from .atlas import AtlasMesh
 from .gui_data import create_probe_table, create_region_table, create_region_tree
-from .ontology import AtlasTreeModel, decode_region_key, encode_region_key
+from .ontology import AtlasTreeModel
 from .presentation import region_presentation, scalar_colors
+from .selection import (
+    mesh_ids_from_keys,
+    probe_selected_ids,
+    region_ids_from_keys,
+    selected_row_keys,
+    selection_decision,
+    tree_selection_keys,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -723,19 +731,12 @@ class AtlasViewer:
             return ()
         items = (self.dvz.DvzSelectionItem * count)()
         self.dvz.dvz_selection_copy(selection, items, count)
-        signed = []
-        for item in items:
-            if item.link_key:
-                value = np.asarray(item.link_key, dtype=np.uint64).view(np.int64).item()
-                signed.append(value)
-        return tuple(dict.fromkeys(signed))
+        return mesh_ids_from_keys([item.link_key for item in items])
 
     def _tree_selected_region_ids(self) -> tuple[int, ...]:
         if self.region_tree is None:
             return ()
-        return tuple(
-            decode_region_key(key) for key in self._gui_widgets['region_tree'].selected_keys()
-        )
+        return region_ids_from_keys(self._gui_widgets['region_tree'].selected_keys())
 
     def set_selected_region_ids(self, region_ids: Sequence[int]) -> None:
         """Select signed or logical atlas regions and highlight their mapped descendants."""
@@ -789,16 +790,8 @@ class AtlasViewer:
     def _probe_table_selected_region_ids(self) -> tuple[int, ...]:
         if self.probe_table is None or self.probe_data is None:
             return ()
-        selected_keys = set(self._gui_widgets['probe_table'].selected_keys())
-        rows = self._gui_widgets['probe_table'].rows
-        mapped_ids = rows.region_ids
-        return tuple(
-            dict.fromkeys(
-                int(region_id)
-                for site_id, region_id in zip(rows.keys, mapped_ids, strict=True)
-                if int(site_id) in selected_keys and region_id
-            )
-        )
+        widget = self._gui_widgets['probe_table']
+        return probe_selected_ids(widget.rows.keys, widget.rows.region_ids, widget.selected_keys())
 
     def _set_probe_table_selection(self, region_ids: Sequence[int]) -> None:
         if self.probe_table is None or self.probe_data is None:
@@ -809,7 +802,7 @@ class AtlasViewer:
             else tuple(abs(int(region_id)) for region_id in region_ids)
         )
         rows = self._gui_widgets['probe_table'].rows
-        keys = rows.keys[np.isin(np.abs(rows.region_ids), logical_ids)]
+        keys = selected_row_keys(rows.keys, rows.region_ids, logical_ids)
         self._gui_widgets['probe_table'].set_selection(keys, 'probe table selection sync')
 
     def _replace_region_table(self) -> None:
@@ -835,9 +828,7 @@ class AtlasViewer:
     def _region_table_selected_region_ids(self) -> tuple[int, ...]:
         if self.region_table is None:
             return ()
-        return tuple(
-            decode_region_key(key) for key in self._gui_widgets['region_table'].selected_keys()
-        )
+        return region_ids_from_keys(self._gui_widgets['region_table'].selected_keys())
 
     def _set_region_table_selection(self, region_ids: Sequence[int]) -> None:
         if self.region_table is None:
@@ -848,9 +839,7 @@ class AtlasViewer:
             if self.tree_model is not None
             else tuple(abs(int(region_id)) for region_id in region_ids)
         )
-        keys = np.ascontiguousarray(
-            available[np.isin(np.abs(available), logical_ids)].view(np.uint64)
-        )
+        keys = selected_row_keys(available.view(np.uint64), available, logical_ids)
         self._gui_widgets['region_table'].set_selection(keys, 'region table selection sync')
 
     def _replace_region_tree(self) -> None:
@@ -984,17 +973,7 @@ class AtlasViewer:
     def _set_tree_selection(self, region_ids: Sequence[int]) -> None:
         if self.region_tree is None or self.tree_model is None:
             return
-        tree_ids = {
-            int(region_id) for region_id in self._gui_widgets['region_tree'].rows.region_ids
-        }
-        keys = np.asarray(
-            [
-                encode_region_key(-abs(int(region_id)))
-                for region_id in region_ids
-                if -abs(int(region_id)) in tree_ids
-            ],
-            dtype=np.uint64,
-        )
+        keys = tree_selection_keys(region_ids, self._gui_widgets['region_tree'].rows.region_ids)
         self._gui_widgets['region_tree'].set_selection(keys, 'atlas ontology selection sync')
 
     def _apply_selected_region_ids(
@@ -1117,38 +1096,35 @@ class AtlasViewer:
         table_changed: bool = False,
         region_table_changed: bool = False,
     ) -> None:
-        if region_table_changed:
-            self._apply_selected_region_ids(
-                self._region_table_selected_region_ids(),
-                update_tree=True,
-                update_table=False,
-                clear_mesh=True,
-            )
-            self._set_probe_table_selection(self._selected_region_ids)
-            return
-        if table_changed:
-            self._apply_selected_region_ids(
-                self._probe_table_selected_region_ids(),
-                update_tree=True,
-                update_table=False,
-                clear_mesh=True,
-            )
-            return
-        if tree_changed:
-            self._apply_selected_region_ids(
-                self._tree_selected_region_ids(),
-                update_tree=False,
-                update_table=True,
-                clear_mesh=True,
-            )
-            return
-        mesh_region_ids = self._mesh_selected_region_ids()
-        if mesh_region_ids == self._last_mesh_region_ids:
-            return
-        self._last_mesh_region_ids = mesh_region_ids
-        self._apply_selected_region_ids(
-            mesh_region_ids, update_tree=True, update_table=True, clear_mesh=False
+        decision = selection_decision(
+            region_table_changed=region_table_changed,
+            table_changed=table_changed,
+            tree_changed=tree_changed,
         )
+        if decision is None:
+            mesh_region_ids = self._mesh_selected_region_ids()
+            decision = selection_decision(
+                mesh_changed=mesh_region_ids != self._last_mesh_region_ids
+            )
+            if decision is None:
+                return
+            self._last_mesh_region_ids = mesh_region_ids
+            region_ids = mesh_region_ids
+        else:
+            readers = {
+                'region_table': self._region_table_selected_region_ids,
+                'probe_table': self._probe_table_selected_region_ids,
+                'tree': self._tree_selected_region_ids,
+            }
+            region_ids = readers[decision.source]()
+        self._apply_selected_region_ids(
+            region_ids,
+            update_tree=decision.update_tree,
+            update_table=decision.update_tables,
+            clear_mesh=decision.clear_mesh,
+        )
+        if decision.sync_probe_table:
+            self._set_probe_table_selection(self._selected_region_ids)
 
     def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0912, PLR0915
         if self.app is not None:
