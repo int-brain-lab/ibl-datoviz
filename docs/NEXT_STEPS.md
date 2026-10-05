@@ -44,6 +44,14 @@ pairing/download paths have direct tests, but actual Mac execution remains the n
 This follow-up also scopes a lifecycle-test mock to its own viewer so unrelated garbage-collected
 viewers cannot contaminate destruction-order assertions.
 
+The repository now provides portable `just` recipes for setup, tests, review, runtime diagnosis,
+Ruff, and strict documentation builds. They delegate platform handling to the existing Python
+helper and pass arguments through quoted shell positional parameters. Recipe parsing, formatting,
+discovery, and forwarding of spaced/quoted paths and multiword pytest expressions pass. Cached
+`just setup`, `just test` (246 passed, one optional registered-root skip), and all six three-frame
+native examples through `just review all --frames 3` pass on Linux. Actual macOS execution remains
+pending; no Datoviz source or public API changes were required.
+
 ## Final validation — October 5, 2026
 
 The final implementation revision tested was `4c7788a`; subsequent handoff edits are documentation
@@ -213,17 +221,22 @@ Rerun the existing 2-D, 3-D, registered-slice, and regional-update benchmarks ag
 
 Recommended commits: queue/error handling; payload ownership; probe replacement; dependency and onboarding alignment; each refactor separately; real-data review corrections. Use subagents for independent queue, payload, and documentation work. Keep the probe/GUI/presentation work under one coordinator and serialize changes to `viewer.py` and `linked_atlas.py` to avoid conflicting edits and divergent ownership decisions. Review each delegated result and integrate its tests before proceeding.
 
-Run from the repository root:
+Run from the repository root after building Datoviz separately:
 
 ```bash
-uv sync --group dev --locked
-uv run --frozen ruff check .
-uv run --frozen pytest -q
-uv run --frozen --with-requirements docs/requirements.txt mkdocs build --strict
+just setup /path/to/datoviz  # once; setup-tests skips review assets
+just doctor
+just lint
+just test
+just docs
 git diff --check
 ```
 
-Tests use synthetic fixtures from the pinned adjacent anatomy checkout; CI shows the exact setup. For the local source baseline, add the adjacent Datoviz checkout to `PYTHONPATH`, select its matching built library, and activate its platform Vulkan environment. On macOS, use `direnv exec ../../Viz/datoviz` around the validation command. Confirm imported module paths and revisions so installed distribution metadata cannot conceal a different source checkout. Report native/GPU and real-asset skips explicitly.
+Local tests use pinned synthetic fixtures in `build/review/anatomy`; CI retains its adjacent
+checkout. The helper selects the remembered Datoviz facade and matching native library, using its
+configured `direnv` environment when available. `just doctor` verifies imported module and library
+paths. Report native/GPU and real-asset skips explicitly. Agent instructions and the contributor
+workflow document the same commands on macOS and Linux.
 
 Use `uv run --frozen python tools/build_gallery.py --example atlas-spike --fixture-root <anatomy-fixtures> --output-root build/audit-gallery` for a synthetic gallery check, run `tests/test_smoke.py` with the configured native environment, and check three-frame startup/cleanup of both GUI classes. The two real-asset tests require `IBL_ATLAS_ASSET_SET_ROOT` and `IBL_REGISTERED_ASSET_SET_ROOT`. Benchmark and gallery tools write to the ignored build tree; review pixels before replacing tracked canonical images.
 
