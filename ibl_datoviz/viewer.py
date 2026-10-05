@@ -5,7 +5,7 @@ from __future__ import annotations
 import ctypes
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import datoviz as dvz
 import numpy as np
@@ -20,6 +20,7 @@ from ibl_anatomy import (
 
 from .atlas import AtlasMesh
 from .ontology import ROOT_PARENT, AtlasTreeModel, decode_region_key, encode_region_key
+from .presentation import region_presentation, scalar_colors
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -30,6 +31,16 @@ if TYPE_CHECKING:
 
     from .probe import ProbeSites
     from .regions import AtlasRegionValues
+
+
+class RegionalView(NamedTuple):
+    """Named presentation with viewer-specific tree labels; tuple adapter retained."""
+
+    region_ids: NDArray[np.int64]
+    values: NDArray[np.float64]
+    weights: NDArray[np.float64]
+    labels: tuple[str, ...]
+    colors: NDArray[np.uint8]
 
 
 class AtlasViewer:
@@ -366,8 +377,10 @@ class AtlasViewer:
         active_palette = self.palette if palette is None else palette
         if self.region_data is None:
             return self._surface_colors(active_mapping, active_palette)
-        region_ids, _, _, _, value_colors = self._mapped_region_values(active_mapping)
-        return self._region_surface_colors(active_mapping, region_ids, value_colors)
+        presentation = self._mapped_region_values(active_mapping)
+        return self._region_surface_colors(
+            active_mapping, presentation.region_ids, presentation.colors
+        )
 
     def _region_surface_colors(
         self,
@@ -409,7 +422,9 @@ class AtlasViewer:
         if opacity is not None and (not np.isfinite(opacity) or not 0 <= opacity <= 1):
             raise ValueError('region opacity must be between zero and one')
         prepared = self._region_value_view(data, self.mapping, value_range, color_scheme, opacity)
-        surface_colors = self._region_surface_colors(self.mapping, prepared[0], prepared[4])
+        surface_colors = self._region_surface_colors(
+            self.mapping, prepared.region_ids, prepared.colors
+        )
         self._check(
             self.dvz.dvz_visual_set_data(self.mesh, 'color', surface_colors),
             'region scalar color update',
@@ -428,22 +443,14 @@ class AtlasViewer:
         if self.gui is not None:
             self._replace_region_table()
 
-    def _mapped_region_values(
-        self, mapping: str | None = None
-    ) -> tuple[
-        NDArray[np.int64],
-        NDArray[np.float64],
-        NDArray[np.float64],
-        tuple[str, ...],
-        NDArray[np.uint8],
-    ]:
+    def _mapped_region_values(self, mapping: str | None = None) -> RegionalView:
         """Return the active weighted-mean regional presentation."""
         data = self.region_data
         if data is None or self.catalog is None:
             empty_i = np.empty(0, dtype=np.int64)
             empty_f = np.empty(0, dtype=np.float64)
             empty_c = np.empty((0, 4), dtype=np.uint8)
-            return empty_i, empty_f, empty_f, (), empty_c
+            return RegionalView(empty_i, empty_f, empty_f, (), empty_c)
         active_mapping = self.mapping if mapping is None else mapping
         return self._region_value_view(
             data,
@@ -460,51 +467,33 @@ class AtlasViewer:
         value_range: tuple[float, float] | None,
         color_scheme: Literal['diverging', 'sequential'],
         opacity: float | None,
-    ) -> tuple[
-        NDArray[np.int64],
-        NDArray[np.float64],
-        NDArray[np.float64],
-        tuple[str, ...],
-        NDArray[np.uint8],
-    ]:
+    ) -> RegionalView:
         """Build one weighted-mean mapping presentation without mutating state."""
         assert self.catalog is not None
-        try:
-            mapped_ids = self.catalog.map_allen_ids(data.allen_region_ids, mapping)
-        except KeyError as error:
-            raise ValueError(str(error)) from error
-        grouped: dict[int, list[tuple[float, float]]] = {}
-        for mapped_id, value, weight in zip(mapped_ids, data.values, data.weights, strict=True):
-            if mapped_id is None or mapped_id == 0:
-                continue
-            grouped.setdefault(mapped_id, []).append((float(value), float(weight)))
-        region_ids = np.ascontiguousarray(sorted(grouped), dtype=np.int64)
-        values = np.empty(len(region_ids), dtype=np.float64)
-        weights = np.empty(len(region_ids), dtype=np.float64)
-        for index, region_id in enumerate(region_ids):
-            entries = grouped[int(region_id)]
-            weights[index] = sum(weight for _, weight in entries)
-            finite = [(value, weight) for value, weight in entries if np.isfinite(value)]
-            values[index] = (
-                sum(value * weight for value, weight in finite)
-                / sum(weight for _, weight in finite)
-                if finite
-                else np.nan
-            )
+        presentation = region_presentation(
+            self.catalog,
+            mapping,
+            data,
+            value_range,
+            color_scheme,
+            self.surface_opacity if opacity is None else opacity,
+        )
         model = (
             self.tree_model
             if self.tree_model is not None and self.tree_model.mapping == mapping
             else None
         )
         labels = tuple(
-            model.describe(int(region_id)) if model else str(region_id) for region_id in region_ids
+            model.describe(int(region_id)) if model else str(region_id)
+            for region_id in presentation.region_ids
         )
-        colors = self._probe_value_colors(values, value_range, color_scheme)
-        effective_opacity = self.surface_opacity if opacity is None else opacity
-        if effective_opacity < 1:
-            colors = colors.copy()
-            colors[:, 3] = np.rint(colors[:, 3] * effective_opacity).astype(np.uint8)
-        return region_ids, values, weights, labels, colors
+        return RegionalView(
+            presentation.region_ids,
+            presentation.values,
+            presentation.weights,
+            labels,
+            presentation.colors,
+        )
 
     def set_probe(
         self,
@@ -537,9 +526,7 @@ class AtlasViewer:
             probe = self.dvz.dvz_path(self.scene, 0)
             if not probe:
                 raise RuntimeError('dvz_path() failed')
-            self._check(
-                self.dvz.dvz_panel_add_visual(self.panel, probe, None), 'probe attach'
-            )
+            self._check(self.dvz.dvz_panel_add_visual(self.panel, probe, None), 'probe attach')
             self._check(
                 self.dvz.dvz_path_set_caps(
                     probe, self.dvz.DVZ_SEGMENT_CAP_ROUND, self.dvz.DVZ_SEGMENT_CAP_ROUND
@@ -689,51 +676,7 @@ class AtlasViewer:
         value_range: tuple[float, float] | None,
         color_scheme: Literal['diverging', 'sequential'] = 'diverging',
     ) -> NDArray[np.uint8]:
-        if color_scheme not in ('diverging', 'sequential'):
-            raise ValueError(f'unknown probe color scheme: {color_scheme}')
-        values = np.asarray(values, dtype=np.float64)
-        if values.ndim != 1 or np.isinf(values).any():
-            raise ValueError('probe values must be one-dimensional and contain no infinities')
-        finite = np.isfinite(values)
-        if value_range is None:
-            if not np.any(finite):
-                limits = (0.0, 1.0)
-            else:
-                limits = (float(np.min(values[finite])), float(np.max(values[finite])))
-        else:
-            raw_limits = np.asarray(value_range, dtype=np.float64)
-            if raw_limits.shape != (2,):
-                raise ValueError('probe value range must contain exactly two values')
-            limits = (float(raw_limits[0]), float(raw_limits[1]))
-        constant = value_range is None and limits[1] == limits[0]
-        if (
-            not np.isfinite(limits).all()
-            or (limits[1] < limits[0])
-            or (value_range is not None and limits[1] == limits[0])
-        ):
-            raise ValueError('probe value range must be finite and increasing')
-
-        t = (
-            np.full(len(values), 0.5, dtype=np.float64)
-            if constant
-            else np.clip((values - limits[0]) / (limits[1] - limits[0]), 0.0, 1.0)
-        )
-        if color_scheme == 'sequential':
-            low = np.asarray((88, 70, 180), dtype=np.float64)
-            middle = np.asarray((45, 180, 170), dtype=np.float64)
-            high = np.asarray((253, 231, 73), dtype=np.float64)
-        else:
-            low = np.asarray((49, 116, 178), dtype=np.float64)
-            middle = np.asarray((247, 247, 247), dtype=np.float64)
-            high = np.asarray((203, 45, 62), dtype=np.float64)
-        rgb = np.empty((len(values), 3), dtype=np.float64)
-        lower = t <= 0.5
-        rgb[lower] = low + (middle - low) * (2 * t[lower, None])
-        rgb[~lower] = middle + (high - middle) * (2 * t[~lower, None] - 1)
-        rgb[~finite] = (110, 116, 126)
-        return np.ascontiguousarray(
-            np.column_stack((np.rint(rgb), np.full(len(values), 255))), dtype=np.uint8
-        )
+        return scalar_colors(values, value_range, color_scheme)
 
     def selected_region_ids(self) -> tuple[int, ...]:
         """Return the authoritative signed region selection."""
