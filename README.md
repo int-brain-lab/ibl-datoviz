@@ -8,11 +8,45 @@ v0.4.
 
 `ibl-datoviz` combines verified Allen CCF 2017 assets from `ibl-anatomy` with interactive 3-D
 surfaces, orthogonal anatomical slices, ontology navigation, probe sites, regional values, and
-linked selection.
+linked selection. The package owns viewer composition and display behavior. `ibl-anatomy` owns the
+versioned asset and decoding contracts; scientific atlas computations and coordinate-to-label
+annotation remain outside this package.
 
 > [!NOTE]
 > Version 0.2 is under active development and intentionally breaks the historical 0.1 API while
 > the Datoviz v0.4 integration is validated.
+
+## Try it locally
+
+The contributor workflow is supported on macOS and Linux. Install [`uv`](https://docs.astral.sh/uv/)
+and [`just`](https://just.systems/), then clone and build Datoviz separately using the source
+revision pinned by this checkout. Datoviz also needs a working Vulkan runtime (MoltenVK on macOS).
+This project does not build or switch the Datoviz checkout for you.
+
+From the root of this repository, prepare the local pairing and review data once:
+
+```bash
+just setup "$HOME/GIT/Viz/datoviz"
+```
+
+`just setup` checks the pinned Datoviz source revision and the loaded Python/native paths, then
+fetches the pinned test fixtures and prepares the verified D070 surface and 50 um slice assets.
+The initial setup needs network access; later runs reuse the verified cache. For tests without the larger
+real-data downloads, use `just setup-tests "$HOME/GIT/Viz/datoviz"` instead.
+
+Then run tests or open the interactive examples:
+
+```bash
+just test
+just review picking
+just review
+```
+
+`just review` opens six examples in sequence; close a window to continue. Choose `surface`,
+`mapping`, `picking`, `probe`, `firing-rate`, or `slices` to open one. `just doctor` checks which
+Datoviz Python module and native library the workflow will load. See the [contributor guide](docs/getting-started.md)
+for setup details, troubleshooting, and direct `uv` commands. Agents should read
+[AGENTS.md](AGENTS.md) before changing the repository.
 
 ## Features
 
@@ -26,60 +60,12 @@ linked selection.
   volume.
 - Native offscreen rendering and reproducible gallery and benchmark commands.
 
-The package owns viewer composition and display behavior. `ibl-anatomy` owns the versioned asset
-and decoding contracts; scientific atlas computations and coordinate-to-label annotation remain
-outside this package.
+## Python use and additional examples
 
-## Install a development checkout
-
-The branch pins the Datoviz and `ibl-anatomy` source revisions used during development. From the
-repository root:
-
-```bash
-uv sync --group dev --locked
-```
-
-The locked source baseline is Datoviz `066a7451195b38c5e95dcf7af7383b89ec5ec903`
-and anatomy `119457b68fae6967c54d549d9d44e4a4e49c74f8`. Rendering needs a matching
-native Datoviz library and Vulkan environment.
-
-For local contributor testing, first clone/build Datoviz separately and configure its runtime.
-Then prepare this package once and launch the review examples:
-
-```bash
-uv run --frozen tools/review.py setup --datoviz /path/to/datoviz
-uv run --frozen tools/review.py test
-uv run --frozen tools/review.py run
-```
-
-Setup remembers the local Datoviz pairing, prepares pinned fixtures and verified real-data packs,
-and reuses them on subsequent runs. `run` opens six focused examples one at a time; close a window
-to continue. Use `run picking` for one example, or `setup --tests-only` to skip real-data downloads.
-See [Getting started](docs/getting-started.md#contributor-workflow) for details.
-
-## Open an atlas
-
-Materialize the immutable D070 asset set with `ibl-anatomy`:
-
-```bash
-uv run --frozen python - <<'PY'
-from ibl_anatomy import bundled_asset_set, materialize_asset_set
-
-materialize_asset_set(bundled_asset_set(), "build/atlas-d070")
-PY
-```
-
-Then open the surface viewer:
-
-```bash
-uv run --frozen python examples/allen_mouse_brain.py \
-  build/atlas-d070 --mapping allen
-```
-
-The left dock provides ontology search, mapping controls, official color swatches, and linked
-selection. Drag the atlas to orbit it and click a surface region to select it.
-
-The equivalent minimal Python entry point is:
+`just setup` prepares the data for the examples below. The recipes configure the native environment
+for their child processes; they do not change your shell. Before running Python or examples directly,
+follow the [manual Python/native pairing](docs/getting-started.md#python-and-native-library-pairing)
+steps. A minimal surface viewer is:
 
 ```python
 from ibl_datoviz import AtlasViewer
@@ -90,8 +76,7 @@ with AtlasViewer.from_asset_set("build/atlas-d070", mapping="beryl") as viewer:
 
 ## Open the linked navigator
 
-Follow the complete [materialization recipe](docs/getting-started.md#build-the-volume-and-intensity-packs)
-for the D070 mesh and 50 um annotation/template pack, then run:
+After full setup and manual runtime pairing, open the complete 50 um navigator:
 
 ```bash
 uv run --frozen python examples/linked_atlas_navigator.py \
@@ -100,43 +85,25 @@ uv run --frozen python examples/linked_atlas_navigator.py \
   --ui-scale 1.5
 ```
 
-The navigator shares one AP/ML/DV cursor and one region selection across the three slices, 3-D
+The navigator shares one AP/ML/DV cursor and one region selection across three slices, the 3-D
 view, volume, and ontology. Complete compatible registered sources support 10 um slices without
-uploading a complete 10 um volume. The bundled verified publication contains sampled geometry
-only and cannot start unrestricted registered navigation; full real-data interaction remains
-unreviewed. Sampled previews, the conditional complete-source route, and controls are documented in
-[Getting started](docs/getting-started.md#open-the-atlas-browser).
+uploading a complete 10 um volume. The bundled verified publication contains sampled geometry only
+and cannot start unrestricted registered navigation. See [Getting started](docs/getting-started.md#open-the-atlas-browser)
+for the supported preview and complete-source routes.
 
 ## Real-data examples
 
 The repository includes a compact, provenance-recorded fixture derived from one BWM ephys
-insertion. It demonstrates both probe-site and mapping-aware regional views:
+insertion. After manual runtime pairing, these examples demonstrate probe-site and mapping-aware
+regional views:
 
 ```bash
 uv run --frozen python examples/bwm_probe.py build/atlas-d070 --mapping beryl
-
 uv run --frozen python examples/bwm_region_activity.py build/atlas-d070 --mapping beryl
 ```
 
-These examples keep scientific derivation explicit: renderer payloads contain stable site or
-region identities and display values, while ontology labels and mappings come from the verified
-catalog. See the [gallery](docs/gallery/index.md) for screenshots, capability labels, and more
-commands.
-
-## Development
-
-Run the repository checks with:
-
-```bash
-uv run --frozen ruff check .
-uv run --frozen tools/review.py test
-uv run --frozen --with-requirements docs/requirements.txt mkdocs build --strict
-```
-
-Performance reports are host-dependent and remain build-local. The current evidence and
-reproduction commands are recorded in:
-
-- [Datoviz v0.4 atlas findings](docs/V04_ATLAS_SPIKE_FINDINGS.md)
-- [Real D070 checkpoint](docs/REAL_D070_CHECKPOINT.md)
-- [3-D feature benchmark](docs/ATLAS_3D_BENCHMARK_FINDINGS.md)
-- [2-D slice benchmark](docs/ATLAS_2D_BENCHMARK_FINDINGS.md)
+Renderer payloads contain stable site or region identities and display values, while ontology
+labels and mappings come from the verified catalog. See the [gallery](docs/gallery/index.md) for
+screenshots, capability labels, and more examples. Run `just lint` for Ruff and `just docs` for a
+strict documentation build. Performance reports and reproduction commands are listed in the
+[benchmark findings](docs/ATLAS_3D_BENCHMARK_FINDINGS.md) and [slice benchmark](docs/ATLAS_2D_BENCHMARK_FINDINGS.md).

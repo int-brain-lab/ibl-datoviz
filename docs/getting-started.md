@@ -3,22 +3,25 @@
 ## Contributor workflow
 
 Datoviz is a separate prerequisite: clone and build its tested source baseline and establish its
-working Vulkan/MoltenVK environment. This package does not install, build, or change Datoviz.
-Once that checkout works, run from a fresh `ibl-datoviz` checkout:
+working Vulkan/MoltenVK environment. This package does not build or change that native checkout.
+Install `just` and `uv` on your machine. On macOS, `brew install just uv` installs both; on
+Linux, use their official [just installation instructions](https://github.com/casey/just#installation)
+and [uv installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
+The same recipes work on macOS and Linux. Once Datoviz works, run from a fresh `ibl-datoviz` checkout:
 
 ```bash
-uv sync --group dev --locked
-uv run --frozen tools/review.py setup --datoviz /path/to/datoviz
-uv run --frozen tools/review.py test
-uv run --frozen tools/review.py run
+just setup /path/to/datoviz
+just test
+just review
 ```
 
-Setup records your Datoviz path in ignored `build/review/config.json`, discovers its native build
-(`libdatoviz.dylib` on macOS, `libdatoviz.so` on Linux), and checks the actual imported Python module
+`just setup` installs the locked development dependencies, records your Datoviz path in ignored
+`build/review/config.json`, discovers its native build (`libdatoviz.dylib` on macOS, `libdatoviz.so`
+on Linux), and checks the actual imported Python module
 and loaded library against the tested pairing. If the checkout has `.envrc` and `direnv` is installed,
 it uses `direnv exec` automatically; allow/configure that environment while setting up Datoviz.
-Otherwise it inherits your already working runtime environment. No package-side `PYTHONPATH`,
-`DATOVIZ_LIBRARY`, adjacent anatomy checkout, or Fractal connection is required.
+Otherwise it inherits your already working runtime environment. For these recipes, no package-side
+`PYTHONPATH`, `DATOVIZ_LIBRARY`, adjacent anatomy checkout, or Fractal connection is required.
 
 Setup also fetches the pinned anatomy builders and synthetic fixtures into `build/review/anatomy`,
 materializes verified D070 assets in `build/atlas-d070`, and downloads the two hash-pinned Allen
@@ -30,8 +33,8 @@ It does not download the optional 10 um data.
 For a lightweight unit/native test setup, skip real-data downloads:
 
 ```bash
-uv run --frozen tools/review.py setup --datoviz /path/to/datoviz --tests-only
-uv run --frozen tools/review.py test
+just setup-tests /path/to/datoviz
+just test
 ```
 
 The test command selects the cached synthetic fixtures and native environment. If D070 was prepared,
@@ -44,10 +47,25 @@ geometry, firing rate, and slice scrolling. Close each window to continue. To re
 bounded startup:
 
 ```bash
-uv run --frozen tools/review.py run picking
-uv run --frozen tools/review.py run --frames 3
-uv run --frozen tools/review.py doctor
-uv run --frozen tools/review.py test -- -q tests/test_probe_replacement.py
+just review picking
+just review all --frames 3
+just doctor
+just test -q tests/test_probe_replacement.py
+```
+
+Run `just` to list commands, `just lint` for Ruff, and `just docs` for a strict documentation build.
+Quote a checkout path containing spaces, for example `just setup "$HOME/GIT/Datoviz checkout"`.
+Run `just setup` with the checkout path again after dependency pins change; a cache from a different
+anatomy revision must be moved aside as the setup error instructs. Setup preserves existing cached
+assets and does not rebuild Datoviz.
+
+The recipes wrap `tools/review.py`. If `just` is unavailable, the equivalent commands are:
+
+```bash
+uv sync --group dev --locked
+uv run --frozen tools/review.py setup --datoviz /path/to/datoviz
+uv run --frozen tools/review.py test
+uv run --frozen tools/review.py run
 ```
 
 Each example runs in its own process. A failure stops the sequence with its error rather than
@@ -78,12 +96,16 @@ Before releasing, verify the actual RC3 artifact and a deliberately supported an
 
 ## Python and native library pairing
 
-Unit checks use the resolved environment with no source override:
+The contributor recipes above configure their child processes; they do not export variables into
+your shell. For direct commands, inspect the resolved environment with no source override:
 
 ```bash
 uv run --frozen python -c "import datoviz, ibl_anatomy; print(datoviz.__file__); print(ibl_anatomy.__file__)"
-uv run --frozen pytest -q
 ```
+
+Use `just test` for managed fixtures and native tests. Direct pytest needs
+`IBL_ANATOMY_FIXTURE_ROOT=build/review/anatomy/tests/fixtures` after setup, or CI's pinned adjacent
+anatomy checkout.
 
 Interactive and offscreen rendering also need the matching Datoviz native library and a Vulkan
 runtime. For a local source build, check out the baseline in `~/GIT/Viz/datoviz` and follow its

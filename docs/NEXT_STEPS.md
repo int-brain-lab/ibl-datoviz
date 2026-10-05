@@ -52,6 +52,12 @@ discovery, and forwarding of spaced/quoted paths and multiword pytest expression
 native examples through `just review all --frames 3` pass on Linux. Actual macOS execution remains
 pending; no Datoviz source or public API changes were required.
 
+The README audit removed duplicate setup/materialization guidance, made `just` the contributor
+entry point, and clarified that direct Python/gallery/benchmark commands still require manual
+runtime pairing because helper environments apply only to child processes. Getting started and
+development now share the same recipes and cache paths. Root `AGENTS.md` documents their use,
+validation expectations, native ownership, frozen engine scope, and GitHub identity policy.
+
 ## Final validation — October 5, 2026
 
 The final implementation revision tested was `4c7788a`; subsequent handoff edits are documentation

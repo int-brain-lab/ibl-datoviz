@@ -5,15 +5,15 @@ Start with [the audit follow up and implementation handoff](NEXT_STEPS.md) for t
 ## Checks
 
 ```bash
-uv sync --group dev --locked
-uv run --frozen ruff check .
-uv run --frozen tools/review.py setup --datoviz /path/to/datoviz --tests-only
-uv run --frozen tools/review.py test
+just setup-tests /path/to/datoviz  # once, after building Datoviz separately
+just lint
+just test
 ```
 
 The [contributor workflow](getting-started.md#contributor-workflow) manages fixtures and the local
-Datoviz pairing without an adjacent anatomy checkout. Omit `--tests-only` to prepare real review data,
-then use `uv run --frozen tools/review.py run` for interactive review. Ordinary pytest also accepts
+Datoviz pairing without an adjacent anatomy checkout. Use `just setup /path/to/datoviz` to prepare
+real review data, then `just review` for interactive review. `just doctor` checks the remembered pairing;
+`just test tests/test_probe_replacement.py -q` forwards pytest arguments unchanged. Ordinary pytest also accepts
 `IBL_ANATOMY_FIXTURE_ROOT`; CI retains its pinned adjacent fixture checkout.
 
 ## Build the documentation
@@ -22,10 +22,18 @@ Install the exact documentation tool versions without changing the project lock,
 strict mode:
 
 ```bash
-uv run --frozen --with-requirements docs/requirements.txt mkdocs build --strict
+just docs
 ```
 
-Generated HTML is written to ignored `site/`.
+Generated HTML is written to ignored `site/`. Run `just` to list all recipes.
+Agent contributors should also read the repository-root `AGENTS.md` before editing.
+
+## Direct gallery and benchmark tools
+
+The `just` test/review recipes configure only their child processes. Before running the direct
+commands below, activate the [manual Python/native pairing](getting-started.md#python-and-native-library-pairing)
+and Datoviz runtime environment in your shell. Full `just setup` prepares the assets these commands
+use; `setup-tests` prepares only fixtures.
 
 ## Regenerate the gallery
 
@@ -45,7 +53,7 @@ pixels, update only the entries that declare a canonical image:
 uv run --frozen python tools/build_gallery.py \
   --asset-root build/atlas-d070 \
   --volume-root build/allen-ccf-2017-50um \
-  --fixture-root build/anatomy-tools/tests/fixtures \
+  --fixture-root build/review/anatomy/tests/fixtures \
   --example bwm-probe --publish
 ```
 
