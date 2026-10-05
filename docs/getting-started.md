@@ -1,5 +1,63 @@
 # Getting started
 
+## Contributor workflow
+
+Datoviz is a separate prerequisite: clone and build its tested source baseline and establish its
+working Vulkan/MoltenVK environment. This package does not install, build, or change Datoviz.
+Once that checkout works, run from a fresh `ibl-datoviz` checkout:
+
+```bash
+uv sync --group dev --locked
+uv run --frozen tools/review.py setup --datoviz /path/to/datoviz
+uv run --frozen tools/review.py test
+uv run --frozen tools/review.py run
+```
+
+Setup records your Datoviz path in ignored `build/review/config.json`, discovers its native build
+(`libdatoviz.dylib` on macOS, `libdatoviz.so` on Linux), and checks the actual imported Python module
+and loaded library against the tested pairing. If the checkout has `.envrc` and `direnv` is installed,
+it uses `direnv exec` automatically; allow/configure that environment while setting up Datoviz.
+Otherwise it inherits your already working runtime environment. No package-side `PYTHONPATH`,
+`DATOVIZ_LIBRARY`, adjacent anatomy checkout, or Fractal connection is required.
+
+Setup also fetches the pinned anatomy builders and synthetic fixtures into `build/review/anatomy`,
+materializes verified D070 assets in `build/atlas-d070`, and downloads the two hash-pinned Allen
+50 um NRRDs to build `build/allen-ccf-2017-50um`. The builder's `pynrrd` dependency is installed in an
+isolated `uv --with` environment; your project lock is unchanged. The initial setup needs network
+access and takes longer than subsequent runs. Repeating it verifies and reuses cached assets.
+It does not download the optional 10 um data.
+
+For a lightweight unit/native test setup, skip real-data downloads:
+
+```bash
+uv run --frozen tools/review.py setup --datoviz /path/to/datoviz --tests-only
+uv run --frozen tools/review.py test
+```
+
+The test command selects the cached synthetic fixtures and native environment. If D070 was prepared,
+it also enables that real-asset test. The optional registered-asset test remains skipped unless
+`IBL_REGISTERED_ASSET_SET_ROOT` is set. GPU/runtime skips are reported by pytest; they are not proof
+of native validation.
+
+The review command opens the six focused examples in order: surface, mapping, picking, probe
+geometry, firing rate, and slice scrolling. Close each window to continue. To revisit one or check
+bounded startup:
+
+```bash
+uv run --frozen tools/review.py run picking
+uv run --frozen tools/review.py run --frames 3
+uv run --frozen tools/review.py doctor
+uv run --frozen tools/review.py test -- -q tests/test_probe_replacement.py
+```
+
+Each example runs in its own process. A failure stops the sequence with its error rather than
+continuing through broken examples. Source identity mismatches, missing libraries, corrupt cached
+bytes, and blocked Datoviz environments fail explicitly. The helper does not approve `.envrc`,
+switch engine branches, or publish generated images.
+
+The individual installation/materialization commands below remain useful for custom data roots and
+troubleshooting; most contributors can use the workflow above.
+
 ## Install a development checkout
 
 The project is an unreleased source snapshot. Its committed `uv.lock` and `[tool.uv.sources]`

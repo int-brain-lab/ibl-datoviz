@@ -43,8 +43,19 @@ The locked source baseline is Datoviz `066a7451195b38c5e95dcf7af7383b89ec5ec903`
 and anatomy `119457b68fae6967c54d549d9d44e4a4e49c74f8`. Rendering needs a matching
 native Datoviz library and Vulkan environment.
 
-See [Getting started](docs/getting-started.md) for asset materialization and local native-library
-setup.
+For local contributor testing, first clone/build Datoviz separately and configure its runtime.
+Then prepare this package once and launch the review examples:
+
+```bash
+uv run --frozen tools/review.py setup --datoviz /path/to/datoviz
+uv run --frozen tools/review.py test
+uv run --frozen tools/review.py run
+```
+
+Setup remembers the local Datoviz pairing, prepares pinned fixtures and verified real-data packs,
+and reuses them on subsequent runs. `run` opens six focused examples one at a time; close a window
+to continue. Use `run picking` for one example, or `setup --tests-only` to skip real-data downloads.
+See [Getting started](docs/getting-started.md#contributor-workflow) for details.
 
 ## Open an atlas
 
@@ -118,7 +129,7 @@ Run the repository checks with:
 
 ```bash
 uv run --frozen ruff check .
-uv run --frozen pytest
+uv run --frozen tools/review.py test
 uv run --frozen --with-requirements docs/requirements.txt mkdocs build --strict
 ```
 

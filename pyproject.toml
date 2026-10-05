@@ -42,7 +42,7 @@ dev = [
 
 [tool.ruff]
 line-length = 99
-include = ["pyproject.toml", "ibl_datoviz/**/*.py", "examples/**/*.py", "tests/**/*.py"]
+include = ["pyproject.toml", "ibl_datoviz/**/*.py", "examples/**/*.py", "tests/**/*.py", "tools/review.py"]
 
 [tool.ruff.format]
 quote-style = "single"

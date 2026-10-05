@@ -7,11 +7,14 @@ Start with [the audit follow up and implementation handoff](NEXT_STEPS.md) for t
 ```bash
 uv sync --group dev --locked
 uv run --frozen ruff check .
-uv run --frozen pytest
+uv run --frozen tools/review.py setup --datoviz /path/to/datoviz --tests-only
+uv run --frozen tools/review.py test
 ```
 
-The adjacent-source command in [Getting started](getting-started.md) is useful while Datoviz and
-`ibl-anatomy` are changing together.
+The [contributor workflow](getting-started.md#contributor-workflow) manages fixtures and the local
+Datoviz pairing without an adjacent anatomy checkout. Omit `--tests-only` to prepare real review data,
+then use `uv run --frozen tools/review.py run` for interactive review. Ordinary pytest also accepts
+`IBL_ANATOMY_FIXTURE_ROOT`; CI retains its pinned adjacent fixture checkout.
 
 ## Build the documentation
 

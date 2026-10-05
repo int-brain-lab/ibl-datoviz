@@ -18,15 +18,9 @@ from ibl_datoviz.navigator import (
     oriented_slice,
     step_slice_cursor,
 )
+from tests import FIXTURES
 
-VOLUME_FIXTURE = (
-    Path(__file__).resolve().parents[2]
-    / 'ibl-anatomy'
-    / 'tests'
-    / 'fixtures'
-    / 'volume-pack-v1'
-    / 'pack'
-)
+VOLUME_FIXTURE = FIXTURES / 'volume-pack-v1' / 'pack'
 MESH_FIXTURE = VOLUME_FIXTURE.parents[1] / 'mesh-pack-v1' / 'pack'
 
 

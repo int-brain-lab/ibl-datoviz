@@ -29,6 +29,21 @@ The original audit passed a normal locked development install, Ruff, strict MkDo
 - Probe replacement fixed in `7cf5988`: successful raw replacement clears typed payload, colors, per-site link keys, and linked table; typed uploads commit identity after validation. Path constructor, caps, and joins now report native failures. 67 atlas/replacement tests and four native offscreen smokes pass, including typed/raw/mapping/typed transitions.
 - Native checks use Datoviz source main `066a745` and the local built library with its Vulkan SDK environment. Real assets and live interaction review remain separate evidence.
 
+## Contributor workflow follow-up
+
+`tools/review.py` now owns the package-side setup/test/review workflow; Datoviz remains a separately
+built prerequisite. One setup command persists the local pairing, fetches pinned anatomy fixtures,
+materializes D070, and builds the 50 um pack from fresh hash-checked downloads. Tests resolve cached
+fixtures explicitly instead of relying on an adjacent anatomy checkout. `run` opens the first six
+real-data examples sequentially or one named example; `--frames 3` supports bounded startup.
+
+The complete first-time setup and a cached repeat were exercised on Linux. All six freshly
+materialized real-data examples passed three-frame native startup through this helper. Its test
+command passed 246 tests with one optional registered-root skip; Mac library discovery and failed
+pairing/download paths have direct tests, but actual Mac execution remains the next live review.
+This follow-up also scopes a lifecycle-test mock to its own viewer so unrelated garbage-collected
+viewers cannot contaminate destruction-order assertions.
+
 ## Final validation — October 5, 2026
 
 The final implementation revision tested was `4c7788a`; subsequent handoff edits are documentation

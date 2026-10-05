@@ -1,21 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 
 from ibl_anatomy import open_region_catalog
 from ibl_datoviz import AtlasViewer, LinkedAtlasNavigator, ProbeSites
+from tests import FIXTURES
 
-FIXTURE = (
-    Path(__file__).resolve().parents[2]
-    / 'ibl-anatomy'
-    / 'tests'
-    / 'fixtures'
-    / 'mesh-pack-v1'
-    / 'pack'
-)
+FIXTURE = FIXTURES / 'mesh-pack-v1' / 'pack'
 VOLUME_FIXTURE = FIXTURE.parents[1] / 'linked-atlas-v1' / 'volume-pack'
 INTENSITY_FIXTURE = FIXTURE.parents[1] / 'intensity-blocks-v1' / 'pack'
 REGISTERED_FIXTURE = FIXTURE.parents[1] / 'linked-registered-slices-v1' / 'pack'

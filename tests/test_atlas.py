@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ctypes
 from dataclasses import replace
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -17,23 +16,10 @@ from ibl_datoviz import (
     ProbeSites,
 )
 from ibl_datoviz.ontology import decode_region_key, encode_region_key
+from tests import FIXTURES
 
-FIXTURE = (
-    Path(__file__).resolve().parents[2]
-    / 'ibl-anatomy'
-    / 'tests'
-    / 'fixtures'
-    / 'mesh-pack-v1'
-    / 'pack'
-)
-REGIONS = (
-    Path(__file__).resolve().parents[2]
-    / 'ibl-anatomy'
-    / 'tests'
-    / 'fixtures'
-    / 'atlas-regions-v1'
-    / 'regions.json'
-)
+FIXTURE = FIXTURES / 'mesh-pack-v1' / 'pack'
+REGIONS = FIXTURES / 'atlas-regions-v1' / 'regions.json'
 
 
 class FakeItemInteractionDesc(ctypes.Structure):
@@ -773,9 +759,7 @@ def test_probe_sites_use_world_transform_and_scalar_colors(mesh):
         ([[0, 0, 0]], {'colors': [[True, False, True]]}, 'probe colors'),
     ],
 )
-def test_probe_sites_reject_invalid_upload_inputs_before_allocation(
-    mesh, points, kwargs, message
-):
+def test_probe_sites_reject_invalid_upload_inputs_before_allocation(mesh, points, kwargs, message):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake) as viewer, pytest.raises(ValueError, match=message):
         viewer.set_probe_sites(points, **kwargs)

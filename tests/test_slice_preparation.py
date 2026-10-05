@@ -1,5 +1,4 @@
 from dataclasses import replace
-from pathlib import Path
 from threading import Event, Thread
 from types import SimpleNamespace
 
@@ -16,15 +15,9 @@ from ibl_datoviz.slice_preparation import (
 )
 from ibl_datoviz.slice_scheduler import SliceRequest, SliceScheduler
 from ibl_datoviz.viewer import AtlasViewer
+from tests import FIXTURES
 
-VOLUME_FIXTURE = (
-    Path(__file__).resolve().parents[2]
-    / 'ibl-anatomy'
-    / 'tests'
-    / 'fixtures'
-    / 'volume-pack-v1'
-    / 'pack'
-)
+VOLUME_FIXTURE = FIXTURES / 'volume-pack-v1' / 'pack'
 
 
 @pytest.fixture
