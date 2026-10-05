@@ -1,8 +1,9 @@
 # Datoviz v0.4 atlas spike findings
 
-This note records evidence from the first `ibl-datoviz` 0.2 consumer. The current tested revisions are
+This note records historical evidence from the first `ibl-datoviz` 0.2 consumer. The revisions tested for that checkpoint were
 Datoviz `d9064facf`, `ibl-anatomy` `f5096c3a9`, the synthetic mesh-pack-v1
-fixture, and the materialized real D070 asset-set lock.
+fixture, and the materialized real D070 asset-set lock. See [the current handoff](NEXT_STEPS.md)
+for the frozen pre-RC3 baseline; these historical revisions and measurements are retained.
 
 ## What works without another Datoviz API
 

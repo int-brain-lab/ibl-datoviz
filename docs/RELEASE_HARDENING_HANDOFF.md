@@ -1,163 +1,72 @@
 # Release-hardening handoff
 
-Current continuation: [Audit follow up and implementation handoff](NEXT_STEPS.md). Lifecycle safety, navigator factory restrictions, input validation, the public API freeze, and locked source-snapshot CI are implemented on `main`. The original defect descriptions and commit sequence below are historical review context, not a list of still-open defects. Published dependency compatibility remains a separate release gate; use the new handoff for current fixes, refactoring, documentation, and candidate validation.
+Current continuation: [Audit follow up and implementation handoff](NEXT_STEPS.md).
+This page records the original five hardening tasks, all completed on `main` before the
+October 5, 2026 audit. Their original defects are historical context, not unresolved work.
+The historical review baseline passed 82 tests, Ruff, and strict MkDocs; the later audit passed
+125 tests with two real-asset skips. See the current handoff for subsequent validation counts,
+correctness fixes, staged refactors, and the frozen pre-RC3 source baseline.
 
-This note records the API-review work that should be completed before an `ibl-datoviz` release.
-It is intentionally separate from the Datoviz v0.4 performance work: the current performance
-evidence is sufficient for the release candidate, while the items below are correctness and
-packaging blockers in this Python package.
-
-The review baseline passed 82 tests, Ruff, and a strict MkDocs build. Those checks do not cover the
-failure paths and API ambiguities described here.
-
-## Recommended commit sequence
-
-Keep the changes reviewable as five implementation commits followed by any final release-note
-update. Do not combine these items with Datoviz query, mesh, or presentation optimizations.
+## Completed hardening
 
 ### 1. Make viewer lifecycle failure-safe
 
-Status: implemented on the feature branch. Base and linked viewers now establish cleanup-safe
-state before native allocation, constructor cleanup bypasses virtual dispatch, slice workers have a
-linked-view finalizer path, repeated close is harmless, and public native operations reject use
-after close. Failure injection covers scene, figure, panel, mesh, and interaction construction;
-context-manager exceptions and partial-subclass cleanup are also covered.
-
-`AtlasViewer.__init__()` creates the native scene before all fallible Python setup is inside its
-cleanup boundary. For example, mapping-control construction occurs after `dvz_scene()` but before
-the constructor's `try` block. An invalid mapping or another setup failure in that interval can
-leak the scene. Subclass initialization adds a second partial-construction path.
-
-Initialize every cleanup-relevant attribute, including `_closed` and native handles, before the
-first native allocation. Put all work following that allocation under one exception boundary and
-ensure cleanup is safe for every partially initialized state. Be careful about virtual dispatch:
-base construction currently calls `self.close()`, which resolves to
-`LinkedAtlasNavigator.close()` for navigator instances.
-
-After `close()`, public methods and factories must never call Datoviz through destroyed handles.
-Choose one consistent contract: mutating/rendering methods should raise a clear `RuntimeError`
-mentioning that the viewer is closed, while repeated `close()` remains harmless. Apply the guard
-to inherited navigator methods as well as base viewer methods. Preserve destruction order: detach
-or destroy independently owned GUI/input resources, destroy the app, then destroy the scene.
-
-Acceptance coverage should inject failures at each native construction stage and assert that every
-successfully created owning handle is destroyed exactly once. Add tests for base and navigator
-constructor failure, idempotent close, context-manager exception exit, finalizer safety on partial
-objects, and representative calls after close (`show`, `render_offscreen`, mapping, selection,
-probe, region, cursor, and slice operations).
+Base and linked viewers establish cleanup-safe state before native allocation. Constructor
+cleanup bypasses virtual dispatch, linked slice workers have a finalizer path, repeated close is
+harmless, and public native operations reject use after close. Failure injection covers scene,
+figure, panel, mesh, and interaction construction, context-manager exceptions, and partial
+subclass cleanup. Independently owned GUI/input resources are destroyed before the app and scene.
 
 ### 2. Resolve incompatible inherited navigator factories
 
-Status: implemented on the feature branch. The three surface-only factories are explicitly
-rejected on `LinkedAtlasNavigator` before loading or native allocation, and their errors direct
-callers to the three volume-aware navigator factories.
-
-`LinkedAtlasNavigator` inherits `AtlasViewer.from_pack()`, `from_assets()`, and
-`from_asset_set()`. Those class methods instantiate `cls` with only a mesh (and sometimes a
-catalog), but `LinkedAtlasNavigator.__init__()` also requires `volumes`. Calls such as
-`LinkedAtlasNavigator.from_pack(...)` therefore advertise a factory that cannot construct the
-subclass.
-
-Prefer explicitly prohibiting those three inherited entry points on `LinkedAtlasNavigator` with a
-clear error that directs callers to `from_packs()`, `from_multiresolution_packs()`, or
-`from_anatomy_packs()`. An override that accepts the extra volume inputs is also valid, but only if
-it provides a materially useful API without duplicating the existing navigator factories. Ensure
-the generated API reference does not present unusable inherited constructors.
-
-Acceptance coverage should call every factory through both concrete classes and verify either a
-valid instance or the intentional, documented error. Type annotations and docstrings must match
-the runtime behavior.
+The surface-only `from_pack()`, `from_assets()`, and `from_asset_set()` factories reject
+`LinkedAtlasNavigator` before loading or native allocation. Their documented errors direct callers
+to `from_packs()`, `from_multiresolution_packs()`, or `from_anatomy_packs()` with volume inputs.
+Factory coverage verifies both concrete viewer classes.
 
 ### 3. Enforce validation at probe and position boundaries
 
-Status: implemented on the feature branch. World positions, trajectory widths, site radii, color
-channels, scalar infinities, and value ranges are validated before native allocation or upload;
-`NaN` remains the supported missing scalar value.
+World positions, trajectory widths, site radii, color channels, scalar infinities, and explicit
+value ranges are validated before native allocation or upload. Positions must be finite, non-empty
+`(n, 3)` arrays; trajectories require at least two points; widths and radii must be finite and
+positive. RGB/RGBA integer channels must lie in `[0, 255]` before conversion. `NaN` is supported
+for missing scalar values, while infinity and inconsistent row counts are rejected. Rejection
+coverage verifies that invalid input causes no native allocation or upload.
 
-Validation is split between `AtlasMesh.normalize_points()`, `AtlasViewer.set_probe()`,
-`AtlasViewer.set_probe_sites()`, and `ProbeSites.from_arrays()`. The paths are inconsistent. In
-particular, raw viewer methods can pass non-finite positions to native uploads; `set_probe()` does
-not validate finite positive width or color channels before converting to `uint8`, so invalid
-channels can wrap; and `set_probe_sites()` does not reject a non-finite radius. Direct scalar input
-should follow the same no-infinity policy as `ProbeSites` while continuing to support `NaN` as a
-missing value.
-
-Centralize or share validation where practical. Require positions with non-empty shape `(n, 3)`
-and finite coordinates; require finite positive widths and radii; require RGB or RGBA colors with
-integer channels in `[0, 255]` before any dtype conversion; and reject infinite scalar values,
-malformed value ranges, and inconsistent row counts. Preserve the existing requirement that a
-trajectory contains at least two points. Do not silently clip, wrap, or reshape invalid input.
-
-Add parameterized tests for `NaN`, both infinities, malformed ranks and lengths, fractional and
-out-of-range color channels, Boolean/color edge cases if accepted by NumPy's integer checks, and
-non-finite or non-positive sizes. Assert that rejected calls perform no native allocation or
-upload.
+The October audit found separate payload-copy and replacement-consistency defects; those belong
+to the new handoff rather than reopening this historical input-validation task.
 
 ### 4. Align package metadata with CI
 
-Status: the development checkout is now internally reproducible as an explicitly unreleased source
-snapshot. Its committed lock and Git revisions are authoritative, and CI performs a normal locked
-resolution on Python 3.10 and 3.13 without `--no-deps`. A distributable release remains blocked
-until Datoviz publishes the required post-rc2 fixes and `ibl-anatomy` deliberately publishes its
-first supported package; only then should the provisional version ranges become authoritative.
-
-The declared project dependencies are release ranges (`datoviz>=0.4.0rc2,<0.5` and
-`ibl-anatomy>=0.1.0,<0.2`), while CI manually installs exact Git revisions and then installs this
-package with `--no-deps`. Consequently CI does not prove that the package can be installed and
-tested from its published metadata. The project declares Python `>=3.10`, but CI exercises only
-3.10.
-
-First decide the release contract: either published dependency versions exist and become the
-authoritative metadata, or this remains a source-snapshot package whose direct references and
-limitations are explicit. Then make the lock/source configuration, `pyproject.toml`, CI, README,
-and getting-started commands agree. CI must include at least one normal resolved installation of
-the package, without using `--no-deps` to hide metadata conflicts. Test the lowest supported Python
-version and one current supported version, or narrow `requires-python` to the versions actually
-supported. Keep native-runtime/GPU skips narrowly scoped; dependency or import failures must fail
-the job.
-
-Acceptance is a clean-environment install using only the documented command, followed by the unit
-suite, Ruff, and strict documentation build. Verify the installed distributions and versions in
-CI so an adjacent checkout cannot accidentally satisfy the test.
+The checkout is an explicitly unreleased source snapshot. Its committed lock and immutable Git
+revisions are authoritative; CI performs normal locked resolution without `--no-deps` on Python
+3.10 and 3.13 and reports installed distributions. The provisional metadata ranges
+`datoviz>=0.4.0rc2,<0.5` and `ibl-anatomy>=0.1.0,<0.2` are future release bounds, not evidence
+of package-index availability or compatibility. A distributable release still requires verification
+of the actual Datoviz artifact containing the post-RC2 fixes and a deliberately supported anatomy
+distribution. Update the lower bound only after that verification.
 
 ### 5. Freeze one public API and document it consistently
 
-Status: implemented on the feature branch. Ten workflow-level and advanced composition names form
-the tested top-level compatibility surface. Transport parsers, link-key codecs, concrete slice
-records, and renderer-local cursor helpers remain available from implementation modules without a
-top-level compatibility promise.
+Ten workflow-level and advanced composition names form the tested top-level compatibility surface.
+The [API overview](api/index.md) documents these names and their ownership, units, validation,
+and lifecycle behavior. Transport parsers, link-key codecs, concrete slice records, and
+renderer-local cursor helpers remain accessible through implementation modules without a
+top-level compatibility promise. API-surface tests enforce the chosen names.
 
-The API overview says the public surface is intentionally small, but `ibl_datoviz.__all__` also
-exports lower-level slice source types, cursor/composer helpers, encoding helpers, and
-`parse_svg_path`. Some appear in detailed API pages, some only in `__all__`, and the README focuses
-on a still smaller viewer API. This makes compatibility promises unclear.
+## Current validation commands
 
-Classify every current top-level export as supported public API or internal implementation detail.
-Retain only deliberate public names in `__all__`; move implementation helpers behind module-level
-imports rather than top-level exports when they are not intended to be stable. For every retained
-name, include it in the API overview or an explicitly labeled advanced API section and document
-ownership, units, accepted missing values, exceptions, and lifecycle behavior. Examples should
-import through the supported path. Avoid renaming solely for tidiness; compatibility decisions
-should be explicit and recorded in the release notes.
-
-Add an API-surface test that asserts the chosen top-level names, plus documentation link/build
-checks. Review at minimum `AtlasViewer`, `LinkedAtlasNavigator`, `AtlasMesh`, `ProbeSites`,
-`AtlasRegionValues`, `AtlasTreeModel`, `AtlasSliceSource`, `AtlasSourceSlice`, `AtlasCursor`,
-`AtlasSliceComposer`, the slice/cursor helpers, region-key helpers, and `parse_svg_path`.
-
-## Final validation
-
-After the five blockers are resolved, run from a clean environment:
+Run from the package root with the pinned documentation tools:
 
 ```bash
-uv sync --group dev
-uv run ruff check .
-uv run pytest -q
-uv run mkdocs build --strict
+uv sync --group dev --locked
+uv run --frozen ruff check .
+uv run --frozen pytest -q
+uv run --frozen --with-requirements docs/requirements.txt mkdocs build --strict
 git diff --check
 ```
 
-Also run the native smoke tests when the Datoviz shared library and a GPU context are available.
-Then rerun the existing 2-D and 3-D consumer benchmarks against the finalized Datoviz RC candidate;
-compare them with the recorded findings, but do not make architectural performance work a release
-condition for this hardening sequence.
+Native checks also require the matching Datoviz library and Vulkan environment, as documented
+in [Getting started](getting-started.md#python-and-native-library-pairing). Real-data interaction
+review and candidate benchmark reruns remain separate evidence requirements; preserve dated
+benchmark results and record the actual source/library identities for new runs.

@@ -31,16 +31,18 @@ capability labels, and canonical documentation images. Generate every screenshot
 report into the ignored build tree:
 
 ```bash
-python tools/build_gallery.py \
-  --asset-root ../ibl-anatomy/build/d070-published
+uv run --frozen python tools/build_gallery.py \
+  --asset-root build/atlas-d070
 ```
 
 Use `--example bwm-probe` to run one entry or `--dry-run` to inspect commands. After reviewing the
 pixels, update only the entries that declare a canonical image:
 
 ```bash
-python tools/build_gallery.py \
-  --asset-root ../ibl-anatomy/build/d070-published \
+uv run --frozen python tools/build_gallery.py \
+  --asset-root build/atlas-d070 \
+  --volume-root build/allen-ccf-2017-50um \
+  --fixture-root build/anatomy-tools/tests/fixtures \
   --example bwm-probe --publish
 ```
 
@@ -55,8 +57,8 @@ catalog or scanning every region for every mesh update. Exercise it against a ma
 set with:
 
 ```bash
-python tools/benchmark_region_updates.py \
-  ../ibl-anatomy/build/d070-published \
+uv run --frozen python tools/benchmark_region_updates.py \
+  build/atlas-d070 \
   --mapping allen --iterations 20 --json build/region-update-benchmark.json
 ```
 

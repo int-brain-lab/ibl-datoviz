@@ -11,13 +11,39 @@ repository root:
 uv sync --group dev --locked
 ```
 
-When developing the three adjacent repositories together, point Python at the local sources and
-use the Datoviz environment that owns the built native library:
+The frozen pre-RC3 Datoviz source baseline is
+`066a7451195b38c5e95dcf7af7383b89ec5ec903`; anatomy remains pinned to
+`119457b68fae6967c54d549d9d44e4a4e49c74f8`. The source snapshot uses post-RC2
+fixes even though its distribution version is still `0.4.0rc2`. The provisional
+wheel dependency bounds do not establish that index packages support this application.
+Before releasing, verify the actual RC3 artifact and a deliberately supported anatomy distribution.
+
+## Python and native library pairing
+
+Unit checks use the resolved environment with no source override:
 
 ```bash
-export PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz
-../../Viz/datoviz/.venv/bin/python -m pytest
+uv run --frozen python -c "import datoviz, ibl_anatomy; print(datoviz.__file__); print(ibl_anatomy.__file__)"
+uv run --frozen pytest -q
 ```
+
+Interactive and offscreen rendering also need the matching Datoviz native library and a Vulkan
+runtime. For a local source build, check out the baseline in `~/GIT/Viz/datoviz` and follow its
+[build instructions](https://github.com/datoviz/datoviz/tree/066a7451195b38c5e95dcf7af7383b89ec5ec903#readme).
+Run from this package root, overriding only the Datoviz Python module and selecting the library
+built from that same revision (use `libdatoviz.dylib` on macOS):
+
+```bash
+git -C ~/GIT/Viz/datoviz rev-parse HEAD
+export PYTHONPATH="$HOME/GIT/Viz/datoviz${PYTHONPATH:+:$PYTHONPATH}"
+export DATOVIZ_LIBRARY="$HOME/GIT/Viz/datoviz/build/src/libdatoviz.so"
+uv run --frozen python -c "import datoviz; import datoviz._ctypes as native; print(datoviz.__file__); print(native.dvz._name)"
+```
+
+Activate the platform Vulkan environment from the Datoviz directory before rendering. With
+`direnv` configured for that checkout, prefix rendering commands with
+`direnv exec ~/GIT/Viz/datoviz` (also on macOS). Avoid mixing a source Python facade with a library
+built at another revision; installed distribution versions alone cannot identify this pairing.
 
 ## Materialize the real atlas
 
@@ -25,7 +51,7 @@ The D070 asset-set lock identifies immutable remote bytes. Materialization verif
 mesh graph and region catalog before making them available to a viewer:
 
 ```bash
-PYTHONPATH=../ibl-anatomy/src python - <<'PY'
+uv run --frozen python - <<'PY'
 from ibl_anatomy import bundled_asset_set, materialize_asset_set
 
 materialize_asset_set(bundled_asset_set(), "build/atlas-d070")
@@ -36,7 +62,7 @@ The registered 10 um projection graph has its own bundled lock. Materialize it t
 `ibl-anatomy` so every transitive resource is checked before Datoviz sees it:
 
 ```bash
-PYTHONPATH=../ibl-anatomy/src python - <<'PY'
+uv run --frozen python - <<'PY'
 from ibl_anatomy import bundled_registered_asset_set, materialize_registered_asset_set
 
 materialize_registered_asset_set(
@@ -49,24 +75,59 @@ The lock names an immutable Ephys Atlas deployment, but that deployment layout i
 consumer API. Python consumers use the verified result/root through `ibl-anatomy`. Direct fetches
 from a different browser origin currently require an approved CORS policy or same-origin proxy.
 
+## Build the volume and intensity packs
+
+The pinned anatomy package supplies the readers; the source checkout supplies the builders.
+Create a local tools checkout at its immutable revision, without overriding the installed package:
+
+```bash
+git clone https://github.com/int-brain-lab/ibl-anatomy.git build/anatomy-tools
+git -C build/anatomy-tools checkout --detach 119457b68fae6967c54d549d9d44e4a4e49c74f8
+mkdir -p build/allen-sources
+curl --fail --location https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/average_template/average_template_50.nrrd -o build/allen-sources/average_template_50.nrrd
+curl --fail --location https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2017/annotation_50.nrrd -o build/allen-sources/annotation_50.nrrd
+uv run --frozen --with pynrrd==1.1.3 python build/anatomy-tools/tools/build_allen_volume_pack.py \
+  build/allen-sources/average_template_50.nrrd \
+  build/allen-sources/annotation_50.nrrd build/atlas-d070/regions.json \
+  build/allen-ccf-2017-50um
+```
+
+The builder verifies the pinned source hashes and rejects an existing output directory. The
+optional 10 um intensity transport requires a 343 MB source download, temporary decoded storage
+of about 2.4 GB, and about 1.3 GB of output. Build it explicitly:
+
+```bash
+curl --fail --location https://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/average_template/average_template_10.nrrd -o build/allen-sources/average_template_10.nrrd
+PYTHONPATH="$PWD/build/anatomy-tools${PYTHONPATH:+:$PYTHONPATH}" \
+uv run --frozen python -m tools.build_intensity_blocks \
+  build/allen-sources/average_template_10.nrrd build/allen-ccf-2017-10um-intensity \
+  --dataset-id allen-ccf-2017-10um-intensity \
+  --reference-space-id allen-ccf-2017 --grid-id allen-ccf-2017-10um \
+  --index-to-world-um 0 10 0 -5739 -10 0 0 5400 0 0 -10 332 0 0 0 1 \
+  --source-id allen-average-template-10um \
+  --source-sha256 055b79034ea3ac47cf8776ecdb0c61d2b338d38ee5fd87d0962753efe600a775 \
+  --display-low 0 --display-high 252 --sections-per-block 8 --compression-level 6
+```
+
+See the pinned upstream [50 um volume recipe](https://github.com/int-brain-lab/ibl-anatomy/blob/119457b68fae6967c54d549d9d44e4a4e49c74f8/docs/SPIKE_002_ATLAS_VOLUME_PACK.md)
+and [10 um intensity provenance](https://github.com/int-brain-lab/ibl-anatomy/blob/119457b68fae6967c54d549d9d44e4a4e49c74f8/docs/SPIKE_003_INTENSITY_BLOCK_TRANSPORT.md).
+
 ## Open the atlas browser
 
 Start with the isolated 3-D surface baseline. It contains one opaque mesh, one perspective camera,
 and one arcball in a direct native window—no ImGui, ontology, hover query, volume, or slices:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz \
-uv run python examples/atlas_spike.py \
-  ../ibl-anatomy/build/d070-published/mesh-pack
+uv run --frozen python examples/atlas_spike.py \
+  build/atlas-d070/mesh-pack
 ```
 
 Then test the ontology and linked-selection layer independently by adding the catalog:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz \
-uv run python examples/atlas_spike.py \
-  ../ibl-anatomy/build/d070-published/mesh-pack \
-  --regions ../ibl-anatomy/build/d070-published/regions.json
+uv run --frozen python examples/atlas_spike.py \
+  build/atlas-d070/mesh-pack \
+  --regions build/atlas-d070/regions.json
 ```
 
 This second rung also exposes an **Explode regions** slider. It follows the shared mesh contract:
@@ -76,7 +137,7 @@ Pass `--explode 0.5` to start at a nonzero value. The baseline without `--region
 The full asset-set entry point follows:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src python examples/allen_mouse_brain.py \
+uv run --frozen python examples/allen_mouse_brain.py \
   build/atlas-d070 --mapping allen
 ```
 
@@ -87,9 +148,9 @@ For the four-panel navigator, materialize the separate 50 um volume pack and pro
 pack roots:
 
 ```bash
-python examples/linked_atlas_navigator.py \
-  ../ibl-anatomy/build/d070-published/mesh-pack \
-  ../ibl-anatomy/build/allen-ccf-2017-50um \
+uv run --frozen python examples/linked_atlas_navigator.py \
+  build/atlas-d070/mesh-pack \
+  build/allen-ccf-2017-50um \
   --ui-scale 1.5
 ```
 
@@ -114,11 +175,11 @@ exact registered anatomy pack have been materialized, keep the 50 um pack as the
 volume and opt into 10 um slices explicitly:
 
 ```bash
-python examples/linked_atlas_navigator.py \
-  ../ibl-anatomy/build/d070-published/mesh-pack \
-  ../ibl-anatomy/build/allen-ccf-2017-50um \
+uv run --frozen python examples/linked_atlas_navigator.py \
+  build/atlas-d070/mesh-pack \
+  build/allen-ccf-2017-50um \
   --slice-resolution registered \
-  --slice-intensity-pack ../ibl-anatomy/build/allen-ccf-2017-10um-intensity \
+  --slice-intensity-pack build/allen-ccf-2017-10um-intensity \
   --registered-asset-root build/atlas-registered-10um
 ```
 
@@ -131,7 +192,7 @@ complete 10 um volume is uploaded to the GPU.
 For a non-interactive smoke render, add an output path:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src python examples/bwm_probe.py \
+uv run --frozen python examples/bwm_probe.py \
   build/atlas-d070 --mapping beryl --offscreen build/bwm-probe.png
 ```
 

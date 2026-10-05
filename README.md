@@ -36,15 +36,12 @@ The branch pins the Datoviz and `ibl-anatomy` source revisions used during devel
 repository root:
 
 ```bash
-uv sync --group dev
+uv sync --group dev --locked
 ```
 
-When developing all three repositories from adjacent checkouts, point Python at their sources:
-
-```bash
-export PYTHONPATH=.:../ibl-anatomy/src:../../Viz/datoviz
-uv run pytest
-```
+The locked source baseline is Datoviz `066a7451195b38c5e95dcf7af7383b89ec5ec903`
+and anatomy `119457b68fae6967c54d549d9d44e4a4e49c74f8`. Rendering needs a matching
+native Datoviz library and Vulkan environment.
 
 See [Getting started](docs/getting-started.md) for asset materialization and local native-library
 setup.
@@ -54,7 +51,7 @@ setup.
 Materialize the immutable D070 asset set with `ibl-anatomy`:
 
 ```bash
-PYTHONPATH=../ibl-anatomy/src python - <<'PY'
+uv run --frozen python - <<'PY'
 from ibl_anatomy import bundled_asset_set, materialize_asset_set
 
 materialize_asset_set(bundled_asset_set(), "build/atlas-d070")
@@ -64,8 +61,7 @@ PY
 Then open the surface viewer:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src \
-uv run python examples/allen_mouse_brain.py \
+uv run --frozen python examples/allen_mouse_brain.py \
   build/atlas-d070 --mapping allen
 ```
 
@@ -83,13 +79,13 @@ with AtlasViewer.from_asset_set("build/atlas-d070", mapping="beryl") as viewer:
 
 ## Open the linked navigator
 
-With the D070 mesh and 50 um annotation/template volume pack materialized:
+Follow the complete [materialization recipe](docs/getting-started.md#build-the-volume-and-intensity-packs)
+for the D070 mesh and 50 um annotation/template pack, then run:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src \
-uv run python examples/linked_atlas_navigator.py \
-  ../ibl-anatomy/build/d070-published/mesh-pack \
-  ../ibl-anatomy/build/allen-ccf-2017-50um \
+uv run --frozen python examples/linked_atlas_navigator.py \
+  build/atlas-d070/mesh-pack \
+  build/allen-ccf-2017-50um \
   --ui-scale 1.5
 ```
 
@@ -106,11 +102,9 @@ The repository includes a compact, provenance-recorded fixture derived from one 
 insertion. It demonstrates both probe-site and mapping-aware regional views:
 
 ```bash
-PYTHONPATH=.:../ibl-anatomy/src \
-uv run python examples/bwm_probe.py build/atlas-d070 --mapping beryl
+uv run --frozen python examples/bwm_probe.py build/atlas-d070 --mapping beryl
 
-PYTHONPATH=.:../ibl-anatomy/src \
-uv run python examples/bwm_region_activity.py build/atlas-d070 --mapping beryl
+uv run --frozen python examples/bwm_region_activity.py build/atlas-d070 --mapping beryl
 ```
 
 These examples keep scientific derivation explicit: renderer payloads contain stable site or
@@ -123,9 +117,9 @@ commands.
 Run the repository checks with:
 
 ```bash
-uv run ruff check .
-uv run pytest
-uv run mkdocs build --strict
+uv run --frozen ruff check .
+uv run --frozen pytest
+uv run --frozen --with-requirements docs/requirements.txt mkdocs build --strict
 ```
 
 Performance reports are host-dependent and remain build-local. The current evidence and

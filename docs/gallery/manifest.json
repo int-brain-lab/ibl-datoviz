@@ -7,8 +7,7 @@
       "script": "examples/atlas_spike.py",
       "asset": "synthetic",
       "native": "available",
-      "webgpu": "portable-scenario",
-      "webgpu_scenario": "lab_ibl_atlas_webgpu_spike",
+      "webgpu": "historical-proof-not-in-baseline",
       "output": "atlas-spike.png",
       "arguments": [
         "{fixture_root}/mesh-pack-v1/pack",
@@ -16,7 +15,9 @@
         "{fixture_root}/atlas-regions-v1/regions.json",
         "--offscreen",
         "{output}"
-      ]
+      ],
+      "historical_webgpu_scenario": "lab_ibl_atlas_webgpu_spike",
+      "baseline_datoviz_revision": "066a7451195b38c5e95dcf7af7383b89ec5ec903"
     },
     {
       "id": "real-atlas-surface",
@@ -26,7 +27,11 @@
       "native": "available",
       "webgpu": "candidate",
       "output": "real-atlas-surface.png",
-      "arguments": ["{asset_root}", "--offscreen", "{output}"]
+      "arguments": [
+        "{asset_root}",
+        "--offscreen",
+        "{output}"
+      ]
     },
     {
       "id": "atlas-mapping-switch",
@@ -36,7 +41,13 @@
       "native": "available",
       "webgpu": "candidate",
       "output": "atlas-mapping-switch.png",
-      "arguments": ["{asset_root}", "--mapping", "beryl", "--offscreen", "{output}"]
+      "arguments": [
+        "{asset_root}",
+        "--mapping",
+        "beryl",
+        "--offscreen",
+        "{output}"
+      ]
     },
     {
       "id": "atlas-region-picking",
@@ -46,7 +57,11 @@
       "native": "available",
       "webgpu": "candidate",
       "output": "atlas-region-picking.png",
-      "arguments": ["{asset_root}", "--offscreen", "{output}"]
+      "arguments": [
+        "{asset_root}",
+        "--offscreen",
+        "{output}"
+      ]
     },
     {
       "id": "bwm-probe-geometry",
@@ -56,7 +71,11 @@
       "native": "available",
       "webgpu": "candidate",
       "output": "bwm-probe-geometry.png",
-      "arguments": ["{asset_root}", "--offscreen", "{output}"]
+      "arguments": [
+        "{asset_root}",
+        "--offscreen",
+        "{output}"
+      ]
     },
     {
       "id": "bwm-probe-firing-rate",
@@ -66,7 +85,11 @@
       "native": "available",
       "webgpu": "candidate",
       "output": "bwm-probe-firing-rate.png",
-      "arguments": ["{asset_root}", "--offscreen", "{output}"]
+      "arguments": [
+        "{asset_root}",
+        "--offscreen",
+        "{output}"
+      ]
     },
     {
       "id": "atlas-slice-scroll",
