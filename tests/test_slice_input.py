@@ -230,7 +230,15 @@ def test_navigator_wires_and_closes_subscription_before_scene(monkeypatch):
         dvz_input_unsubscribe=lambda *_args: calls.append('unsubscribe'),
     )
     monkeypatch.setattr(AtlasViewer, '_create_view', lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(AtlasViewer, 'close', lambda _viewer: calls.append('scene'))
+    original_close = AtlasViewer.close
+
+    def close_scene(owner):
+        if owner is viewer:
+            calls.append('scene')
+        else:
+            original_close(owner)
+
+    monkeypatch.setattr(AtlasViewer, 'close', close_scene)
     viewer._create_view(offscreen=False, title='test')
     assert viewer._slice_input.callback is viewer._input_callback
     assert viewer._input_subscription == 17
