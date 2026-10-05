@@ -27,6 +27,35 @@ def test_probe_sites_normalize_and_freeze_arrays():
     assert not sites.positions_um.flags.writeable
 
 
+@pytest.mark.parametrize('strided', [False, True])
+@pytest.mark.parametrize('writeable', [False, True])
+def test_probe_sites_own_all_numeric_storage(strided, writeable):
+    inputs = {
+        'positions_um': np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32),
+        'values': np.array([0.25, np.nan], dtype=np.float64),
+        'allen_region_ids': np.array([-315, 0], dtype=np.int64),
+        'site_ids': np.array([11, 12], dtype=np.uint64),
+    }
+    if strided:
+        inputs = {name: np.repeat(array, 2, axis=0)[::2] for name, array in inputs.items()}
+    for array in inputs.values():
+        array.setflags(write=writeable)
+    expected = {name: array.copy() for name, array in inputs.items()}
+
+    sites = ProbeSites.from_arrays(**inputs)
+
+    for name, source in inputs.items():
+        retained = getattr(sites, name)
+        assert source.flags.writeable == writeable
+        assert not np.shares_memory(source, retained)
+        assert retained.dtype == source.dtype
+        assert retained.flags.c_contiguous
+        assert not retained.flags.writeable
+        source.setflags(write=True)
+        source[...] = 99
+        np.testing.assert_array_equal(retained, expected[name])
+
+
 @pytest.mark.parametrize(
     ('kwargs', 'message'),
     [

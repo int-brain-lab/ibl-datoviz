@@ -68,10 +68,10 @@ class ProbeSites:
             raise ValueError('probe value name cannot be empty')
 
         arrays = (
-            np.ascontiguousarray(raw_ids, dtype=np.uint64),
-            np.ascontiguousarray(positions, dtype=np.float32),
-            np.ascontiguousarray(scalar, dtype=np.float64),
-            np.ascontiguousarray(regions, dtype=np.int64),
+            np.array(raw_ids, dtype=np.uint64, order='C', copy=True),
+            np.array(positions, dtype=np.float32, order='C', copy=True),
+            np.array(scalar, dtype=np.float64, order='C', copy=True),
+            np.array(regions, dtype=np.int64, order='C', copy=True),
         )
         for array in arrays:
             array.setflags(write=False)

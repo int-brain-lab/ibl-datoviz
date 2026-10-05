@@ -25,6 +25,34 @@ def test_region_values_validate_and_freeze_arrays():
     assert not data.values.flags.writeable
 
 
+@pytest.mark.parametrize('strided', [False, True])
+@pytest.mark.parametrize('writeable', [False, True])
+def test_region_values_own_all_numeric_storage(strided, writeable):
+    inputs = {
+        'allen_region_ids': np.array([-8, 315], dtype=np.int64),
+        'values': np.array([2.5, np.nan], dtype=np.float64),
+        'weights': np.array([3, 4], dtype=np.float64),
+    }
+    if strided:
+        inputs = {name: np.repeat(array, 2)[::2] for name, array in inputs.items()}
+    for array in inputs.values():
+        array.setflags(write=writeable)
+    expected = {name: array.copy() for name, array in inputs.items()}
+
+    data = AtlasRegionValues.from_arrays(**inputs)
+
+    for name, source in inputs.items():
+        retained = getattr(data, name)
+        assert source.flags.writeable == writeable
+        assert not np.shares_memory(source, retained)
+        assert retained.dtype == source.dtype
+        assert retained.flags.c_contiguous
+        assert not retained.flags.writeable
+        source.setflags(write=True)
+        source[...] = 99
+        np.testing.assert_array_equal(retained, expected[name])
+
+
 @pytest.mark.parametrize(
     ('args', 'kwargs', 'message'),
     [

@@ -65,9 +65,9 @@ class AtlasRegionValues:
             raise ValueError('region value and weight names cannot be empty')
 
         arrays = (
-            np.ascontiguousarray(raw_ids, dtype=np.int64),
-            np.ascontiguousarray(scalar, dtype=np.float64),
-            np.ascontiguousarray(raw_weights, dtype=np.float64),
+            np.array(raw_ids, dtype=np.int64, order='C', copy=True),
+            np.array(scalar, dtype=np.float64, order='C', copy=True),
+            np.array(raw_weights, dtype=np.float64, order='C', copy=True),
         )
         for array in arrays:
             array.setflags(write=False)
