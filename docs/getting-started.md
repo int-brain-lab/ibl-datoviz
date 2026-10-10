@@ -87,8 +87,8 @@ repository root:
 uv sync --group dev --locked
 ```
 
-The frozen pre-RC3 Datoviz source baseline is
-`066a7451195b38c5e95dcf7af7383b89ec5ec903`; anatomy remains pinned to
+The current pinned Datoviz source baseline is
+`ab8a8fb4a9c2b1396598a4f7b84653f77321ce9c`; anatomy remains pinned to
 `119457b68fae6967c54d549d9d44e4a4e49c74f8`. The source snapshot uses post-RC2
 fixes even though its distribution version is still `0.4.0rc2`. The provisional
 wheel dependency bounds do not establish that index packages support this application.
@@ -109,7 +109,7 @@ anatomy checkout.
 
 Interactive and offscreen rendering also need the matching Datoviz native library and a Vulkan
 runtime. For a local source build, check out the baseline in `~/GIT/Viz/datoviz` and follow its
-[build instructions](https://github.com/datoviz/datoviz/tree/066a7451195b38c5e95dcf7af7383b89ec5ec903#readme).
+[build instructions](https://github.com/datoviz/datoviz/tree/ab8a8fb4a9c2b1396598a4f7b84653f77321ce9c#readme).
 Run from this package root, overriding only the Datoviz Python module and selecting the library
 built from that same revision (use `libdatoviz.dylib` on macOS):
 

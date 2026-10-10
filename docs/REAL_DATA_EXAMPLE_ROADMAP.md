@@ -37,7 +37,7 @@ This is still a development branch rather than a stable library. Lifecycle safet
 
 Progress: viewer lifecycle failure safety, navigator factory behavior, input validation, the ten-name public API, and reproducible source-snapshot CI are implemented. The first six focused example programs and reproducible gallery commands are in place; live review remains the next product gate before any image or interaction is promoted.
 
-1. Validate the landed correctness fixes and staged refactors against the frozen pre-RC3 baseline; see [the audit handoff](NEXT_STEPS.md) for evidence and remaining release gates.
+1. Validate the landed correctness fixes and staged refactors against the current pinned Datoviz baseline; see [the audit handoff](NEXT_STEPS.md) for evidence and remaining release gates.
 2. Review the implemented first batch of focused real-data examples interactively.
 3. Iterate on controls, feedback, visual encodings, and scientific descriptions.
 4. Add the linked and higher-resolution examples once their component interactions are accepted.

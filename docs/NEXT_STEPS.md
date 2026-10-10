@@ -4,12 +4,34 @@ The October 5, 2026 implementation queue has landed: the three reproduced correc
 documentation/dependency alignment, and R1–R5 extractions are complete. The specifications and
 original reproductions below are retained as regression acceptance criteria, not unresolved defects.
 Remaining work is live interaction review, complete registered-section coverage, and verification
-of eventual distributable RC3/anatomy artifacts. All package changes target frozen Datoviz main;
-no engine source changes were made.
+of eventual distributable RC3/anatomy artifacts. The October 5 package changes targeted the frozen pre-RC3 Datoviz baseline;
+no engine source changes were made. The current source pairing is recorded below.
+
+## Current baseline — October 10, 2026
+
+At the user's request, the Datoviz pin and lock now select current main
+`ab8a8fb4a9c2b1396598a4f7b84653f77321ce9c`, replacing the October 5 pre-RC3
+baseline. Anatomy remains pinned to `119457b68fae6967c54d549d9d44e4a4e49c74f8`.
+The upstream delta contains a dockspace background fix and conda packaging changes;
+no package API or engine source changes were needed for this upgrade.
+
+Locked resolution and development installation, `just doctor`, Ruff, strict MkDocs,
+and diff checks pass. The full suite passes **247 tests with zero skips**, including
+native offscreen tests and both real asset roots, on Linux/Python 3.10.17. All six
+real-data examples pass `just review all --frames 3` on the desktop display, with
+no native warning/error messages. The separate Xvfb startup run exits successfully
+but reports missing DRI3/presentation support and is not rendering evidence.
+Logs are retained locally in `build/current-datoviz-review{,-display}.log`.
+
+The existing native library was used without rebuilding or switching Datoviz;
+its SHA256 is `791c649ac26253d609e2b5bc11f7adb4a49d8a3fe867c0397e624a47593c32ac`.
+Datoviz distribution metadata remains `0.4.0rc2`. Live interaction review, macOS,
+Python 3.13, and distributable artifact verification remain outstanding. The
+October 5 validation and benchmarks below retain their original baseline scope.
 
 ## Baseline and completed work
 
-The original audited package revision was `e8bf9f5` on `main`, version `0.2.0.dev0`. Focused follow-up commits are recorded below; the January v0.1 checkout and its removed object API are obsolete. The Datoviz baseline is `066a7451195b38c5e95dcf7af7383b89ec5ec903`, and this package now pins that same revision. The anatomy revision is `119457b68fae6967c54d549d9d44e4a4e49c74f8`.
+The original audited package revision was `e8bf9f5` on `main`, version `0.2.0.dev0`. Focused follow-up commits are recorded below; the January v0.1 checkout and its removed object API are obsolete. The Datoviz baseline is `066a7451195b38c5e95dcf7af7383b89ec5ec903`, and was the package pin for that audit. The anatomy revision is `119457b68fae6967c54d549d9d44e4a4e49c74f8`.
 
 Already implemented: verified D070 assets, Allen/Beryl/Cosmos presentation, linked ontology and probe/regional tables, orthogonal slices, bounded native volume rendering, registered 10 um slices, latest-wins preparation, lifecycle failure safety, navigator factory restrictions, probe validation, ten supported top-level exports, and locked source-snapshot CI on Python 3.10 and 3.13. Do not reimplement the original five hardening items; [the earlier handoff](RELEASE_HARDENING_HANDOFF.md) records their history.
 

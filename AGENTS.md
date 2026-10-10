@@ -10,7 +10,8 @@ GUI handles, callback subscriptions, and worker shutdown must keep their documen
 Run commands from this repository. `just` lists recipes; `uv` manages the locked environment.
 Datoviz is cloned, built, and configured separately. Its source revision must match the immutable
 pin in `pyproject.toml` and `uv.lock`; do not build it, switch its revision, or change that pin just
-to make a package check pass. The pre-RC3 baseline is effectively frozen.
+to make a package check pass. Baseline upgrades require an explicit decision and compatibility
+validation; the current baseline is recorded in `docs/NEXT_STEPS.md`.
 
 ```sh
 just setup-tests /path/to/datoviz  # initial setup for unit/native tests
