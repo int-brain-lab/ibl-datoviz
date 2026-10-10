@@ -119,6 +119,64 @@ The following command reproduces the combined ladder after configuring the helpe
 uv run --frozen python tools/benchmark_atlas_3d.py build/atlas-d070/mesh-pack --regions build/atlas-d070/regions.json --scenarios baseline gui_idle gui_pointer_hover gui_pointer_drag --repeats 3 --warmup 30 --frames 120 --width 1800 --height 1440 --json build/interaction-performance-repeat.json
 ```
 
+## Native gesture scheduling and automation placement — October 10, 2026
+
+The explicitly authorized Datoviz follow-up is committed locally in `6a133d710` (X11 window
+instance override and native test-runner marking) and `64cc670ed` (gesture-aware hover queries).
+The configured checkout and rebuilt library now include those changes. The immutable dependency
+pin stays at published `ab8a8fb4a9c2b1396598a4f7b84653f77321ce9c`; these engine commits have not
+been pushed or recorded as a new locked baseline. Local workflow warns about that difference.
+Native public headers, Python API, query rendering, and resource ownership were not changed.
+
+Native item interaction now tracks held buttons and gestures, cancels its pending hover requests
+on press/drag, clears transient hover, and rejects old hover results through release until fresh
+motion. Selection requests/state are preserved. Release and drag-stop events reach the interaction
+even outside the panel, preventing a stuck suppression state. The new regression exercises the
+same router/gesture-handler combination that emits both gesture events and raw motion.
+
+`DVZ_WINDOW_INSTANCE` overrides the X11 instance while retaining class `datoviz`. Package tests,
+bounded review runs and benchmark subprocesses use `datoviz-automated`; interactive review uses
+`datoviz`. The local i3 configuration was backed up, validated and reloaded with separate rules:
+manual windows on the main left monitor, automated windows on the right portrait monitor. Both
+placements were asserted with real windows and i3 tree inspection; records are
+`build/i3-placement-{manual,automated}.json`. The setting applies only to child processes.
+The optional configuration note belongs in the development guide, not introductory setup.
+
+The same three-repeat, 30-warmup/120-measured-frame ladder was rerun at both resolutions.
+A matched Debug control relinks the old interaction/controller objects from `ab8a8fb4a` with
+the same remaining native objects; no tracked sources were reverted. Its loaded library path
+was asserted after applying the Datoviz environment. The control build script and object/library
+provenance are retained in the engine's ignored `build/ibl-hover-control.py` and
+`build/ibl-hover-control/provenance.json`. Report checkout metadata is not the substituted
+control objects' revision. Candidate reports were collected from the tested working tree before
+the native commits, using the rebuilt library recorded below.
+
+| Workload | Control 900×720 | Fixed 900×720 | Control 1800×1440 | Fixed 1800×1440 |
+| --- | --- | --- | --- | --- |
+| Plain surface | 4.30 ms | 4.28 ms | 8.68 ms | 8.70 ms |
+| Docked GUI idle | 8.98 ms | 7.75 ms | 12.53 ms | 12.12 ms |
+| Docked pointer hover | 15.95 ms | 17.02 ms | 18.71 ms | 19.21 ms |
+| Docked pointer drag | 12.69 ms | 6.46 ms | 14.80 ms | 10.93 ms |
+
+These are host frame-interval medians, not human input latency or portable thresholds. Every
+drag repeat drops from 120 native hover queries to zero over 120 measured source frames;
+moving hover still executes 120 queries. The original source-view synthetic-input limitations
+still apply. The gesture fix addresses the reproduced drag overhead; variation in idle/hover
+timings is not evidence of improvements there. Stationary ImGui forwarding, normal hover query
+cost, viewport rendering and changed-region color uploads remain separate performance work.
+Reports/logs are `build/interaction-performance-{engine,engine-large,control,control-large}.json`,
+`build/interaction-performance-engine.log` and `build/interaction-performance-control.log`.
+
+Validation: **264 package tests pass with zero skips**, including both real asset roots; all six
+examples pass three-frame desktop startup at 1.5 scale. **60 native scene-interaction tests pass
+with zero skips**, including hover cancellation, preserved selection, stale result rejection and
+outside-release recovery. The native scripted atlas gesture check passes again. Incremental
+Datoviz build succeeds; its pre-existing redundant `_scene_item_state_sync` declaration warning
+remains. Native library SHA256 is
+`7773638736c029c0b496bd5afd3fd37bb17bba53f30c0422ce950b4f8bc58337` (Debug build).
+Unrelated upstream working-tree changes were left uncommitted; its widget portability edit was
+included by the normal build. macOS and manual interaction/design acceptance remain open.
+
 ## Baseline and completed work
 
 The original audited package revision was `e8bf9f5` on `main`, version `0.2.0.dev0`. Focused follow-up commits are recorded below; the January v0.1 checkout and its removed object API are obsolete. The Datoviz baseline is `066a7451195b38c5e95dcf7af7383b89ec5ec903`, and was the package pin for that audit. The anatomy revision is `119457b68fae6967c54d549d9d44e4a4e49c74f8`.

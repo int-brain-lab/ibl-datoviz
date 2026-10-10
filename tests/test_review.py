@@ -150,7 +150,10 @@ def test_run_all_uses_separate_processes_and_stops_on_failure(tmp_path, monkeypa
     commands = []
 
     def run(command, **kwargs):
-        assert kwargs['env'] == {'runtime': 'configured'}
+        assert kwargs['env'] == {
+            'runtime': 'configured',
+            'DVZ_WINDOW_INSTANCE': 'datoviz-automated',
+        }
         commands.append(command)
         if len(commands) == 2:
             raise review.subprocess.CalledProcessError(1, command)
@@ -175,6 +178,29 @@ def test_strict_commands_reject_revision_before_launch(checkout, monkeypatch, co
     assert review.main() == 1
 
 
+@pytest.mark.parametrize('frames,instance', [(0, 'datoviz'), (3, 'datoviz-automated')])
+def test_review_window_identity_distinguishes_manual_and_bounded_runs(
+    tmp_path, monkeypatch, frames, instance
+):
+    monkeypatch.setattr(review, 'configured_checkout', lambda: tmp_path)
+    monkeypatch.setattr(
+        review,
+        'doctor',
+        lambda _root, **_kwargs: ([], {'DVZ_WINDOW_INSTANCE': 'inherited-instance'}),
+    )
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    launched = []
+    monkeypatch.setattr(
+        review, 'run', lambda _command, **kwargs: launched.append(kwargs['env'].copy())
+    )
+    monkeypatch.setattr(
+        review.sys, 'argv', ['review.py', 'run', 'picking', '--frames', str(frames)]
+    )
+    assert review.main() == 0
+    assert launched == [{'DVZ_WINDOW_INSTANCE': instance}]
+
+
 @pytest.mark.parametrize('strict', [False, True])
 def test_recipe_test_arguments_preserve_pytest_expression(tmp_path, monkeypatch, strict):
     monkeypatch.setattr(review, 'configured_checkout', lambda: tmp_path)
@@ -190,7 +216,12 @@ def test_recipe_test_arguments_preserve_pytest_expression(tmp_path, monkeypatch,
         return [], {}
 
     monkeypatch.setattr(review, 'doctor', doctor)
-    monkeypatch.setattr(review, 'run', lambda command, **_kwargs: launched.append(command))
+
+    def run(command, **kwargs):
+        assert kwargs['env']['DVZ_WINDOW_INSTANCE'] == 'datoviz-automated'
+        launched.append(command)
+
+    monkeypatch.setattr(review, 'run', run)
     pytest_args = ['tests/test_probe.py', '-q', '-k', 'ownership or copied']
     monkeypatch.setattr(
         review.sys,

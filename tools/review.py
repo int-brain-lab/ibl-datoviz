@@ -329,12 +329,16 @@ def main():
         if args.command == 'doctor':
             return 0
         if args.command == 'test':
+            environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated'
             if not (ANATOMY / 'tests' / 'fixtures').is_dir():
                 raise ValueError('Cached fixtures are missing; rerun setup')
             if git_revision(ANATOMY) != source_pin('ibl-anatomy'):
                 raise ValueError('Cached fixture revision differs; rerun setup with a fresh cache')
             run([*prefix, sys.executable, '-m', 'pytest', *(arguments or ['-q'])], env=environment)
         else:
+            environment['DVZ_WINDOW_INSTANCE'] = (
+                'datoviz-automated' if args.frames > 0 else 'datoviz'
+            )
             if not ASSETS.exists() or not VOLUME.exists():
                 raise ValueError('Review data is missing; rerun setup without --tests-only')
             names = tuple(EXAMPLES) if args.example == 'all' else (args.example,)

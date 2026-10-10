@@ -18,6 +18,15 @@ report and warn about Datoviz revision differences while using the configured ch
 baseline validation use `just doctor --strict`, `just test --strict`, and `just review all --strict`. Ordinary pytest also accepts
 `IBL_ANATOMY_FIXTURE_ROOT`; CI retains its pinned adjacent fixture checkout.
 
+## Optional i3 window placement
+
+On X11/i3, a Datoviz build supporting `DVZ_WINDOW_INSTANCE` lets window rules distinguish
+manual launches from automation. Interactive `just review` uses instance `datoviz`;
+`just test`, bounded `just review --frames N` runs, and benchmarks use `datoviz-automated`.
+Both have class `datoviz`. Match the class and instance together in separate i3 `for_window`
+rules to send them to your preferred outputs. The helper sets this only for its child process,
+so test runs do not change subsequent manual launches. Older native builds ignore the override.
+
 ## Build the documentation
 
 Install the exact documentation tool versions without changing the project lock, then build in

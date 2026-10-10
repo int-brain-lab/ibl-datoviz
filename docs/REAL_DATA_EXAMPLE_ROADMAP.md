@@ -137,9 +137,11 @@ The first live feedback identified hover emphasis during camera dragging, small 
 text, scattered sidebar controls, and poor perceived performance. The package now clears/suspends
 hover during gestures, groups the sidebar by task, uses a larger base font, and exposes
 `just review picking --ui-scale 1.5`. Native scripted gesture checks and inspected UI captures
-support this first correction; reviewer acceptance remains open. The combined GUI/pointer
-benchmarks reveal native picking still runs during dragging. See [the handoff](NEXT_STEPS.md)
-for exact measurements, workload limits, and the next engine investigation. This feedback does
+support this first correction; reviewer acceptance remains open. The subsequent local Datoviz
+fix stops native hover queries during dragging while preserving selection. Manual review windows
+now use the main monitor, with tests and bounded review/benchmark runs routed separately by i3.
+See [the handoff](NEXT_STEPS.md) for measurements, workload limits, and remaining stationary-pointer
+and moving-hover work. This feedback does
 not establish acceptance of the remaining first-batch examples.
 
 ## Feedback loop

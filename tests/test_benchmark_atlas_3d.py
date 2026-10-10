@@ -115,11 +115,12 @@ def test_child_retains_embedded_query_timing_without_changing_host_fps(monkeypat
         'app_frame_timing: view=1 frames=60 run_ms=10 query=3 query_count=60\n'
         'atlas_3d_benchmark_result: {}\n'
     )
-    monkeypatch.setattr(
-        BENCHMARK.subprocess,
-        'run',
-        lambda *_args, **_kwargs: SimpleNamespace(stdout=output, stderr=''),
-    )
+
+    def launch(*_args, **kwargs):
+        assert kwargs['env']['DVZ_WINDOW_INSTANCE'] == 'datoviz-automated'
+        return SimpleNamespace(stdout=output, stderr='')
+
+    monkeypatch.setattr(BENCHMARK.subprocess, 'run', launch)
     run = BENCHMARK._run_child(args, 'gui_pointer_hover', 0)
     assert run['observed_fps'] == 200
     assert run['datoviz_frame_timing_ms']['query_count'] == 0

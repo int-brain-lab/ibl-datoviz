@@ -490,6 +490,7 @@ def _run_child(args: argparse.Namespace, scenario: str, repeat: int) -> dict:
             'DVZ_APP_SCHEDULE': 'continuous',
             'DVZ_FPS_CAP': '0',
             'DVZ_PRESENT_MODE': 'immediate',
+            'DVZ_WINDOW_INSTANCE': 'datoviz-automated',
         }
     )
     completed = subprocess.run(
