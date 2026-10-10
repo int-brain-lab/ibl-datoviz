@@ -85,7 +85,7 @@ class AtlasViewer:
         selection_context_opacity: float = 0.18,
         surface_opacity: float = 1.0,
         ui_scale: float = 1.0,
-        sidebar_width: float = 340.0,
+        sidebar_width: float = 400.0,
         tree_root_acronym: str = 'grey',
         enable_interaction: bool = True,
         datoviz: ModuleType | None = None,
