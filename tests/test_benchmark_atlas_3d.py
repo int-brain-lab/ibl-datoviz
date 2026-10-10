@@ -118,6 +118,7 @@ def test_child_retains_embedded_query_timing_without_changing_host_fps(monkeypat
 
     def launch(*_args, **kwargs):
         assert kwargs['env']['DVZ_WINDOW_INSTANCE'] == 'datoviz-automated'
+        assert 'DVZ_FPS_CAP' not in kwargs['env']
         return SimpleNamespace(stdout=output, stderr='')
 
     monkeypatch.setattr(BENCHMARK.subprocess, 'run', launch)
@@ -126,9 +127,15 @@ def test_child_retains_embedded_query_timing_without_changing_host_fps(monkeypat
     assert run['datoviz_frame_timing_ms']['query_count'] == 0
     assert run['datoviz_view_frame_timing_ms'][1]['query_count'] == 60
     run['memory'] = {'maximum_resident_set_kib': 100}
-    run['timing'] = {'mutation': {'median_ms': 0}}
+    run['timing'] = {
+        'mutation': {'median_ms': 0},
+        'surface_emphasis': {'median_ms': 2},
+        'surface_color_setter': {'median_ms': 0},
+    }
     summary = BENCHMARK._scenario_summary([run])
     assert summary['query_count_median'] == 0
     assert summary['viewport_query_count_median'] == 60
     assert summary['viewport_query_median'] == 3
     assert summary['mutation_median_ms'] == 0
+    assert summary['surface_emphasis_median_ms'] == 2
+    assert summary['surface_color_setter_median_ms'] == 0

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import json
 import os
 import platform
@@ -230,7 +231,27 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
 
     callback_errors: list[str] = []
     mutation_seconds: list[float] = []
+    emphasis_seconds: list[float] = []
+    color_setter_seconds: list[float] = []
     measuring = [False]
+    original_emphasis = viewer._update_surface_emphasis
+    original_set_data = dvz.dvz_visual_set_data
+
+    def profile_emphasis():
+        start = perf_counter()
+        original_emphasis()
+        if measuring[0]:
+            emphasis_seconds.append(perf_counter() - start)
+
+    def profile_set_data(visual, name, data, *arguments):
+        start = perf_counter()
+        result = original_set_data(visual, name, data, *arguments)
+        if measuring[0] and name == 'color':
+            color_setter_seconds.append(perf_counter() - start)
+        return result
+
+    viewer._update_surface_emphasis = profile_emphasis
+    dvz.dvz_visual_set_data = profile_set_data
     callback_index = [0]
     query_results = {'queued': 0, 'resolved': 0, 'hits': 0}
     pointer_results = {'emitted': 0, 'hover_hit_frames': 0, 'hover_changes': 0}
@@ -393,7 +414,10 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
         if callback_errors:
             raise RuntimeError(callback_errors[0])
 
+        import datoviz._ctypes as native
+
         root = Path(__file__).resolve().parents[1]
+        native_library = Path(native.dvz._name).resolve()
         record = {
             'schema_version': 1,
             'scenario': args.scenario,
@@ -428,6 +452,8 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'python': platform.python_version(),
                 'numpy': np.__version__,
                 'datoviz_module': str(Path(dvz.__file__).resolve()),
+                'native_library': str(native_library),
+                'native_library_sha256': hashlib.sha256(native_library.read_bytes()).hexdigest(),
                 'gpu': _gpu_description(),
                 'git': {
                     'ibl_datoviz': _git_revision(root),
@@ -444,6 +470,9 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'measured_wall_seconds': measured_end - measured_start,
                 'measured_frames': args.frames,
                 'mutation': _distribution(mutation_seconds),
+                'surface_emphasis': _distribution(emphasis_seconds),
+                'surface_color_setter': _distribution(color_setter_seconds),
+                'surface_color_setter_calls': len(color_setter_seconds),
             },
             'memory': {
                 'maximum_resident_set_kib': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
@@ -459,7 +488,10 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
         }
         print(f'{RESULT_PREFIX} {json.dumps(record, sort_keys=True)}')
     finally:
-        viewer.close()
+        try:
+            viewer.close()
+        finally:
+            dvz.dvz_visual_set_data = original_set_data
     return 0
 
 
@@ -488,11 +520,12 @@ def _run_child(args: argparse.Namespace, scenario: str, repeat: int) -> dict:
     environment.update(
         {
             'DVZ_APP_SCHEDULE': 'continuous',
-            'DVZ_FPS_CAP': '0',
             'DVZ_PRESENT_MODE': 'immediate',
             'DVZ_WINDOW_INSTANCE': 'datoviz-automated',
         }
     )
+    # The app's default is uncapped; zero is not a valid environment override.
+    environment.pop('DVZ_FPS_CAP', None)
     completed = subprocess.run(
         command,
         check=True,
@@ -576,7 +609,7 @@ def _scenario_summary(runs: Sequence[dict]) -> dict[str, float | int]:
     ]
     if query_counts:
         summary['query_count_median'] = int(np.median(query_counts))
-    for field in ('query', 'query_count', 'frames'):
+    for field in ('query', 'query_count', 'query_backend', 'query_download', 'query_decode', 'frames'):
         values = [
             float(timing[field])
             for run in runs
@@ -622,6 +655,14 @@ def _scenario_summary(runs: Sequence[dict]) -> dict[str, float | int]:
     available_mutation = [value for value in mutation if value is not None]
     if available_mutation:
         summary['mutation_median_ms'] = float(np.median(available_mutation))
+    for field in ('surface_emphasis', 'surface_color_setter'):
+        values = [
+            value
+            for run in runs
+            if (value := run['timing'].get(field, {}).get('median_ms')) is not None
+        ]
+        if values:
+            summary[f'{field}_median_ms'] = float(np.median(values))
     return summary
 
 
