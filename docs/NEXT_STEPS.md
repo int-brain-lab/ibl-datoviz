@@ -7,7 +7,21 @@ Remaining work is live interaction review, complete registered-section coverage,
 of eventual distributable RC3/anatomy artifacts. The October 5 package changes targeted the frozen pre-RC3 Datoviz baseline;
 no engine source changes were made. The current source pairing is recorded below.
 
-## Current baseline — October 10, 2026
+## Published interaction fixes — October 10, 2026
+
+The current immutable Datoviz pin is `62101912dfde633b4510dfbdbccf7d4a7f0b8ba2`, published on upstream main. It includes the gesture suppression and automated window identity fixes described below, plus stationary GUI move suppression and full-name tree tooltips. Anatomy remains at `119457b68fae6967c54d549d9d44e4a4e49c74f8`. Ordinary local review accepts newer configured checkouts with a warning; only an intentional tested-baseline upgrade changes the pin. A documentation-only commit does not require a new pin.
+
+The embedded viewport now forwards MOVE only when the pointer, viewport size, modifiers, or scene revision changes. Leaving or hiding the viewport invalidates the remembered input. It records the revision after forwarding so its own query request cannot perpetuate picking. Native hover application avoids rebuilding item state for an identical result or clearing an already empty hover. Geometry and camera updates still refresh a stationary highlight; active gestures continue suppressing hover without altering committed selection.
+
+A matched Debug comparison uses the previous library (`7773638736c029c0b496bd5afd3fd37bb17bba53f30c0422ce950b4f8bc58337`) and the current build on Linux, Intel RPL-S/Mesa 25.2.8, D070, 900×720. An ImGui NewFramePre hook injects a constant mouse position into the actual GUI forwarding path, without moving the desktop cursor. Each library runs three fresh viewers with 30 warmup and 120 measured frames. The source viewport executes **120 queries per repeat before and zero after**; the highlight stays visible. Geometry and camera refresh assertions pass after each measurement. Median frame interval changes from 15.36 to 9.71 ms, with substantial desktop scheduling variance, so query counts are the stronger evidence. Reports and the repeatable local harness are in ignored `build/stationary-hover.{json,log}` and `build/check-stationary-hover.py`.
+
+The benchmark now reports GPU query backend/download/decode phases, Python surface emphasis updates, native color setter costs and call counts, and the exact loaded library path/SHA256. Setter and emphasis distributions describe actual calls, while native query phase timings are per measured frame; these denominators must not be added together. Benchmark subprocesses remain marked as automated and use the app's uncapped default instead of an invalid zero FPS environment override.
+
+The sidebar default grows from 340 to 400 logical pixels and scales with the existing UI scale. Native tree row tooltips show the complete acronym and wrapped full name, preserving readable labels on narrow trees. The UI still needs the user's live design acceptance; startup and screenshot checks do not establish subjective interaction quality.
+
+Validation against the published source: **264 package tests, zero skips**, with native offscreen rendering and both real asset roots; **61 native scene-interaction tests and 20 GUI-filter tests, zero skips**; all six real-data examples pass three-frame desktop startup at 1.5× scale. Ruff, strict MkDocs, locked installation, and whitespace checks pass. The native build has no compiler warnings. Logs remain in ignored `build/final-{tests,review,docs}.log` and the native build/test logs. macOS rendering and distributable-artifact verification remain separate release gates.
+
+## Initial baseline upgrade — October 10, 2026
 
 At the user's request, the Datoviz pin and lock now select current main
 `ab8a8fb4a9c2b1396598a4f7b84653f77321ce9c`, replacing the October 5 pre-RC3
