@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import textwrap
 from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
@@ -30,6 +31,7 @@ from .selection import (
     selection_decision,
     tree_selection_keys,
 )
+from .viewport_input import ViewportInputAdapter
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -128,6 +130,7 @@ class AtlasViewer:
         self.host_figure = None
         self.viewport = None
         self.interaction = None
+        self._viewport_input = None
         self.region_tree, self.region_table = None, None
         self.probe_table = None
         self._gui_widgets = {}
@@ -758,6 +761,9 @@ class AtlasViewer:
 
     def _mesh_hovered_region_ids(self) -> tuple[int, ...]:
         """Return the signed region identity under the retained 3-D hover query."""
+        if getattr(self, '_viewport_input', None) is not None and self._viewport_input.suspended:
+            self._clear_surface_hover()
+            return ()
         if self.interaction is None:
             return ()
         hover = self.dvz.dvz_item_interaction_hover(self.interaction)
@@ -768,6 +774,16 @@ class AtlasViewer:
             return ()
         signed = np.asarray(item.link_key, dtype=np.uint64).view(np.int64).item()
         return (int(signed),) if signed else ()
+
+    def _clear_surface_hover(self) -> None:
+        """Discard transient native and Python hover while preserving selection."""
+        if self.interaction is not None:
+            hover = self.dvz.dvz_item_interaction_hover(self.interaction)
+            item = self.dvz.DvzSelectionItem()
+            if hover and self.dvz.dvz_hover_copy(hover, ctypes.byref(item)):
+                self._check(self.dvz.dvz_hover_clear(hover), 'surface hover clear')
+        self._set_hovered_region_ids(())
+        self._hovered_region_label = None
 
     def _set_hovered_region_ids(self, region_ids: Sequence[int]) -> bool:
         """Set transient hover emphasis without changing committed selection."""
@@ -919,7 +935,7 @@ class AtlasViewer:
             gui,
             b'Allen mouse brain atlas',
             self.dvz.DVZ_GUI_DOCK_SLOT_LEFT,
-            self.sidebar_width,
+            self.sidebar_width * self.ui_scale,
         )
         if self.viewport is not None:
             self.dvz.dvz_gui_dock_window_once(
@@ -927,54 +943,58 @@ class AtlasViewer:
             )
         if self.dvz.dvz_gui_begin(gui, b'Allen mouse brain atlas', None, 0):
             self.dvz.dvz_gui_text(gui, b'CCF 2017 anatomy')
-            if self.catalog is not None and self.dvz.dvz_gui_slider_float(
-                gui,
-                b'Explode regions',
-                ctypes.byref(self._explode_control),
-                0.0,
-                1.0,
-            ):
-                self.set_explode(self._explode_control.value)
+            self.dvz.dvz_gui_text(gui, b'Atlas mapping')
             if self.dvz.dvz_gui_combo(
                 gui,
-                b'Mapping##ibl_atlas_mapping',
+                b'##ibl_atlas_mapping',
                 ctypes.byref(self._mapping_control),
                 self._mapping_items,
                 len(self._mapping_items),
             ):
                 self.set_mapping(self.mesh_data.mapping_names[self._mapping_control.value])
-            if self.dvz.dvz_gui_button(gui, b'Clear region selection'):
-                self.clear_selection()
+            if self.dvz.dvz_gui_collapsing_header(gui, b'Appearance', 0):
+                self.dvz.dvz_gui_text(gui, b'Region separation')
+                if self.dvz.dvz_gui_slider_float(
+                    gui, b'##ibl_atlas_explode', ctypes.byref(self._explode_control), 0.0, 1.0
+                ):
+                    self.set_explode(self._explode_control.value)
             self._draw_extra_gui(gui)
-            if self.dvz.dvz_gui_button(gui, b'Collapse all'):
-                self.dvz.dvz_gui_tree_collapse_all(self.region_tree)
-            self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
-            if self.dvz.dvz_gui_button(gui, b'Expand all'):
-                self._check(
-                    self.dvz.dvz_gui_tree_expand_all(self.region_tree),
-                    'atlas ontology expansion',
-                )
-            self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
-            if self.dvz.dvz_gui_button(gui, b'Expand 3 levels'):
-                self.dvz.dvz_gui_tree_expand_to_depth(self.region_tree, 3)
+            self.dvz.dvz_gui_separator_text(gui, b'Selection')
             if self._selected_region_ids:
-                self.dvz.dvz_gui_separator_text(gui, b'Selection')
                 for region_id in self._selected_region_ids[:6]:
                     label = (
                         self.tree_model.describe(region_id) if self.tree_model else str(region_id)
                     )
-                    self.dvz.dvz_gui_text(gui, label.encode())
+                    for part in label.split(' — '):
+                        for line in textwrap.wrap(part, width=32):
+                            self.dvz.dvz_gui_text(gui, line.encode())
                 if len(self._selected_region_ids) > 6:
                     remaining = len(self._selected_region_ids) - 6
                     self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
+                if self.dvz.dvz_gui_button(gui, b'Clear selection'):
+                    self.clear_selection()
+            else:
+                self.dvz.dvz_gui_text(gui, b'Click a region to select it')
+            self.dvz.dvz_gui_separator_text(gui, b'Browse regions')
+            self.dvz.dvz_gui_text(gui, b'Search by name or acronym')
             if self.dvz.dvz_gui_input_text(
-                gui, b'Filter regions', self._tree_filter, len(self._tree_filter)
+                gui, b'##ibl_atlas_filter', self._tree_filter, len(self._tree_filter)
             ):
                 self._check(
                     self.dvz.dvz_gui_tree_set_filter(self.region_tree, self._tree_filter.value),
                     'atlas ontology filter',
                 )
-            self.dvz.dvz_gui_separator_text(gui, b'Region hierarchy')
+            if self.dvz.dvz_gui_collapsing_header(gui, b'Hierarchy controls', 0):
+                if self.dvz.dvz_gui_button(gui, b'Collapse all'):
+                    self.dvz.dvz_gui_tree_collapse_all(self.region_tree)
+                self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
+                if self.dvz.dvz_gui_button(gui, b'Expand 3 levels'):
+                    self.dvz.dvz_gui_tree_expand_to_depth(self.region_tree, 3)
+                if self.dvz.dvz_gui_button(gui, b'Expand all'):
+                    self._check(
+                        self.dvz.dvz_gui_tree_expand_all(self.region_tree),
+                        'atlas ontology expansion',
+                    )
             scroll_tree = self.region_table is None and self.probe_table is None
             tree_visible = True
             if scroll_tree:
@@ -1191,7 +1211,12 @@ class AtlasViewer:
     def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0912, PLR0915
         if self.app is not None:
             raise RuntimeError('viewer already has an active app')
-        self.app = self.dvz.dvz_app(self.scene)
+        if not offscreen and self.catalog is not None:
+            app_config = self.dvz.dvz_app_config()
+            app_config.font_ui_size_px = 18.0
+            self.app = self.dvz.dvz_app_with_config(self.scene, ctypes.byref(app_config))
+        else:
+            self.app = self.dvz.dvz_app(self.scene)
         if not self.app:
             raise RuntimeError('dvz_app() failed')
         if offscreen:
@@ -1248,6 +1273,12 @@ class AtlasViewer:
             )
             if not self.viewport:
                 raise RuntimeError('dvz_gui_viewport() failed')
+            if self.interaction is not None:
+                router = self.dvz.dvz_gui_viewport_input(self.viewport)
+                if not router:
+                    raise RuntimeError('dvz_gui_viewport_input() failed')
+                self._viewport_input = ViewportInputAdapter(self, router)
+                self._viewport_input.subscribe()
             self.arcball_controller = self.dvz.dvz_arcball(self.scene, None)
             if not self.arcball_controller:
                 raise RuntimeError('dvz_arcball() failed')
@@ -1310,6 +1341,9 @@ class AtlasViewer:
         if getattr(self, '_closed', False):
             return
         datoviz = getattr(self, 'dvz', None)
+        if getattr(self, '_viewport_input', None) is not None:
+            self._viewport_input.close()
+            self._viewport_input = None
         if datoviz is not None and getattr(self, 'viewport', None) is not None:
             self.dvz.dvz_panel_connect_input(self.panel, None)
             self.dvz.dvz_gui_viewport_destroy(self.viewport)

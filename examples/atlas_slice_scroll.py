@@ -33,10 +33,11 @@ def main() -> int:
     parser.add_argument(
         '--frames', type=int, default=0, help='interactive frame limit; zero runs until closed'
     )
+    parser.add_argument('--ui-scale', type=float, default=1.0, help='GUI size multiplier')
     args = parser.parse_args()
 
     with LinkedAtlasNavigator.from_packs(
-        args.mesh_pack, args.volume_pack, mapping=args.mapping
+        args.mesh_pack, args.volume_pack, mapping=args.mapping, ui_scale=args.ui_scale
     ) as navigator:
         if args.index is not None:
             navigator.set_cursor(_cursor_at_slice(navigator, args.axis, args.index))

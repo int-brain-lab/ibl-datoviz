@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -81,7 +82,10 @@ def test_scenario_summary_preserves_repeat_count():
 
 
 def test_gui_decomposition_scenarios_are_profiled_without_interaction():
-    assert set(BENCHMARK.GUI_PROFILE_SCENARIOS) == {
+    decomposition = {
+        name for name, profile in BENCHMARK.GUI_PROFILE_SCENARIOS.items() if profile != 'pointer'
+    }
+    assert decomposition == {
         'gui_empty',
         'gui_viewport_empty',
         'gui_viewport_surface',
@@ -89,6 +93,41 @@ def test_gui_decomposition_scenarios_are_profiled_without_interaction():
         'gui_tree_full',
     }
     assert set(BENCHMARK.GUI_PROFILE_SCENARIOS) <= BENCHMARK.GUI_SCENARIOS
-    assert not (set(BENCHMARK.GUI_PROFILE_SCENARIOS) & BENCHMARK.INTERACTION_SCENARIOS)
+    assert not (decomposition & BENCHMARK.INTERACTION_SCENARIOS)
+    assert {'gui_pointer_hover', 'gui_pointer_drag'} <= (
+        BENCHMARK.GUI_SCENARIOS & BENCHMARK.INTERACTION_SCENARIOS
+    )
     assert 'pointer_hover' in BENCHMARK.INTERACTION_SCENARIOS
     assert 'pointer_hover_burst' in BENCHMARK.INTERACTION_SCENARIOS
+
+
+def test_child_retains_embedded_query_timing_without_changing_host_fps(monkeypatch):
+    args = SimpleNamespace(
+        mesh_pack=Path('mesh'),
+        regions=Path('regions.json'),
+        warmup=30,
+        frames=120,
+        width=900,
+        height=720,
+    )
+    output = (
+        'app_frame_timing: view=0 frames=120 run_ms=5 query=0 query_count=0\n'
+        'app_frame_timing: view=1 frames=60 run_ms=10 query=3 query_count=60\n'
+        'atlas_3d_benchmark_result: {}\n'
+    )
+    monkeypatch.setattr(
+        BENCHMARK.subprocess,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=output, stderr=''),
+    )
+    run = BENCHMARK._run_child(args, 'gui_pointer_hover', 0)
+    assert run['observed_fps'] == 200
+    assert run['datoviz_frame_timing_ms']['query_count'] == 0
+    assert run['datoviz_view_frame_timing_ms'][1]['query_count'] == 60
+    run['memory'] = {'maximum_resident_set_kib': 100}
+    run['timing'] = {'mutation': {'median_ms': 0}}
+    summary = BENCHMARK._scenario_summary([run])
+    assert summary['query_count_median'] == 0
+    assert summary['viewport_query_count_median'] == 60
+    assert summary['viewport_query_median'] == 3
+    assert summary['mutation_median_ms'] == 0

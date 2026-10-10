@@ -19,12 +19,14 @@ def main() -> int:
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='beryl')
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
     parser.add_argument('--frames', type=int, default=0)
+    parser.add_argument('--ui-scale', type=float, default=1.0, help='GUI size multiplier')
     args = parser.parse_args()
 
     sites, provenance = _load_fixture(args.fixture)
     with AtlasViewer.from_asset_set(
         args.asset_root,
         mapping=args.mapping,
+        ui_scale=args.ui_scale,
         surface_opacity=0.16,
         camera_angles=BWM_CAMERA_ANGLES,
     ) as viewer:

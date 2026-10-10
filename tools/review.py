@@ -312,6 +312,7 @@ def main():
     review.add_argument(
         '--frames', type=int, default=0, help='zero runs until each window is closed'
     )
+    review.add_argument('--ui-scale', type=float, default=1.0, help='GUI size multiplier')
     for command in (diagnosis, tests, review):
         command.add_argument(
             '--strict', action='store_true', help='require the pinned Datoviz source revision'
@@ -348,6 +349,8 @@ def main():
                         *arguments,
                         '--frames',
                         args.frames,
+                        '--ui-scale',
+                        args.ui_scale,
                     ],
                     env=environment,
                 )

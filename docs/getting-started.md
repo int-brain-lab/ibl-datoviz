@@ -49,6 +49,7 @@ bounded startup:
 ```bash
 just review picking
 just review all --frames 3
+just review picking --ui-scale 1.5  # larger controls on a high-DPI display
 just doctor
 just test -q tests/test_probe_replacement.py
 ```
@@ -71,6 +72,11 @@ Put `--strict` before pytest arguments for `just test`. The helper equivalents a
 `tools/review.py doctor --strict`, `tools/review.py test --strict -- <pytest arguments>`,
 and `tools/review.py run all --strict`. Installs and CI continue to use the locked source pin;
 update it only when deliberately recording a tested baseline.
+
+The atlas sidebar uses a 18 px base UI font and separates mapping, appearance, selection,
+and region browsing. `--ui-scale` multiplies text, controls, and the initial sidebar width;
+Datoviz also applies its reported device scale. Hover emphasis clears during camera gestures
+and resumes on fresh pointer motion after release; committed selection stays intact.
 
 Run `just` to list commands, `just lint` for Ruff, and `just docs` for a strict documentation build.
 Quote a checkout path containing spaces, for example `just setup "$HOME/GIT/Datoviz checkout"`.

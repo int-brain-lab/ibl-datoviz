@@ -39,6 +39,8 @@ SCENARIOS = (
     'gui_tree_full',
     'gui_idle',
     'gui_interaction_idle',
+    'gui_pointer_hover',
+    'gui_pointer_drag',
     'hover_emphasis_update',
     'selection_update',
     'explode_static',
@@ -53,6 +55,8 @@ GUI_SCENARIOS = frozenset(
         'gui_tree_full',
         'gui_idle',
         'gui_interaction_idle',
+        'gui_pointer_hover',
+        'gui_pointer_drag',
     )
 )
 GUI_PROFILE_SCENARIOS = {
@@ -61,6 +65,8 @@ GUI_PROFILE_SCENARIOS = {
     'gui_viewport_surface': 'surface_viewport',
     'gui_tree_small': 'tree',
     'gui_tree_full': 'tree',
+    'gui_pointer_hover': 'pointer',
+    'gui_pointer_drag': 'pointer',
 }
 INTERACTION_SCENARIOS = frozenset(
     (
@@ -69,6 +75,8 @@ INTERACTION_SCENARIOS = frozenset(
         'pointer_hover',
         'pointer_hover_burst',
         'gui_interaction_idle',
+        'gui_pointer_hover',
+        'gui_pointer_drag',
     )
 )
 TIMING_PREFIX = 'app_frame_timing:'
@@ -83,6 +91,13 @@ class _BenchmarkAtlasViewer(AtlasViewer):
         self._benchmark_gui_profile = gui_profile
         self._benchmark_empty_figure = None
         super().__init__(*args, **kwargs)
+
+    def _sync_viewport_hover(self, hovered: bool) -> None:
+        # Synthetic events are emitted directly into the viewport's input router.
+        # Treat their inside positions as hovered regardless of the desktop cursor.
+        super()._sync_viewport_hover(
+            True if self._benchmark_gui_profile == 'pointer' else hovered
+        )
 
     def _gui_callback(self, gui, _view, _user_data) -> None:
         if self._benchmark_gui_profile not in (
@@ -291,6 +306,37 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                     )
                     if measuring[0]:
                         pointer_results['emitted'] += 1
+            elif args.scenario in ('gui_pointer_hover', 'gui_pointer_drag'):
+                pos = (ctypes.c_float * 2)()
+                size = (ctypes.c_float * 2)()
+                hovered = ctypes.c_bool()
+                if not dvz.dvz_gui_viewport_mouse(
+                    viewer.viewport, pos, size, ctypes.byref(hovered)
+                ):
+                    return
+                hover = viewer._mesh_hovered_region_ids()
+                if measuring[0]:
+                    pointer_results['hover_hit_frames'] += int(bool(hover))
+                    pointer_results['hover_changes'] += int(hover != previous_hover[0])
+                previous_hover[0] = hover
+                pointer = dvz.DvzPointerEvent()
+                pointer.type = dvz.DVZ_POINTER_EVENT_MOVE
+                pointer.pos[:] = (
+                    size[0] * (0.5 + 0.22 * np.sin(index * 0.071)),
+                    size[1] * (0.5 + 0.18 * np.sin(index * 0.097)),
+                )
+                pointer.window_size[:] = size[:]
+                pointer.content_scale = 1.0
+                pointer.timestamp_ns = dvz.dvz_input_timestamp_ns()
+                router = dvz.dvz_gui_viewport_input(viewer.viewport)
+                if args.scenario == 'gui_pointer_drag' and not viewer._viewport_input.pressed:
+                    pointer.type = dvz.DVZ_POINTER_EVENT_PRESS
+                    pointer.button = dvz.DVZ_POINTER_BUTTON_LEFT
+                    dvz.dvz_input_emit_pointer(router, ctypes.byref(pointer))
+                    pointer.type = dvz.DVZ_POINTER_EVENT_MOVE
+                dvz.dvz_input_emit_pointer(router, ctypes.byref(pointer))
+                if measuring[0]:
+                    pointer_results['emitted'] += 1
         except Exception as error:  # ctypes callbacks cannot propagate exceptions safely
             callback_errors.append(f'{type(error).__name__}: {error}')
         finally:
@@ -385,7 +431,7 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'gpu': _gpu_description(),
                 'git': {
                     'ibl_datoviz': _git_revision(root),
-                    'datoviz': _git_revision(root.parents[1] / 'Viz' / 'datoviz'),
+                    'datoviz': _git_revision(Path(dvz.__file__).resolve().parents[1]),
                 },
             },
             'timing': {
@@ -405,7 +451,9 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
             'queries': query_results if args.scenario == 'face_query' else None,
             'pointer': (
                 pointer_results
-                if args.scenario in ('pointer_hover', 'pointer_hover_burst')
+                if args.scenario in (
+                    'pointer_hover', 'pointer_hover_burst', 'gui_pointer_hover', 'gui_pointer_drag'
+                )
                 else None
             ),
         }
@@ -451,14 +499,12 @@ def _run_child(args: argparse.Namespace, scenario: str, repeat: int) -> dict:
         text=True,
         env=environment,
     )
-    timing = next(
-        (
-            parsed
-            for line in completed.stdout.splitlines()
-            if (parsed := _parse_key_values(line, TIMING_PREFIX)) is not None
-        ),
-        None,
-    )
+    timings = [
+        parsed
+        for line in completed.stdout.splitlines()
+        if (parsed := _parse_key_values(line, TIMING_PREFIX)) is not None
+    ]
+    timing = timings[0] if timings else None
     latency = next(
         (
             parsed
@@ -486,6 +532,7 @@ def _run_child(args: argparse.Namespace, scenario: str, repeat: int) -> dict:
             f'{args.frames} requested frames; the window may have been closed'
         )
     payload['datoviz_frame_timing_ms'] = timing
+    payload['datoviz_view_frame_timing_ms'] = timings
     payload['datoviz_interaction_latency_ms'] = latency
     run_ms = float(timing['run_ms'])
     payload['observed_fps'] = 1000.0 / run_ms if run_ms > 0 else None
@@ -528,6 +575,15 @@ def _scenario_summary(runs: Sequence[dict]) -> dict[str, float | int]:
     ]
     if query_counts:
         summary['query_count_median'] = int(np.median(query_counts))
+    for field in ('query', 'query_count', 'frames'):
+        values = [
+            float(timing[field])
+            for run in runs
+            for timing in run.get('datoviz_view_frame_timing_ms', [])[1:]
+            if field in timing
+        ]
+        if values:
+            summary[f'viewport_{field}_median'] = float(np.median(values))
     latency_fields = (
         'samples',
         'input_to_render_start_p50_ms',
@@ -562,7 +618,9 @@ def _scenario_summary(runs: Sequence[dict]) -> dict[str, float | int]:
         np.median([run['memory']['maximum_resident_set_kib'] for run in runs])
     )
     mutation = [run['timing']['mutation'].get('median_ms') for run in runs]
-    summary['mutation_median_ms'] = float(np.median([value for value in mutation if value]))
+    available_mutation = [value for value in mutation if value is not None]
+    if available_mutation:
+        summary['mutation_median_ms'] = float(np.median(available_mutation))
     return summary
 
 

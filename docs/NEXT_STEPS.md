@@ -49,6 +49,76 @@ and diff checks pass. All six examples pass three-frame desktop startup/cleanup
 with `just review all --strict --frames 3`; the log is
 `build/local-review-strict.log`. Live interaction and macOS review remain open.
 
+## First live review corrections — October 10, 2026
+
+The reviewer reported lingering hover emphasis during trackball dragging, a cluttered sidebar,
+small Linux high-DPI text, and poor perceived performance. A retained viewport input subscription
+now clears native/Python hover at gesture start and suppresses it through release until fresh
+pointer motion. Committed selection is preserved. The subscription is removed before the viewport
+router is destroyed, including partial setup failure. This suppresses the visible highlight;
+it does not disable native hover queries.
+
+The sidebar now groups mapping, optional appearance, selection, and region browsing. Region
+search labels sit above their fields; hierarchy expansion actions live together in a collapsed
+section. Selection acronym/name appear separately and long names wrap. A 18 px base UI font and
+`just review picking --ui-scale 1.5` improve readability; all six examples accept that scale,
+and the initial sidebar width scales with it. Captures at 1.0 and 1.5 were inspected in
+`build/atlas-ui-{1.0,1.5}.png`; canonical documentation images were not replaced. This is the
+first UI correction, awaiting the reviewer's interaction/design feedback.
+
+Full native/real-asset tests pass: **262 tests with zero skips and no warnings**.
+All six examples pass three-frame desktop startup at 1.5 scale. A scripted native picking
+sequence verifies initial hover, no hover during drag, preserved selection, and hover recovery
+on fresh motion; `build/native-drag-review.json` records the result. Regression tests cover
+stale hover after release, pressed motion, and callback teardown/failure. macOS/high-DPI device
+behavior and manual interaction acceptance remain open.
+
+### Current performance investigation
+
+Fresh-process measurements use D070, three repeats, 30 warmup frames and 120 measured frames,
+continuous scheduling, uncapped FPS and immediate presentation. Measurements ran against the
+working tree based on `d2b2470` and Datoviz `ab8a8fb4a9c2b1396598a4f7b84653f77321ce9c`, using
+the existing native library recorded above. They are current-host evidence, not portable
+thresholds or an asserted speedup over the October 5 host. Vulkan enumeration lists Intel
+Graphics (RPL-S), Mesa 25.2.8, and llvmpipe; the benchmark's NVIDIA-only GPU description is null.
+The enumeration log is `build/interaction-vulkan-summary.log`.
+
+| Workload | 900×720 median frame interval | 1800×1440 median frame interval |
+| --- | --- | --- |
+| Plain surface | 4.29 ms | 8.50 ms |
+| Docked GUI idle | 6.80 ms | 12.00 ms |
+| Docked pointer hover | 16.54 ms | 20.74 ms |
+| Docked pointer drag | 13.60 ms | 15.16 ms |
+
+The existing isolated face-query benchmark costs about 7.4 ms/query before these UI changes;
+Python hover-emphasis updates cost about 2.2 ms when changed. New `gui_pointer_hover` and
+`gui_pointer_drag` scenarios exercise the embedded surface plus normal GUI and highlight code
+with synthetic inside-viewport motion. Events enter the viewport router directly; they do not
+measure the OS/ImGui forwarding path or human input latency. The benchmark now preserves all
+view timing records, so source-view query work cannot disappear behind the host view's zero
+query count. Its source fields report per-source-frame averages; they must not be added to
+host frame intervals as independent costs.
+
+Both docked scenarios execute 120 native queries over 120 measured source frames. Dragging
+reports zero highlighted hover regions, but source queries still cost about 5–6 ms/frame.
+Raw `MOVE` events reach the native item-interaction controller alongside gesture events, and
+its `MOVE` branch does not guard against a held camera gesture. Most measured query time is
+in the native backend, not query download/decode. The immediate next engine investigation is
+to suppress hover-query scheduling during gestures, then rerun the same workload. Separately
+profile embedded-viewport rendering and Python region-color uploads while crossing regions.
+Also measure stationary-pointer behavior: the GUI forwarding path currently emits `MOVE`
+on every rendered frame while hovered, even without actual mouse motion.
+No speculative renderer or picking implementation change was made here.
+
+Reports/logs: `build/interaction-performance-{before,after,large}.{json,log}`. The before report
+has only the original isolated scenarios; the new combined scenarios have no before counterpart.
+The following command reproduces the combined ladder after configuring the helper environment
+(as described for direct commands in getting started):
+
+```bash
+uv run --frozen python tools/benchmark_atlas_3d.py build/atlas-d070/mesh-pack --regions build/atlas-d070/regions.json --scenarios baseline gui_idle gui_pointer_hover gui_pointer_drag --repeats 3 --warmup 30 --frames 120 --width 1800 --height 1440 --json build/interaction-performance-repeat.json
+```
+
 ## Baseline and completed work
 
 The original audited package revision was `e8bf9f5` on `main`, version `0.2.0.dev0`. Focused follow-up commits are recorded below; the January v0.1 checkout and its removed object API are obsolete. The Datoviz baseline is `066a7451195b38c5e95dcf7af7383b89ec5ec903`, and was the package pin for that audit. The anatomy revision is `119457b68fae6967c54d549d9d44e4a4e49c74f8`.

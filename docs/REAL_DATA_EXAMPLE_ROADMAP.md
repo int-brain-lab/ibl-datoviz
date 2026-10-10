@@ -131,6 +131,17 @@ complete registered pack; the current sampled deployment cannot establish arbitr
 navigation. Define absent-section behavior or supply complete assets before promoting that route.
 No interpolation or alternative scientific geometry was introduced during these refactors.
 
+## October 10 interactive feedback
+
+The first live feedback identified hover emphasis during camera dragging, small Linux high-DPI
+text, scattered sidebar controls, and poor perceived performance. The package now clears/suspends
+hover during gestures, groups the sidebar by task, uses a larger base font, and exposes
+`just review picking --ui-scale 1.5`. Native scripted gesture checks and inspected UI captures
+support this first correction; reviewer acceptance remains open. The combined GUI/pointer
+benchmarks reveal native picking still runs during dragging. See [the handoff](NEXT_STEPS.md)
+for exact measurements, workload limits, and the next engine investigation. This feedback does
+not establish acceptance of the remaining first-batch examples.
+
 ## Feedback loop
 
 For each example, ask the reviewer to evaluate only:

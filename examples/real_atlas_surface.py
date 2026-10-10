@@ -17,10 +17,14 @@ def main() -> int:
     parser.add_argument('--surface-opacity', type=float, default=1.0)
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
     parser.add_argument('--frames', type=int, default=0)
+    parser.add_argument('--ui-scale', type=float, default=1.0, help='GUI size multiplier')
     args = parser.parse_args()
 
     with AtlasViewer.from_asset_set(
-        args.asset_root, mapping=args.mapping, surface_opacity=args.surface_opacity
+        args.asset_root,
+        mapping=args.mapping,
+        surface_opacity=args.surface_opacity,
+        ui_scale=args.ui_scale,
     ) as viewer:
         if args.offscreen:
             rgba = viewer.render_offscreen(args.offscreen)

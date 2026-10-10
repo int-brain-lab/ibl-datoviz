@@ -16,11 +16,13 @@ def main() -> int:
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
     parser.add_argument('--frames', type=int, default=0)
+    parser.add_argument('--ui-scale', type=float, default=1.0, help='GUI size multiplier')
     args = parser.parse_args()
 
     with AtlasViewer.from_asset_set(
         args.asset_root,
         mapping=args.mapping,
+        ui_scale=args.ui_scale,
         enable_interaction=True,
     ) as viewer:
         if args.offscreen:

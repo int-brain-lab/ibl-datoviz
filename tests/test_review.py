@@ -156,12 +156,14 @@ def test_run_all_uses_separate_processes_and_stops_on_failure(tmp_path, monkeypa
             raise review.subprocess.CalledProcessError(1, command)
 
     monkeypatch.setattr(review, 'run', run)
-    monkeypatch.setattr(review.sys, 'argv', ['review.py', 'run', '--frames', '3'])
+    monkeypatch.setattr(
+        review.sys, 'argv', ['review.py', 'run', '--frames', '3', '--ui-scale', '1.5']
+    )
     assert review.main() == 1
     assert len(commands) == 2
     assert Path(commands[0][1]).name == 'real_atlas_surface.py'
     assert Path(commands[1][1]).name == 'atlas_mapping_switch.py'
-    assert commands[0][-2:] == ['--frames', 3]
+    assert commands[0][-4:] == ['--frames', 3, '--ui-scale', 1.5]
 
 
 @pytest.mark.parametrize('command', ['doctor', 'test', 'run'])
