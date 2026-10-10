@@ -17,6 +17,8 @@ A matched Debug comparison uses the previous library (`7773638736c029c0b496bd5af
 
 The benchmark now reports GPU query backend/download/decode phases, Python surface emphasis updates, native color setter costs and call counts, and the exact loaded library path/SHA256. Setter and emphasis distributions describe actual calls, while native query phase timings are per measured frame; these denominators must not be added together. Benchmark subprocesses remain marked as automated and use the app's uncapped default instead of an invalid zero FPS environment override.
 
+Moving-pointer profiling uses the same D070 asset, Debug library SHA256 `aeb806ed6852a698a6db03a4b4f3113a3ff259dc60013a5fbfa83f6055751568`, three fresh-process repeats, 30 warmup and 120 measured frames. At 900×720, moving hover executes 120 source-view queries and 35 color setter calls per repeat. Query time is 6.15 ms/frame, including 5.89 ms/frame backend, 0.0057 ms/frame download and 0.0017 ms/frame decode. Surface emphasis is 6.54 ms per call; the color setter is only 0.18 ms per call. The isolated emphasis scenario is 1.92 ms per call with a 0.15 ms setter, so the catalog-backed GUI path and NumPy mask/recolor work need investigation alongside GPU query execution. Drag still executes zero queries and has no hover-hit frames. The 1800×1440 repeat is recorded separately; timings depend on resolution and desktop scheduling and are not portable thresholds. Reports/logs are `build/interaction-performance-stationary{,-large}.{json,log}`.
+
 The sidebar default grows from 340 to 400 logical pixels and scales with the existing UI scale. Native tree row tooltips show the complete acronym and wrapped full name, preserving readable labels on narrow trees. The UI still needs the user's live design acceptance; startup and screenshot checks do not establish subjective interaction quality.
 
 Validation against the published source: **264 package tests, zero skips**, with native offscreen rendering and both real asset roots; **61 native scene-interaction tests and 20 GUI-filter tests, zero skips**; all six real-data examples pass three-frame desktop startup at 1.5× scale. Ruff, strict MkDocs, locked installation, and whitespace checks pass. The native build has no compiler warnings. Logs remain in ignored `build/final-{tests,review,docs}.log` and the native build/test logs. macOS rendering and distributable-artifact verification remain separate release gates.
@@ -133,7 +135,7 @@ The following command reproduces the combined ladder after configuring the helpe
 uv run --frozen python tools/benchmark_atlas_3d.py build/atlas-d070/mesh-pack --regions build/atlas-d070/regions.json --scenarios baseline gui_idle gui_pointer_hover gui_pointer_drag --repeats 3 --warmup 30 --frames 120 --width 1800 --height 1440 --json build/interaction-performance-repeat.json
 ```
 
-## Native gesture scheduling and automation placement — October 10, 2026
+## Native gesture scheduling and automation placement — earlier October 10 checkpoint
 
 The explicitly authorized Datoviz follow-up is committed locally in `6a133d710` (X11 window
 instance override and native test-runner marking) and `64cc670ed` (gesture-aware hover queries).
