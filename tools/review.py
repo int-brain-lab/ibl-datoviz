@@ -78,15 +78,19 @@ def native_library(checkout):
     )
 
 
-def runtime(checkout):
+def runtime(checkout, *, strict=False):
     """Pair the checkout's facade with its native build and existing runtime environment."""
     checkout = checkout.expanduser().resolve()
     if not (checkout / 'datoviz' / '__init__.py').is_file():
         raise ValueError(f'Not a Datoviz source checkout: {checkout}')
     expected = source_pin('datoviz')
     actual = git_revision(checkout)
+    print(f'Datoviz checkout revision: {actual}\nPinned revision: {expected}', flush=True)
     if actual != expected:
-        raise ValueError(f'Datoviz HEAD is {actual}; this source snapshot tests {expected}')
+        message = f'Datoviz HEAD is {actual}; this source snapshot tests {expected}'
+        if strict:
+            raise ValueError(message)
+        print(f'Warning: {message}. Continuing with the local checkout.', file=sys.stderr)
     library = native_library(checkout)
     environment = os.environ.copy()
     paths = [str(REPOSITORY), str(checkout)]
@@ -104,9 +108,9 @@ def runtime(checkout):
     return prefix, environment, library
 
 
-def doctor(checkout):
+def doctor(checkout, *, strict=False):
     """Check the loaded facade/library rather than trusting installed version metadata."""
-    prefix, environment, library = runtime(checkout)
+    prefix, environment, library = runtime(checkout, strict=strict)
     code = (
         'import json, datoviz; import datoviz._ctypes as native; '
         'print(json.dumps([datoviz.__file__, native.dvz._name]))'
@@ -275,6 +279,18 @@ def setup_review(checkout, *, tests_only=False):
         print('Review: uv run --frozen tools/review.py run')
 
 
+def test_arguments(arguments, *, strict=False):
+    """Read a leading strict flag through the recipe's pytest argument separator."""
+    if arguments and arguments[0] == '--':
+        arguments = arguments[1:]
+    if arguments and arguments[0] == '--strict':
+        strict = True
+        arguments = arguments[1:]
+    if arguments and arguments[0] == '--':
+        arguments = arguments[1:]
+    return strict, arguments
+
+
 def main():
     """Prepare once, then run unit/native tests or focused real-data examples."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -284,7 +300,9 @@ def main():
         '--datoviz', type=Path, required=True, help='separately built Datoviz checkout'
     )
     setup.add_argument('--tests-only', action='store_true', help='skip real-data downloads/builds')
-    commands.add_parser('doctor', help='report and check the configured local Datoviz pairing')
+    diagnosis = commands.add_parser(
+        'doctor', help='report and check the configured local Datoviz pairing'
+    )
     tests = commands.add_parser(
         'test', help='run pytest with cached fixtures and native environment'
     )
@@ -294,13 +312,19 @@ def main():
     review.add_argument(
         '--frames', type=int, default=0, help='zero runs until each window is closed'
     )
+    for command in (diagnosis, tests, review):
+        command.add_argument(
+            '--strict', action='store_true', help='require the pinned Datoviz source revision'
+        )
     args = parser.parse_args()
     try:
         if args.command == 'setup':
             setup_review(args.datoviz, tests_only=args.tests_only)
             return 0
+        if args.command == 'test':
+            args.strict, arguments = test_arguments(args.pytest_args, strict=args.strict)
         checkout = configured_checkout()
-        prefix, environment = doctor(checkout)
+        prefix, environment = doctor(checkout, strict=args.strict)
         if args.command == 'doctor':
             return 0
         if args.command == 'test':
@@ -308,9 +332,6 @@ def main():
                 raise ValueError('Cached fixtures are missing; rerun setup')
             if git_revision(ANATOMY) != source_pin('ibl-anatomy'):
                 raise ValueError('Cached fixture revision differs; rerun setup with a fresh cache')
-            arguments = args.pytest_args
-            if arguments and arguments[0] == '--':
-                arguments = arguments[1:]
             run([*prefix, sys.executable, '-m', 'pytest', *(arguments or ['-q'])], env=environment)
         else:
             if not ASSETS.exists() or not VOLUME.exists():

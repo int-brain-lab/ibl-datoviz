@@ -20,7 +20,7 @@ annotation remain outside this package.
 
 The contributor workflow is supported on macOS and Linux. Install [`uv`](https://docs.astral.sh/uv/)
 and [`just`](https://just.systems/), then clone and build Datoviz separately using the source
-revision pinned by this checkout. Datoviz also needs a working Vulkan runtime (MoltenVK on macOS).
+checkout you want to review. Datoviz also needs a working Vulkan runtime (MoltenVK on macOS).
 This project does not build or switch the Datoviz checkout for you.
 
 From the root of this repository, prepare the local pairing and review data once:
@@ -29,7 +29,7 @@ From the root of this repository, prepare the local pairing and review data once
 just setup "$HOME/GIT/Viz/datoviz"
 ```
 
-`just setup` checks the pinned Datoviz source revision and the loaded Python/native paths, then
+`just setup` reports the local and pinned Datoviz revisions and checks loaded Python/native paths, then
 fetches the pinned test fixtures and prepares the verified D070 surface and 50 um slice assets.
 The initial setup needs network access; later runs reuse the verified cache. For tests without the larger
 real-data downloads, use `just setup-tests "$HOME/GIT/Viz/datoviz"` instead.
@@ -41,6 +41,9 @@ just test
 just review picking
 just review
 ```
+
+Local commands warn and continue if the Datoviz revision differs from the pin. Use `just doctor --strict`,
+`just test --strict`, or `just review all --strict` to require the tested baseline.
 
 `just review` opens six examples in sequence; close a window to continue. Choose `surface`,
 `mapping`, `picking`, `probe`, `firing-rate`, or `slices` to open one. `just doctor` checks which

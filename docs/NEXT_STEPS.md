@@ -29,6 +29,26 @@ Datoviz distribution metadata remains `0.4.0rc2`. Live interaction review, macOS
 Python 3.13, and distributable artifact verification remain outstanding. The
 October 5 validation and benchmarks below retain their original baseline scope.
 
+## Local checkout workflow — October 10, 2026
+
+Local setup, doctor, tests, and review now use the configured Datoviz checkout,
+report its revision and the locked install's pin, and warn rather than fail when
+they differ. Markdown-only upstream commits no longer require package pin updates.
+`just doctor --strict`, `just test --strict [pytest arguments]`, and
+`just review all --strict` retain exact-revision enforcement for baseline validation.
+The loaded Python facade and native-library checks, pinned anatomy fixture checks,
+and locked installs/CI are preserved. This checks runtime paths, not the native
+library's build revision; maintain the engine build separately when needed.
+
+Validation: **255 tests pass with zero skips** using both real asset roots and the
+native runtime. Regression tests cover local mismatch warnings, strict rejection
+before launch for all three commands, matching strict revisions, wrong loaded
+paths, and pytest expression forwarding through the recipe separator. `just --dump`,
+recipe discovery/formatting, strict doctor/test forwarding, Ruff, strict MkDocs,
+and diff checks pass. All six examples pass three-frame desktop startup/cleanup
+with `just review all --strict --frames 3`; the log is
+`build/local-review-strict.log`. Live interaction and macOS review remain open.
+
 ## Baseline and completed work
 
 The original audited package revision was `e8bf9f5` on `main`, version `0.2.0.dev0`. Focused follow-up commits are recorded below; the January v0.1 checkout and its removed object API are obsolete. The Datoviz baseline is `066a7451195b38c5e95dcf7af7383b89ec5ec903`, and was the package pin for that audit. The anatomy revision is `119457b68fae6967c54d549d9d44e4a4e49c74f8`.

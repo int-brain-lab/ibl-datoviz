@@ -8,8 +8,10 @@ GUI handles, callback subscriptions, and worker shutdown must keep their documen
 ## Contributor commands (macOS and Linux)
 
 Run commands from this repository. `just` lists recipes; `uv` manages the locked environment.
-Datoviz is cloned, built, and configured separately. Its source revision must match the immutable
-pin in `pyproject.toml` and `uv.lock`; do not build it, switch its revision, or change that pin just
+Datoviz is cloned, built, and configured separately. Local setup/test/review commands use the
+configured checkout and warn when its revision differs from the immutable pin in `pyproject.toml`
+and `uv.lock`. Use `just doctor --strict`, `just test --strict`, and `just review all --strict`
+for baseline validation. Do not build Datoviz, switch its revision, or change the pin just
 to make a package check pass. Baseline upgrades require an explicit decision and compatibility
 validation; the current baseline is recorded in `docs/NEXT_STEPS.md`.
 

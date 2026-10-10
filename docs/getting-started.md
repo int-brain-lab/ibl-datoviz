@@ -2,7 +2,7 @@
 
 ## Contributor workflow
 
-Datoviz is a separate prerequisite: clone and build its tested source baseline and establish its
+Datoviz is a separate prerequisite: clone and build your chosen local checkout and establish its
 working Vulkan/MoltenVK environment. This package does not build or change that native checkout.
 Install `just` and `uv` on your machine. On macOS, `brew install just uv` installs both; on
 Linux, use their official [just installation instructions](https://github.com/casey/just#installation)
@@ -18,7 +18,7 @@ just review
 `just setup` installs the locked development dependencies, records your Datoviz path in ignored
 `build/review/config.json`, discovers its native build (`libdatoviz.dylib` on macOS, `libdatoviz.so`
 on Linux), and checks the actual imported Python module
-and loaded library against the tested pairing. If the checkout has `.envrc` and `direnv` is installed,
+and loaded library against the configured checkout. If the checkout has `.envrc` and `direnv` is installed,
 it uses `direnv exec` automatically; allow/configure that environment while setting up Datoviz.
 Otherwise it inherits your already working runtime environment. For these recipes, no package-side
 `PYTHONPATH`, `DATOVIZ_LIBRARY`, adjacent anatomy checkout, or Fractal connection is required.
@@ -53,6 +53,25 @@ just doctor
 just test -q tests/test_probe_replacement.py
 ```
 
+Local setup, doctor, tests, and review use your configured Datoviz checkout. Each command reports
+its revision and the installed pin; a difference produces a warning and continues. A Markdown-only
+Datoviz commit therefore needs no package pin update. Keep the native build compatible with the
+checkout's Python bindings when changing engine code; the helper checks loaded paths, not the
+native library's build revision.
+
+To validate the pinned baseline, require an exact revision match:
+
+```bash
+just doctor --strict
+just test --strict tests/test_review.py -q
+just review all --strict --frames 3
+```
+
+Put `--strict` before pytest arguments for `just test`. The helper equivalents are
+`tools/review.py doctor --strict`, `tools/review.py test --strict -- <pytest arguments>`,
+and `tools/review.py run all --strict`. Installs and CI continue to use the locked source pin;
+update it only when deliberately recording a tested baseline.
+
 Run `just` to list commands, `just lint` for Ruff, and `just docs` for a strict documentation build.
 Quote a checkout path containing spaces, for example `just setup "$HOME/GIT/Datoviz checkout"`.
 Run `just setup` with the checkout path again after dependency pins change; a cache from a different
@@ -69,8 +88,8 @@ uv run --frozen tools/review.py run
 ```
 
 Each example runs in its own process. A failure stops the sequence with its error rather than
-continuing through broken examples. Source identity mismatches, missing libraries, corrupt cached
-bytes, and blocked Datoviz environments fail explicitly. The helper does not approve `.envrc`,
+continuing through broken examples. Strict-mode Datoviz revision mismatches, anatomy revision mismatches, missing libraries, corrupt
+cached bytes, and blocked Datoviz environments fail explicitly. The helper does not approve `.envrc`,
 switch engine branches, or publish generated images.
 
 The individual installation/materialization commands below remain useful for custom data roots and

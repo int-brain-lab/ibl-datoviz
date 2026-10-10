@@ -40,11 +40,44 @@ def test_runtime_detects_mac_pairing_and_preserves_existing_environment(checkout
     assert environment['IBL_ANATOMY_FIXTURE_ROOT'] == str(review.ANATOMY / 'tests' / 'fixtures')
 
 
-def test_runtime_rejects_wrong_source_revision(checkout, monkeypatch):
+def test_runtime_warns_and_uses_local_checkout(checkout, monkeypatch, capsys):
+    root, library = checkout
+    monkeypatch.setattr(review, 'git_revision', lambda _root: 'another-revision')
+    _prefix, environment, detected = review.runtime(root)
+    assert detected == library
+    assert environment['PYTHONPATH'].split(review.os.pathsep)[1] == str(root)
+    output = capsys.readouterr()
+    assert 'Datoviz checkout revision: another-revision' in output.out
+    assert 'Pinned revision: tested-revision' in output.out
+    assert 'Warning:' in output.err
+    assert 'Continuing with the local checkout' in output.err
+
+
+def test_runtime_rejects_wrong_source_revision_in_strict_mode(checkout, monkeypatch):
     root, _library = checkout
     monkeypatch.setattr(review, 'git_revision', lambda _root: 'another-revision')
     with pytest.raises(ValueError, match='this source snapshot tests'):
-        review.runtime(root)
+        review.runtime(root, strict=True)
+
+
+def test_runtime_accepts_matching_revision_in_strict_mode(checkout, capsys):
+    root, library = checkout
+    assert review.runtime(root, strict=True)[2] == library
+    assert not capsys.readouterr().err
+
+
+def test_doctor_rejects_wrong_facade_even_with_unpinned_checkout(checkout, monkeypatch):
+    root, library = checkout
+    monkeypatch.setattr(review, 'git_revision', lambda _root: 'another-revision')
+    monkeypatch.setattr(
+        review.subprocess,
+        'run',
+        lambda *_args, **_kwargs: SimpleNamespace(
+            stdout=json.dumps(['/stale/datoviz/__init__.py', str(library)])
+        ),
+    )
+    with pytest.raises(ValueError, match='Unexpected imported Datoviz module'):
+        review.doctor(root)
 
 
 def test_doctor_rejects_native_loader_fallback(checkout, monkeypatch):
@@ -109,7 +142,9 @@ def test_setup_failure_preserves_previous_configuration(tmp_path, monkeypatch):
 
 def test_run_all_uses_separate_processes_and_stops_on_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(review, 'configured_checkout', lambda: tmp_path)
-    monkeypatch.setattr(review, 'doctor', lambda _root: ([], {'runtime': 'configured'}))
+    monkeypatch.setattr(
+        review, 'doctor', lambda _root, **_kwargs: ([], {'runtime': 'configured'})
+    )
     monkeypatch.setattr(review, 'ASSETS', tmp_path)
     monkeypatch.setattr(review, 'VOLUME', tmp_path)
     commands = []
@@ -127,3 +162,39 @@ def test_run_all_uses_separate_processes_and_stops_on_failure(tmp_path, monkeypa
     assert Path(commands[0][1]).name == 'real_atlas_surface.py'
     assert Path(commands[1][1]).name == 'atlas_mapping_switch.py'
     assert commands[0][-2:] == ['--frames', 3]
+
+
+@pytest.mark.parametrize('command', ['doctor', 'test', 'run'])
+def test_strict_commands_reject_revision_before_launch(checkout, monkeypatch, command):
+    root, _library = checkout
+    monkeypatch.setattr(review, 'configured_checkout', lambda: root)
+    monkeypatch.setattr(review, 'git_revision', lambda _root: 'another-revision')
+    monkeypatch.setattr(review.sys, 'argv', ['review.py', command, '--strict'])
+    assert review.main() == 1
+
+
+@pytest.mark.parametrize('strict', [False, True])
+def test_recipe_test_arguments_preserve_pytest_expression(tmp_path, monkeypatch, strict):
+    monkeypatch.setattr(review, 'configured_checkout', lambda: tmp_path)
+    (tmp_path / 'tests' / 'fixtures').mkdir(parents=True)
+    monkeypatch.setattr(review, 'ANATOMY', tmp_path)
+    monkeypatch.setattr(review, 'git_revision', lambda _root: 'anatomy-revision')
+    monkeypatch.setattr(review, 'source_pin', lambda _name: 'anatomy-revision')
+    checked = []
+    launched = []
+
+    def doctor(_root, *, strict=False):
+        checked.append(strict)
+        return [], {}
+
+    monkeypatch.setattr(review, 'doctor', doctor)
+    monkeypatch.setattr(review, 'run', lambda command, **_kwargs: launched.append(command))
+    pytest_args = ['tests/test_probe.py', '-q', '-k', 'ownership or copied']
+    monkeypatch.setattr(
+        review.sys,
+        'argv',
+        ['review.py', 'test', '--', *(['--strict'] if strict else []), *pytest_args],
+    )
+    assert review.main() == 0
+    assert checked == [strict]
+    assert launched == [[review.sys.executable, '-m', 'pytest', *pytest_args]]

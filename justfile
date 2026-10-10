@@ -16,8 +16,8 @@ setup-tests datoviz:
     uv run --frozen tools/review.py setup --datoviz "$1" --tests-only
 
 # Check the remembered Datoviz source and loaded native library.
-doctor:
-    uv run --frozen tools/review.py doctor
+doctor *args:
+    uv run --frozen tools/review.py doctor "$@"
 
 # Run the test suite, or forward a test path and pytest options.
 test *args:

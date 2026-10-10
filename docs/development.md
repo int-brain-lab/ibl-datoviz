@@ -13,7 +13,9 @@ just test
 The [contributor workflow](getting-started.md#contributor-workflow) manages fixtures and the local
 Datoviz pairing without an adjacent anatomy checkout. Use `just setup /path/to/datoviz` to prepare
 real review data, then `just review` for interactive review. `just doctor` checks the remembered pairing;
-`just test tests/test_probe_replacement.py -q` forwards pytest arguments unchanged. Ordinary pytest also accepts
+`just test tests/test_probe_replacement.py -q` forwards pytest arguments unchanged. Local commands
+report and warn about Datoviz revision differences while using the configured checkout. For pinned
+baseline validation use `just doctor --strict`, `just test --strict`, and `just review all --strict`. Ordinary pytest also accepts
 `IBL_ANATOMY_FIXTURE_ROOT`; CI retains its pinned adjacent fixture checkout.
 
 ## Build the documentation
