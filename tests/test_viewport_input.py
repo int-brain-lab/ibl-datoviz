@@ -1,6 +1,6 @@
+import ctypes
 from types import SimpleNamespace
 
-import datoviz as dvz
 import pytest
 
 from ibl_datoviz import AtlasMesh, AtlasViewer
@@ -10,13 +10,13 @@ from tests.test_atlas import FIXTURE, FakeDatoviz
 
 
 class FakeViewportDatoviz(FakeDatoviz):
-    DVZ_INPUT_EVENT_POINTER = dvz.DVZ_INPUT_EVENT_POINTER
-    DVZ_POINTER_EVENT_PRESS = dvz.DVZ_POINTER_EVENT_PRESS
-    DVZ_POINTER_EVENT_RELEASE = dvz.DVZ_POINTER_EVENT_RELEASE
-    DVZ_POINTER_EVENT_MOVE = dvz.DVZ_POINTER_EVENT_MOVE
-    DVZ_POINTER_EVENT_DRAG_START = dvz.DVZ_POINTER_EVENT_DRAG_START
-    DVZ_POINTER_EVENT_DRAG = dvz.DVZ_POINTER_EVENT_DRAG
-    DVZ_POINTER_EVENT_DRAG_STOP = dvz.DVZ_POINTER_EVENT_DRAG_STOP
+    DVZ_INPUT_EVENT_POINTER = 1
+    DVZ_POINTER_EVENT_PRESS = 1
+    DVZ_POINTER_EVENT_RELEASE = 0
+    DVZ_POINTER_EVENT_MOVE = 2
+    DVZ_POINTER_EVENT_DRAG_START = 10
+    DVZ_POINTER_EVENT_DRAG = 11
+    DVZ_POINTER_EVENT_DRAG_STOP = 12
 
     def dvz_hover_clear(self, _hover):
         self.mesh_hover = None
@@ -32,6 +32,13 @@ class FakeViewportDatoviz(FakeDatoviz):
         self.calls.append(('unsubscribe', subscription))
         self.callback = None
         return True
+
+
+class FakeAppConfig(ctypes.Structure):
+    _fields_ = [('font_ui_size_px', ctypes.c_float)]
+
+
+dvz = FakeViewportDatoviz
 
 
 def emit(adapter, event_type):
@@ -112,7 +119,7 @@ def test_failed_subscription_leaves_cleanup_safe(viewer):
 def test_gui_font_size_is_configured_before_app_creation(viewer, monkeypatch):
     configured = []
     viewer.catalog = object()
-    monkeypatch.setattr(viewer.dvz, 'dvz_app_config', lambda: dvz.DvzAppConfig(), raising=False)
+    monkeypatch.setattr(viewer.dvz, 'dvz_app_config', FakeAppConfig, raising=False)
 
     def create_app(_scene, config):
         configured.append(config._obj.font_ui_size_px)

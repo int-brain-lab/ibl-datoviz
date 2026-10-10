@@ -23,6 +23,8 @@ The sidebar default grows from 340 to 400 logical pixels and scales with the exi
 
 Validation against the published source: **264 package tests, zero skips**, with native offscreen rendering and both real asset roots; **61 native scene-interaction tests and 20 GUI-filter tests, zero skips**; all six real-data examples pass three-frame desktop startup at 1.5× scale. Ruff, strict MkDocs, locked installation, and whitespace checks pass. The native build has no compiler warnings. Logs remain in ignored `build/final-{tests,review,docs}.log` and the native build/test logs. macOS rendering and distributable-artifact verification remain separate release gates.
 
+The first push exposed a native-library dependency during collection of the new viewport unit tests on both CI Python versions. Their fake input constants and ctypes app configuration are now self-contained. A local CI-style run without the native library passes **257 tests with seven expected native/real-asset skips**; the viewport tests themselves run and pass. The configured native suite remains the rendering evidence.
+
 ## Initial baseline upgrade — October 10, 2026
 
 At the user's request, the Datoviz pin and lock now select current main
