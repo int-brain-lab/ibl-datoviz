@@ -7,6 +7,19 @@ Remaining work is live interaction review, complete registered-section coverage,
 of eventual distributable RC3/anatomy artifacts. The October 5 package changes targeted the frozen pre-RC3 Datoviz baseline;
 no engine source changes were made. The current source pairing is recorded below.
 
+## GPU-independent Python 3.13 validation — October 11, 2026
+
+While NVIDIA driver/library compatibility awaits reboot, a separate ignored environment
+(`build/pre-reboot-py313`) validates the locked source snapshot on Python 3.13.3 with
+NumPy 2.3.5. **263 CPU tests pass**, with two real-asset tests skipped because their
+asset-root environment variables were deliberately unset. The five native offscreen tests
+in `tests/test_smoke.py` were explicitly excluded; this run supplies no GPU or rendering
+evidence. Synthetic fixtures use the configured pinned anatomy fixture cache. Ruff,
+strict MkDocs, and whitespace checks pass. Logs are `build/pre-reboot-py313-{sync,tests,docs}.log`.
+The Python 3.13 CPU compatibility check is now covered locally; Python 3.13 native rendering,
+macOS, live design acceptance, and distributable dependency verification remain open.
+No Datoviz build, source, dependency pin, or primary development environment was changed.
+
 ## Recoloring performance and pre-reboot review — October 11, 2026
 
 Python surface emphasis now reuses a bounded descendant index on each retained ontology model. Vertex membership is tested against unique absolute mapping IDs and expanded through an owned inverse array, rather than sorting the full vertex-ID array for each update. Integer row indices avoid repeated boolean-index scans during color reads and writes. Derived arrays still invalidate on mapping/canonical-color changes, and replacement tree models get independent descendant indexes. The first use pays a one-time index preparation cost; steady-state measurements warm this up. The inverse adds approximately 3.9 MB for D070 on a 64-bit host. Public API, signed selection identity, color arithmetic and native ownership contracts are preserved.
