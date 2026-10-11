@@ -615,6 +615,7 @@ def test_surface_emphasis_reuses_and_invalidates_derived_arrays(mesh):
 
         viewer._set_hovered_region_ids((997,))
         initial_mapping_ids = viewer._surface_mapping_ids_cache
+        initial_lookup = viewer._surface_mapping_lookup_cache
         initial_work = viewer._surface_emphasis_work
         assert initial_mapping_ids is not None
         assert initial_work is not None
@@ -622,6 +623,7 @@ def test_surface_emphasis_reuses_and_invalidates_derived_arrays(mesh):
         viewer._set_hovered_region_ids((-315,))
         assert viewer._surface_base_colors_cache is initial_base
         assert viewer._surface_mapping_ids_cache is initial_mapping_ids
+        assert viewer._surface_mapping_lookup_cache is initial_lookup
         assert viewer._surface_emphasis_work is initial_work
 
         viewer.set_selected_region_ids((-315,))
@@ -633,11 +635,22 @@ def test_surface_emphasis_reuses_and_invalidates_derived_arrays(mesh):
         viewer.set_mapping('beryl')
         assert viewer._surface_base_colors_cache is not initial_base
         assert viewer._surface_mapping_ids_cache is None
+        assert viewer._surface_mapping_lookup_cache is None
         assert viewer._surface_dimmed_colors_cache is None
         assert viewer._surface_emphasis_work is None
 
         viewer._set_hovered_region_ids((997,))
         assert viewer._surface_mapping_ids_cache is not initial_mapping_ids
+
+
+@pytest.mark.parametrize('mapping', ['allen', 'beryl', 'cosmos'])
+def test_surface_region_mask_preserves_per_vertex_mapping_membership(mesh, mapping):
+    with AtlasViewer(mesh, datoviz=FakeDatoviz(), mapping=mapping) as viewer:
+        mapping_ids = np.abs(mesh.mapping_ids(mapping))
+        for ids in ((), (0,), (997,), (315, 997), (99999999,)):
+            np.testing.assert_array_equal(
+                viewer._surface_region_mask(ids), np.isin(mapping_ids, ids)
+            )
 
 
 def test_region_data_replaces_surface_emphasis_base_cache(mesh):
@@ -954,6 +967,18 @@ def test_region_tree_model_preserves_signed_identity_and_canonical_colors():
     assert model.describe(8) == 'grey — Basic cell groups and regions'
     for region_id in model.region_ids:
         assert decode_region_key(encode_region_key(int(region_id))) == region_id
+
+
+def test_region_expansion_preserves_nonmember_parents_unknown_ids_and_hemispheres():
+    model = AtlasTreeModel.from_catalog(open_region_catalog(REGIONS), 'allen')
+    model = replace(model, mapping_members=np.array([False, True]))
+    assert model.expanded_logical_ids(()) == ()
+    assert model.expanded_logical_ids((-997,)) == (8, 997)
+    assert model.expanded_logical_ids((997, -997, 8, 0, 12345)) == (8, 997, 12345)
+    assert model.expanded_logical_ids((-8,)) == (8,)
+    replacement = replace(model, mapping_members=np.array([True, False]))
+    assert replacement.expanded_logical_ids((997,)) == (997,)
+    assert replacement.expanded_logical_ids((-8,)) == (8,)
 
 
 def test_viewer_uploads_catalog_to_one_retained_tree_batch(mesh):

@@ -159,6 +159,9 @@ class AtlasViewer:
         self._last_surface_emphasis: tuple[tuple[int, ...], tuple[int, ...]] | None = None
         self._surface_base_colors_cache: NDArray[np.uint8] | None = None
         self._surface_mapping_ids_cache: NDArray[np.int64] | None = None
+        self._surface_mapping_lookup_cache: (
+            tuple[NDArray[np.int64], NDArray[np.intp]] | None
+        ) = None
         self._surface_dimmed_colors_cache: NDArray[np.uint8] | None = None
         self._surface_emphasis_work: NDArray[np.uint8] | None = None
         self._surface_alpha_mode: int | None = None
@@ -1100,14 +1103,14 @@ class AtlasViewer:
         if state == self._last_surface_emphasis:
             return
         self._update_surface_alpha_mode()
-        base_colors, mapping_ids = self._surface_emphasis_inputs()
+        base_colors, _ = self._surface_emphasis_inputs()
         if self._surface_emphasis_work is None:
             self._surface_emphasis_work = np.empty_like(base_colors)
         colors = self._surface_emphasis_work
         np.copyto(colors, base_colors)
         selected_mask = None
         if selected_ids:
-            selected_mask = np.isin(mapping_ids, selected_ids)
+            selected_mask = self._surface_region_mask(selected_ids)
             if self._surface_dimmed_colors_cache is None:
                 dimmed = base_colors.astype(np.float32)
                 dimmed[:, 3] *= self.selection_context_opacity
@@ -1115,17 +1118,19 @@ class AtlasViewer:
                     np.rint(dimmed), dtype=np.uint8
                 )
             np.copyto(colors, self._surface_dimmed_colors_cache)
-            colors[selected_mask] = base_colors[selected_mask]
-            colors[selected_mask, 3] = 255
+            selected_indices = np.flatnonzero(selected_mask)
+            colors[selected_indices] = base_colors[selected_indices]
+            colors[selected_indices, 3] = 255
         if hovered_ids:
-            hover_mask = np.isin(mapping_ids, hovered_ids)
-            hovered_rgb = 0.72 * base_colors[hover_mask, :3].astype(np.float32) + 0.28 * 255
-            colors[hover_mask, :3] = np.rint(hovered_rgb).astype(np.uint8)
+            hover_mask = self._surface_region_mask(hovered_ids)
+            hover_indices = np.flatnonzero(hover_mask)
+            hovered_rgb = 0.72 * base_colors[hover_indices, :3].astype(np.float32) + 0.28 * 255
+            colors[hover_indices, :3] = np.rint(hovered_rgb).astype(np.uint8)
             if selected_mask is None:
-                colors[hover_mask, 3] = np.maximum(base_colors[hover_mask, 3], 235)
+                colors[hover_indices, 3] = np.maximum(base_colors[hover_indices, 3], 235)
             else:
-                selected_hover_mask = hover_mask & selected_mask
-                colors[selected_hover_mask, 3] = 255
+                selected_hover_indices = hover_indices[selected_mask[hover_indices]]
+                colors[selected_hover_indices, 3] = 255
         self._check(
             self.dvz.dvz_visual_set_data(self.mesh, 'color', colors),
             'selection and hover color update',
@@ -1155,6 +1160,7 @@ class AtlasViewer:
         """Invalidate derived surface styling after canonical color or mapping changes."""
         self._surface_base_colors_cache = base_colors
         self._surface_mapping_ids_cache = None
+        self._surface_mapping_lookup_cache = None
         self._surface_dimmed_colors_cache = None
         self._surface_emphasis_work = None
         self._last_surface_emphasis = None
@@ -1168,6 +1174,17 @@ class AtlasViewer:
                 np.abs(self.mesh_data.mapping_ids(self.mapping)), dtype=np.int64
             )
         return self._surface_base_colors_cache, self._surface_mapping_ids_cache
+
+    def _surface_region_mask(self, region_ids: tuple[int, ...]) -> NDArray[np.bool_]:
+        """Test unique mapped IDs before expanding the result to all surface vertices."""
+        if self._surface_mapping_lookup_cache is None:
+            _, mapping_ids = self._surface_emphasis_inputs()
+            unique_ids, inverse = np.unique(mapping_ids, return_inverse=True)
+            self._surface_mapping_lookup_cache = (
+                np.array(unique_ids, copy=True), np.array(inverse, dtype=np.intp, copy=True)
+            )
+        unique_ids, inverse = self._surface_mapping_lookup_cache
+        return np.isin(unique_ids, region_ids)[inverse]
 
     def _sync_selection_highlight(
         self,

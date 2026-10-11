@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -116,22 +117,28 @@ class AtlasTreeModel:
                 included.append(index)
         return np.ascontiguousarray(included, dtype=np.uint32)
 
-    def expanded_logical_ids(self, region_ids: tuple[int, ...]) -> tuple[int, ...]:
-        """Expand selected ontology rows to selectable descendants, ignoring hemisphere."""
-        selected = {abs(int(region_id)) for region_id in region_ids if region_id}
-        if not selected:
-            return ()
-        included = set(selected)
+    @cached_property
+    def _logical_descendants(self) -> Mapping[int, frozenset[int]]:
+        """Index the retained tree once rather than walking it on every hover update."""
+        descendants: dict[int, set[int]] = {}
         for index, region_id in enumerate(self.region_ids):
             if not self.mapping_members[index]:
                 continue
             parent_index = index
             while parent_index != ROOT_PARENT:
                 ancestor = abs(int(self.region_ids[parent_index]))
-                if ancestor in selected:
-                    included.add(abs(int(region_id)))
-                    break
+                descendants.setdefault(ancestor, set()).add(abs(int(region_id)))
                 parent_index = int(self.parents[parent_index])
+        return MappingProxyType({key: frozenset(value) for key, value in descendants.items()})
+
+    def expanded_logical_ids(self, region_ids: tuple[int, ...]) -> tuple[int, ...]:
+        """Expand selected ontology rows to selectable descendants, ignoring hemisphere."""
+        selected = {abs(int(region_id)) for region_id in region_ids if region_id}
+        if not selected:
+            return ()
+        included = set(selected)
+        for region_id in selected:
+            included.update(self._logical_descendants.get(region_id, ()))
         return tuple(sorted(included))
 
     def describe(self, region_id: int) -> str:
