@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import cProfile
 import ctypes
 import hashlib
 import json
 import os
 import platform
+import pstats
 import random
 import resource
 import subprocess
@@ -199,6 +201,47 @@ def _gpu_description() -> str | None:
     return '; '.join(line.strip() for line in result.stdout.splitlines() if line.strip()) or None
 
 
+def _gpu_diagnostics() -> dict:
+    """Record driver health and Vulkan inventory without claiming a selected device."""
+    report = {
+        'driver_environment': {
+            name: os.environ[name]
+            for name in ('VK_DRIVER_FILES', 'VK_ICD_FILENAMES', 'DRI_PRIME')
+            if name in os.environ
+        }
+    }
+    for name, command in (
+        ('nvidia_smi', ['nvidia-smi', '--query-gpu=name,driver_version', '--format=csv,noheader']),
+        ('vulkan_inventory', ['vulkaninfo', '--summary']),
+    ):
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
+            report[name] = {
+                'returncode': result.returncode,
+                'stdout': result.stdout.strip(),
+                'stderr': result.stderr.strip(),
+            }
+        except (OSError, subprocess.TimeoutExpired) as error:
+            report[name] = {'error': str(error)}
+    return report
+
+
+def _emphasis_profile(profile: cProfile.Profile | None) -> list[dict]:
+    if profile is None or not profile.getstats():
+        return []
+    return [
+        {
+            'function': f'{file}:{line}({name})',
+            'calls': values[1],
+            'self_ms': values[2] * 1000,
+            'cumulative_ms': values[3] * 1000,
+        }
+        for (file, line, name), values in sorted(
+            pstats.Stats(profile).stats.items(), key=lambda item: item[1][3], reverse=True
+        )
+    ]
+
+
 def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
     if args.scenario in GUI_SCENARIOS and args.regions is None:
         raise ValueError(f'{args.scenario} requires --regions')
@@ -236,10 +279,14 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
     measuring = [False]
     original_emphasis = viewer._update_surface_emphasis
     original_set_data = dvz.dvz_visual_set_data
+    emphasis_profile = cProfile.Profile() if args.profile_emphasis else None
 
     def profile_emphasis():
         start = perf_counter()
-        original_emphasis()
+        if measuring[0] and emphasis_profile is not None:
+            emphasis_profile.runcall(original_emphasis)
+        else:
+            original_emphasis()
         if measuring[0]:
             emphasis_seconds.append(perf_counter() - start)
 
@@ -439,6 +486,7 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                     else 0
                 ),
                 'requested_present_mode': os.environ.get('DVZ_PRESENT_MODE'),
+                'profile_emphasis': args.profile_emphasis,
             },
             'asset': {
                 'mesh_pack': str(args.mesh_pack.resolve()),
@@ -455,6 +503,7 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'native_library': str(native_library),
                 'native_library_sha256': hashlib.sha256(native_library.read_bytes()).hexdigest(),
                 'gpu': _gpu_description(),
+                'gpu_diagnostics': _gpu_diagnostics(),
                 'git': {
                     'ibl_datoviz': _git_revision(root),
                     'datoviz': _git_revision(Path(dvz.__file__).resolve().parents[1]),
@@ -473,6 +522,7 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'surface_emphasis': _distribution(emphasis_seconds),
                 'surface_color_setter': _distribution(color_setter_seconds),
                 'surface_color_setter_calls': len(color_setter_seconds),
+                'surface_emphasis_profile': _emphasis_profile(emphasis_profile),
             },
             'memory': {
                 'maximum_resident_set_kib': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
@@ -516,6 +566,8 @@ def _run_child(args: argparse.Namespace, scenario: str, repeat: int) -> dict:
     ]
     if args.regions is not None:
         command.extend(('--regions', str(args.regions)))
+    if getattr(args, 'profile_emphasis', False):
+        command.append('--profile-emphasis')
     environment = os.environ.copy()
     environment.update(
         {
@@ -708,6 +760,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument('--width', type=int, default=900)
     parser.add_argument('--height', type=int, default=720)
     parser.add_argument('--json', type=Path)
+    parser.add_argument(
+        '--profile-emphasis', action='store_true',
+        help='record Python emphasis function costs (adds profiling overhead)',
+    )
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--scenario', choices=SCENARIOS, help=argparse.SUPPRESS)
     parser.add_argument('--repeat-index', type=int, default=0, help=argparse.SUPPRESS)

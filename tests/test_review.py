@@ -231,3 +231,23 @@ def test_recipe_test_arguments_preserve_pytest_expression(tmp_path, monkeypatch,
     assert review.main() == 0
     assert checked == [strict]
     assert launched == [[review.sys.executable, '-m', 'pytest', *pytest_args]]
+
+
+def test_benchmark_uses_remembered_assets_and_preserves_arguments(tmp_path, monkeypatch):
+    monkeypatch.setattr(review, 'configured_checkout', lambda: tmp_path)
+    monkeypatch.setattr(review, 'doctor', lambda _root, **_kwargs: (['runtime'], {}))
+    monkeypatch.setattr(review, 'ASSETS', tmp_path / 'assets with spaces')
+    review.ASSETS.mkdir()
+    launched = []
+    monkeypatch.setattr(
+        review, 'run', lambda command, **kwargs: launched.append((command, kwargs['env']))
+    )
+    arguments = ['--scenarios', 'gui_pointer_hover', '--json', 'build/report with spaces.json']
+    monkeypatch.setattr(review.sys, 'argv', ['review.py', 'benchmark', '--', *arguments])
+    assert review.main() == 0
+    command, environment = launched[0]
+    assert command == [
+        'runtime', review.sys.executable, review.REPOSITORY / 'tools' / 'benchmark_atlas_3d.py',
+        review.ASSETS / 'mesh-pack', '--regions', review.ASSETS / 'regions.json', *arguments,
+    ]
+    assert environment['DVZ_WINDOW_INSTANCE'] == 'datoviz-automated'

@@ -30,6 +30,20 @@ def test_distribution_uses_milliseconds():
     assert summary['maximum_ms'] == pytest.approx(3.0)
 
 
+def test_gpu_diagnostics_keep_driver_failures_and_inventory_distinct(monkeypatch):
+    monkeypatch.setenv('VK_DRIVER_FILES', '/selected/driver.json')
+    replies = iter([
+        SimpleNamespace(returncode=18, stdout='', stderr='Driver/library version mismatch'),
+        SimpleNamespace(returncode=0, stdout='GPU0: Intel', stderr=''),
+    ])
+    monkeypatch.setattr(BENCHMARK.subprocess, 'run', lambda *_args, **_kwargs: next(replies))
+    report = BENCHMARK._gpu_diagnostics()
+    assert report['nvidia_smi']['returncode'] == 18
+    assert 'mismatch' in report['nvidia_smi']['stderr']
+    assert report['vulkan_inventory']['stdout'] == 'GPU0: Intel'
+    assert report['driver_environment']['VK_DRIVER_FILES'] == '/selected/driver.json'
+
+
 def test_scenario_summary_preserves_repeat_count():
     runs = [
         {

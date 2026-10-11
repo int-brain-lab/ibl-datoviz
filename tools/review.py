@@ -291,6 +291,48 @@ def test_arguments(arguments, *, strict=False):
     return strict, arguments
 
 
+def run_benchmark(arguments, prefix, environment):
+    """Reuse remembered source/native pairing and D070 assets for fresh-process benchmarks."""
+    if not ASSETS.exists():
+        raise ValueError('Review data is missing; rerun setup without --tests-only')
+    if arguments and arguments[0] == '--':
+        arguments = arguments[1:]
+    environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated'
+    run(
+        [
+            *prefix, sys.executable, REPOSITORY / 'tools' / 'benchmark_atlas_3d.py',
+            ASSETS / 'mesh-pack', '--regions', ASSETS / 'regions.json', *arguments,
+        ],
+        env=environment,
+    )
+
+
+def run_examples(args, prefix, environment):
+    """Run the selected examples with manual or bounded automation window identity."""
+    environment['DVZ_WINDOW_INSTANCE'] = (
+        'datoviz-automated' if args.frames > 0 else 'datoviz'
+    )
+    if not ASSETS.exists() or not VOLUME.exists():
+        raise ValueError('Review data is missing; rerun setup without --tests-only')
+    names = tuple(EXAMPLES) if args.example == 'all' else (args.example,)
+    for name in names:
+        script, arguments = EXAMPLES[name]
+        print(f'Opening {name}; close its window to continue.', flush=True)
+        run(
+            [
+                *prefix,
+                sys.executable,
+                REPOSITORY / 'examples' / script,
+                *arguments,
+                '--frames',
+                args.frames,
+                '--ui-scale',
+                args.ui_scale,
+            ],
+            env=environment,
+        )
+
+
 def main():
     """Prepare once, then run unit/native tests or focused real-data examples."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -307,13 +349,15 @@ def main():
         'test', help='run pytest with cached fixtures and native environment'
     )
     tests.add_argument('pytest_args', nargs=argparse.REMAINDER)
+    benchmark = commands.add_parser('benchmark', help='benchmark D070 with the configured runtime')
+    benchmark.add_argument('benchmark_args', nargs=argparse.REMAINDER)
     review = commands.add_parser('run', help='open a focused example, or all six in review order')
     review.add_argument('example', nargs='?', default='all', choices=['all', *EXAMPLES])
     review.add_argument(
         '--frames', type=int, default=0, help='zero runs until each window is closed'
     )
     review.add_argument('--ui-scale', type=float, default=1.0, help='GUI size multiplier')
-    for command in (diagnosis, tests, review):
+    for command in (diagnosis, tests, review, benchmark):
         command.add_argument(
             '--strict', action='store_true', help='require the pinned Datoviz source revision'
         )
@@ -328,6 +372,9 @@ def main():
         prefix, environment = doctor(checkout, strict=args.strict)
         if args.command == 'doctor':
             return 0
+        if args.command == 'benchmark':
+            run_benchmark(args.benchmark_args, prefix, environment)
+            return 0
         if args.command == 'test':
             environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated'
             if not (ANATOMY / 'tests' / 'fixtures').is_dir():
@@ -336,28 +383,7 @@ def main():
                 raise ValueError('Cached fixture revision differs; rerun setup with a fresh cache')
             run([*prefix, sys.executable, '-m', 'pytest', *(arguments or ['-q'])], env=environment)
         else:
-            environment['DVZ_WINDOW_INSTANCE'] = (
-                'datoviz-automated' if args.frames > 0 else 'datoviz'
-            )
-            if not ASSETS.exists() or not VOLUME.exists():
-                raise ValueError('Review data is missing; rerun setup without --tests-only')
-            names = tuple(EXAMPLES) if args.example == 'all' else (args.example,)
-            for name in names:
-                script, arguments = EXAMPLES[name]
-                print(f'Opening {name}; close its window to continue.', flush=True)
-                run(
-                    [
-                        *prefix,
-                        sys.executable,
-                        REPOSITORY / 'examples' / script,
-                        *arguments,
-                        '--frames',
-                        args.frames,
-                        '--ui-scale',
-                        args.ui_scale,
-                    ],
-                    env=environment,
-                )
+            run_examples(args, prefix, environment)
         return 0
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         if isinstance(error, subprocess.CalledProcessError) and error.stderr:

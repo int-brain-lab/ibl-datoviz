@@ -86,3 +86,20 @@ uv run --frozen python tools/benchmark_region_updates.py \
 
 The report is build-local because timings depend on the machine. The region and vertex counts make
 the measured workload explicit.
+
+## Compare hover performance across GPUs
+
+After `just setup`, use the remembered Datoviz checkout and runtime without exporting paths into your shell:
+
+```bash
+uv run --frozen tools/review.py benchmark -- \
+  --scenarios gui_idle gui_pointer_hover gui_pointer_drag hover_emphasis_update \
+  --repeats 3 --warmup 30 --frames 120 \
+  --width 900 --height 720 --json build/hover-900.json
+```
+
+Repeat with `--width 1800 --height 1440` and a distinct report name. Preserve the same asset, source commits, native library SHA256, frame count and warmup when comparing drivers or GPUs. These runs open automated windows; ordinary launches retain their manual window identity.
+
+The report records NVIDIA driver diagnostics, the Vulkan device inventory, Vulkan driver-selection environment, native query phases, and Python emphasis/color-setter distributions. Inventory describes available devices, not the device selected by a running Datoviz view. On a Linux host with multiple drivers, choose the intended ICD explicitly for a controlled comparison using `VK_DRIVER_FILES=/path/to/driver_icd.json` (or `VK_ICD_FILENAMES` with older loaders), and verify `vulkaninfo --summary` lists only the intended GPU before running. Confirm `nvidia-smi` succeeds before collecting NVIDIA results. Driver mismatch output is retained in the report instead of being silently treated as missing hardware.
+
+For deeper Python attribution, add `--profile-emphasis` to a separate diagnostic run. It records function call counts, self time and cumulative time for measured emphasis updates, including ontology expansion, mask construction and color upload. Profiling adds overhead: compare ordinary timings with profiling disabled, and do not sum nested cumulative times. Tree relationships and the unique-ID vertex index are prepared once per model/mapping; report cold startup separately from warmed steady-state timings.
