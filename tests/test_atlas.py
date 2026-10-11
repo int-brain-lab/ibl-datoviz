@@ -616,6 +616,7 @@ def test_surface_emphasis_reuses_and_invalidates_derived_arrays(mesh):
         viewer._set_hovered_region_ids((997,))
         initial_mapping_ids = viewer._surface_mapping_ids_cache
         initial_lookup = viewer._surface_mapping_lookup_cache
+        assert all(array.flags.owndata for array in initial_lookup)
         initial_work = viewer._surface_emphasis_work
         assert initial_mapping_ids is not None
         assert initial_work is not None
