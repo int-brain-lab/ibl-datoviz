@@ -142,9 +142,7 @@ def test_setup_failure_preserves_previous_configuration(tmp_path, monkeypatch):
 
 def test_run_all_uses_separate_processes_and_stops_on_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(review, 'configured_checkout', lambda: tmp_path)
-    monkeypatch.setattr(
-        review, 'doctor', lambda _root, **_kwargs: ([], {'runtime': 'configured'})
-    )
+    monkeypatch.setattr(review, 'doctor', lambda _root, **_kwargs: ([], {'runtime': 'configured'}))
     monkeypatch.setattr(review, 'ASSETS', tmp_path)
     monkeypatch.setattr(review, 'VOLUME', tmp_path)
     commands = []
@@ -167,6 +165,21 @@ def test_run_all_uses_separate_processes_and_stops_on_failure(tmp_path, monkeypa
     assert Path(commands[0][1]).name == 'real_atlas_surface.py'
     assert Path(commands[1][1]).name == 'atlas_mapping_switch.py'
     assert commands[0][-4:] == ['--frames', 3, '--ui-scale', 1.5]
+
+
+def test_offscreen_review_requires_one_example_and_preserves_spaced_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    commands = []
+    monkeypatch.setattr(review, 'run', lambda command, **_kwargs: commands.append(command))
+    output = tmp_path / 'review with spaces.png'
+    args = SimpleNamespace(example='all', frames=3, ui_scale=1.0, offscreen=output)
+    with pytest.raises(ValueError, match='one named example'):
+        review.run_examples(args, [], {})
+    assert not commands
+    args.example = 'volume-free'
+    review.run_examples(args, [], {})
+    assert commands[0][-2:] == ['--offscreen', output]
 
 
 @pytest.mark.parametrize('command', ['doctor', 'test', 'run'])
@@ -247,7 +260,12 @@ def test_benchmark_uses_remembered_assets_and_preserves_arguments(tmp_path, monk
     assert review.main() == 0
     command, environment = launched[0]
     assert command == [
-        'runtime', review.sys.executable, review.REPOSITORY / 'tools' / 'benchmark_atlas_3d.py',
-        review.ASSETS / 'mesh-pack', '--regions', review.ASSETS / 'regions.json', *arguments,
+        'runtime',
+        review.sys.executable,
+        review.REPOSITORY / 'tools' / 'benchmark_atlas_3d.py',
+        review.ASSETS / 'mesh-pack',
+        '--regions',
+        review.ASSETS / 'regions.json',
+        *arguments,
     ]
     assert environment['DVZ_WINDOW_INSTANCE'] == 'datoviz-automated'

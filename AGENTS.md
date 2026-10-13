@@ -35,7 +35,11 @@ git diff --check
 
 For real-data review, use `just setup /path/to/datoviz` instead of `setup-tests`, then
 `just review` (close each window to advance) or `just review picking`. Available examples are
-`surface`, `mapping`, `picking`, `probe`, `firing-rate`, and `slices`. A bounded startup check is
+`surface`, `mapping`, `picking`, `probe`, `firing-rate`, and `slices`. Restored workflows
+are available separately as `controls`, `insertions` (requires explicit W39 preparation),
+and `volume-free`; see `docs/REAL_DATA_EXAMPLE_ROADMAP.md`. `review all` keeps the
+original six-example sequence. `--offscreen PNG` captures one named example.
+A bounded startup check is
 `just review all --frames 3`; on headless Linux use `xvfb-run -a just review all --frames 3`.
 Startup checks do not establish interaction quality. Actual macOS rendering requires Mac evidence.
 

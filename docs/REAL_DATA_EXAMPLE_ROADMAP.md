@@ -35,13 +35,21 @@ This is still a development branch rather than a stable library. Lifecycle safet
 
 ## Work order
 
-Progress: viewer lifecycle failure safety, navigator factory behavior, input validation, the ten-name public API, and reproducible source-snapshot CI are implemented. The first six focused example programs and reproducible gallery commands are in place; live review remains the next product gate before any image or interaction is promoted.
+Progress: viewer lifecycle failure safety, navigator factory behavior, input validation, the public API, and reproducible source-snapshot CI are implemented. The first six focused example programs and reproducible gallery commands are in place; live review remains the next product gate before any image or interaction is promoted.
+
+The October 13 restoration batch adds three independently runnable real-data examples:
+`atlas_region_hemisphere_controls.py` for signed region styling and hemisphere state,
+`bwm_multiple_insertions.py` for independently styled paths, and
+`atlas_volume_free_navigator.py` for slice navigation without native 3D volume allocation. They
+use the verified D070 asset set and 50 um source prepared by `just setup`. The multi-path example
+reproduces its ignored derivative in `build/w39-insertions/` from an explicitly supplied,
+hash-pinned W39 `channels.pqt`; the builder records source and decoded-array hashes.
 
 1. Validate the landed correctness fixes and staged refactors against the current pinned Datoviz baseline; see [the audit handoff](NEXT_STEPS.md) for evidence and remaining release gates.
 2. Review the implemented first batch of focused real-data examples interactively.
 3. Iterate on controls, feedback, visual encodings, and scientific descriptions.
 4. Add the linked and higher-resolution examples once their component interactions are accepted.
-5. Preserve the tested ten-name public Python API while reviewing the workflows.
+5. Preserve the tested public Python API while reviewing the workflows.
 6. Complete published dependency compatibility, reproducible onboarding, current documentation, and release notes; source-snapshot CI alignment is already implemented.
 7. Treat browser/WebGPU expansion as a later product decision, not as a prerequisite for native
    feedback.
@@ -156,6 +164,40 @@ For each example, ask the reviewer to evaluate only:
 
 Keep screenshots subordinate to the live review. A gallery image is a regression artifact and a
 discovery aid, not evidence that an interaction is mature.
+
+## October 13 runnable examples
+
+After `just setup /path/to/datoviz` has materialized `build/atlas-d070` and
+`build/allen-ccf-2017-50um`, prepare the BWM trajectories from the exact W39 channel release.
+The parquet belongs to `ephys_atlas_channels/2026_W39-ibl-review-20261007-v1`; its release root
+manifest SHA256 is `6adc9fa963196d6db829125c5ac869c49bec7622ec7397e8503965f79476a2b8`, and the
+`channels.pqt` SHA256 is `17dd0a9be89a7eea683d05a6c34170726bde47e66d509aba5217932dbffff52e`.
+For acquisition details and ONE-authenticated download instructions, see the paper repository's
+[`sources/media/README.md`, Scientific inputs section](https://github.com/int-brain-lab/paper-ephys-atlas/blob/feature/datoviz-media/sources/media/README.md#scientific-inputs)
+and `sources/media/prepare.py --download-source`; those instructions acquire the immutable W39
+objects and do not change this repository. The builder requires pandas plus pyarrow and reads the
+local file only:
+
+```sh
+CHANNELS_PQT=/path/to/channels.pqt
+uv run --frozen --with pandas --with pyarrow python tools/build_w39_insertions.py \
+  --channels "$CHANNELS_PQT" --output build/w39-insertions
+just review controls
+just review insertions
+just review volume-free
+just review insertions --frames 3
+just review insertions --offscreen build/w39-insertions.png
+```
+
+`build_w39_insertions.py` selects the first three lexically sorted PIDs, keeps finite channel
+geometry where `labels != 3`, sorts by axial then lateral position, and converts source XYZ
+metres to atlas-world micrometres. It adds no fitted or extrapolated path points. The example
+defaults to distinct path colors and widths; repeat `--insertion-width PID=PX` or add
+`--hide-insertion PID` to inspect independent controls. Region controls default to the left
+hemisphere with one region opacity preset; the `controls` review opens an unbounded native window.
+`--frames N` bounds startup and `--offscreen PNG` captures an initial state. The volume-free
+navigator reads slices from the real Allen 50 um pack with `render_volume=False`, so it creates no
+native volume visual or 3D sampled field.
 
 ## Promotion gates
 

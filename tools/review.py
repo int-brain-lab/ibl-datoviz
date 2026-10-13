@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare and run contributor tests and the six focused native review examples."""
+"""Prepare and run contributor tests and focused native review examples."""
 
 from __future__ import annotations
 
@@ -31,7 +31,11 @@ EXAMPLES = {
     'probe': ('bwm_probe_geometry.py', (ASSETS,)),
     'firing-rate': ('bwm_probe_firing_rate.py', (ASSETS,)),
     'slices': ('atlas_slice_scroll.py', (ASSETS / 'mesh-pack', VOLUME)),
+    'controls': ('atlas_region_hemisphere_controls.py', (ASSETS, '--hemisphere', 'left')),
+    'insertions': ('bwm_multiple_insertions.py', (ASSETS,)),
+    'volume-free': ('atlas_volume_free_navigator.py', (ASSETS / 'mesh-pack', VOLUME)),
 }
+DEFAULT_EXAMPLES = ('surface', 'mapping', 'picking', 'probe', 'firing-rate', 'slices')
 
 
 def run(command, **kwargs):
@@ -300,8 +304,13 @@ def run_benchmark(arguments, prefix, environment):
     environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated'
     run(
         [
-            *prefix, sys.executable, REPOSITORY / 'tools' / 'benchmark_atlas_3d.py',
-            ASSETS / 'mesh-pack', '--regions', ASSETS / 'regions.json', *arguments,
+            *prefix,
+            sys.executable,
+            REPOSITORY / 'tools' / 'benchmark_atlas_3d.py',
+            ASSETS / 'mesh-pack',
+            '--regions',
+            ASSETS / 'regions.json',
+            *arguments,
         ],
         env=environment,
     )
@@ -309,12 +318,13 @@ def run_benchmark(arguments, prefix, environment):
 
 def run_examples(args, prefix, environment):
     """Run the selected examples with manual or bounded automation window identity."""
-    environment['DVZ_WINDOW_INSTANCE'] = (
-        'datoviz-automated' if args.frames > 0 else 'datoviz'
-    )
+    environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated' if args.frames > 0 else 'datoviz'
     if not ASSETS.exists() or not VOLUME.exists():
         raise ValueError('Review data is missing; rerun setup without --tests-only')
-    names = tuple(EXAMPLES) if args.example == 'all' else (args.example,)
+    offscreen = getattr(args, 'offscreen', None)
+    if offscreen is not None and args.example == 'all':
+        raise ValueError('--offscreen requires one named example')
+    names = DEFAULT_EXAMPLES if args.example == 'all' else (args.example,)
     for name in names:
         script, arguments = EXAMPLES[name]
         print(f'Opening {name}; close its window to continue.', flush=True)
@@ -328,6 +338,7 @@ def run_examples(args, prefix, environment):
                 args.frames,
                 '--ui-scale',
                 args.ui_scale,
+                *(['--offscreen', offscreen] if offscreen is not None else []),
             ],
             env=environment,
         )
@@ -353,6 +364,7 @@ def main():
     benchmark.add_argument('benchmark_args', nargs=argparse.REMAINDER)
     review = commands.add_parser('run', help='open a focused example, or all six in review order')
     review.add_argument('example', nargs='?', default='all', choices=['all', *EXAMPLES])
+    review.add_argument('--offscreen', type=Path, metavar='PNG', help='capture one named example')
     review.add_argument(
         '--frames', type=int, default=0, help='zero runs until each window is closed'
     )
