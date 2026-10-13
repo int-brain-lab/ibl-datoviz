@@ -58,6 +58,19 @@ jobs:
       - name: Unit and synthetic fixture tests
         run: uv run --frozen pytest -q
 
+      - name: Check installed wheel without source-path overrides
+        shell: bash
+        run: |
+          uv build --wheel --out-dir build/install-check/dist
+          uv export --locked --no-dev --no-emit-project --format requirements-txt \
+            --output-file build/install-check/requirements.txt > /dev/null
+          uv venv --python "$(command -v python)" build/install-check/venv
+          uv pip install --python build/install-check/venv/bin/python \
+            -r build/install-check/requirements.txt build/install-check/dist/*.whl
+          build/install-check/venv/bin/python -I tools/check_installed.py \
+            > build/install-check/receipt.json
+          cat build/install-check/receipt.json
+
       - name: Build documentation in strict mode
         run: uv run --frozen --with-requirements docs/requirements.txt mkdocs build --strict
 

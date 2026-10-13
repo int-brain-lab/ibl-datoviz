@@ -27,6 +27,8 @@ runtime geometry smoothing is performed.
 
 ## Contributor workflow
 
+Ongoing v0.4 implementation stays on `feature/datoviz-v04`; see `AGENTS.md`.
+
 Datoviz is a separate prerequisite: clone and build your chosen local checkout and establish its
 working Vulkan/MoltenVK environment. This package does not build or change that native checkout.
 Install `just` and `uv` on your machine. On macOS, `brew install just uv` installs both; on
@@ -79,6 +81,14 @@ just doctor
 just test -q tests/test_probe_replacement.py
 ```
 
+The restored workflows are available separately as `just review controls`,
+`just review insertions` and `just review volume-free`. The insertion example
+requires explicitly prepared W39 trajectories; see the
+[real-data example roadmap](REAL_DATA_EXAMPLE_ROADMAP.md). Use
+`just review volume-free --offscreen build/volume-free.png` to capture one
+example with the configured native environment. `review all` retains the original
+six-example sequence.
+
 Local setup, doctor, tests, and review use your configured Datoviz checkout. Each command reports
 its revision and the installed pin; a difference produces a warning and continues. A Markdown-only
 Datoviz commit therefore needs no package pin update. Keep the native build compatible with the
@@ -126,6 +136,29 @@ switch engine branches, or publish generated images.
 The individual installation/materialization commands below remain useful for custom data roots and
 troubleshooting; most contributors can use the workflow above.
 
+## Installed-wheel CPU check
+
+Check the wheel independently of the editable checkout, using the exact locked
+dependency revisions in a separate environment:
+
+```bash
+uv build --wheel --out-dir build/install-check/dist
+uv export --locked --no-dev --no-emit-project --format requirements-txt \
+  --output-file build/install-check/requirements.txt > /dev/null
+uv venv --python 3.13 build/install-check/venv
+uv pip install --python build/install-check/venv/bin/python \
+  -r build/install-check/requirements.txt build/install-check/dist/*.whl
+build/install-check/venv/bin/python -I tools/check_installed.py \
+  > build/install-check/receipt.json
+```
+
+Use a fresh output/environment directory for each installation check. Python 3.10
+is also supported. The check rejects editable imports and imports outside the
+isolated environment, exercises the new owned CPU payloads and reads the packaged
+atlas, registered-section and envelope locks offline. Its receipt records package
+origins and versions. No native bindings, GPU rendering or downloads of numeric
+atlas assets are exercised; native compatibility remains a separate check.
+
 ## Install a development checkout
 
 The project is an unreleased source snapshot. Its committed `uv.lock` and `[tool.uv.sources]`
@@ -138,8 +171,8 @@ uv sync --group dev --locked
 ```
 
 The current pinned Datoviz source baseline is
-`ab8a8fb4a9c2b1396598a4f7b84653f77321ce9c`; anatomy remains pinned to
-`119457b68fae6967c54d549d9d44e4a4e49c74f8`. The source snapshot uses post-RC2
+`62101912dfde633b4510dfbdbccf7d4a7f0b8ba2`; anatomy is pinned to
+`0bd6a63c7c46d4ef0fdd710934e059135b342d7b`. The source snapshot uses post-RC2
 fixes even though its distribution version is still `0.4.0rc2`. The provisional
 wheel dependency bounds do not establish that index packages support this application.
 Before releasing, verify the actual RC3 artifact and a deliberately supported anatomy distribution.

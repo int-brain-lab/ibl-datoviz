@@ -9,14 +9,41 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
-## Reproducible review follow-up
+## Reproducible review follow-up — October 13 2026
 
-The next authorized batch stays on `feature/datoviz-v04`: runnable real-data
-examples for restored region/hemisphere styling, multiple insertions and
-volume-free navigation, plus an isolated installed-wheel CPU check. Paper-side
-acceptance reporting stays on `feature/datoviz-media`. These checks do not
-advance dependency pins or rebuild Datoviz. Video presentation and scientific
-review remain deferred; the anatomy coverage audit is a later batch.
+Implemented on `feature/datoviz-v04`: runnable real-data region/hemisphere,
+multiple-insertion and volume-free examples. `just review controls`,
+`just review insertions` and `just review volume-free` use the configured native
+environment; `--offscreen PNG` captures one named example. `review all` retains
+the original six-example sequence. The roadmap documents explicit preparation
+of three W39 channel paths from the hash-pinned source parquet. Source and
+decoded-array hashes are verified, and existing outputs cannot be overwritten.
+Scientific coordinates are converted directly from metres to micrometres;
+no fitted or extrapolated trajectory is introduced.
+
+Validation: **404 tests pass, zero skips**, with D070, registered real assets
+and native rendering. Lint, changed-file formatting, strict MkDocs and whitespace
+checks pass. All three new examples complete three-frame native desktop startup
+and offscreen rendering; representative captures were inspected. The original
+six examples also complete bounded startup. Logs and images are ignored
+`build/review-followup-*`. This establishes reproducible startup and scripted
+rendering, not mouse/GUI design acceptance or macOS rendering.
+
+`tools/check_installed.py` checks a built wheel with isolated Python imports,
+owned CPU payloads and offline packaged anatomy locks. Clean Python 3.10.17 and
+3.13.3 environments pass using the locked dependency revisions, without loading
+native bindings. Editable/source imports are rejected. CI now runs this check
+on both Python versions; the workflow itself has not yet run on GitHub. Local
+receipts are `build/install-review/receipt{,310}.json`; commands are documented
+in `docs/getting-started.md`.
+
+Native evidence uses the existing Datoviz source
+`858bdf261fe4b8a41b4102a89684e60071e3df66` and library SHA256
+`1275a85fdf34149fc2a42afea837ca5c8709c9ff21c769b15b2e3bc8190e26c5`.
+No engine source/build, dependency pin or lock changed. Paper CPU acceptance
+reporting landed on `feature/datoviz-media`; shared mixed-scene transparency and
+plane depth remain engine gates. Video presentation and scientific review remain
+deferred; the anatomy coverage audit is a later batch.
 
 ## Viewer restoration — October 13 2026
 
