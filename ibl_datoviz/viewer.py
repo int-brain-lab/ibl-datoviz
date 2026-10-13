@@ -32,6 +32,7 @@ from .selection import (
     selection_decision,
     tree_selection_keys,
 )
+from .surface_style import SurfaceStyle
 from .viewport_input import ViewportInputAdapter
 
 if TYPE_CHECKING:
@@ -110,6 +111,10 @@ class AtlasViewer:
         self.camera_angles = self._validated_camera_angles(camera_angles)
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
+        self._surface_style = SurfaceStyle(mesh)
+        self._surface_face_mask = np.ones(len(mesh.face_presentation_ids), dtype=bool)
+        self._uploaded_face_mask = self._surface_face_mask.copy()
+        self._uploaded_face_mapping = mapping
         self._insertions = None
         self.mapping = mapping
         self.catalog = catalog
@@ -161,12 +166,13 @@ class AtlasViewer:
         self._last_surface_emphasis: tuple[tuple[int, ...], tuple[int, ...]] | None = None
         self._surface_base_colors_cache: NDArray[np.uint8] | None = None
         self._surface_mapping_ids_cache: NDArray[np.int64] | None = None
-        self._surface_mapping_lookup_cache: (
-            tuple[NDArray[np.int64], NDArray[np.intp]] | None
-        ) = None
+        self._surface_mapping_lookup_cache: tuple[NDArray[np.int64], NDArray[np.intp]] | None = (
+            None
+        )
         self._surface_dimmed_colors_cache: NDArray[np.uint8] | None = None
         self._surface_emphasis_work: NDArray[np.uint8] | None = None
         self._surface_alpha_mode: int | None = None
+        self._surface_alpha_cap_cache = None
         self._last_mesh_region_ids: tuple[int, ...] = ()
         try:
             self.scene = self.dvz.dvz_scene()
@@ -262,6 +268,7 @@ class AtlasViewer:
         palette: Mapping[int, Sequence[int]] | None,
     ) -> NDArray[np.uint8]:
         colors = self.mesh_data.colors(mapping, palette)
+        colors = self._surface_style.apply(mapping, colors)
         if self.surface_opacity == 1:
             return colors
         colors = colors.copy()
@@ -330,6 +337,265 @@ class AtlasViewer:
             'mesh region link keys',
         )
         self._check(self.dvz.dvz_panel_add_visual(self.panel, self.mesh, None), 'mesh attach')
+        mask = self._visible_surface_faces(self.mapping)
+        if not np.all(mask):
+            self._upload_surface_faces(mask, self.mapping)
+        self._surface_face_mask = mask
+
+    def _authored_surface_alpha(self, mapping=None, palette=None):
+        active = self.mapping if mapping is None else mapping
+        palette = self.palette if palette is None else palette
+        if self.region_data is None:
+            colors = self._surface_style.apply(active, self.mesh_data.colors(active, palette))
+        else:
+            prepared = self._region_value_view(
+                self.region_data,
+                active,
+                self._region_value_range,
+                self._region_color_scheme,
+                1.0 if self._region_opacity is None else self._region_opacity,
+            )
+            colors = self._region_surface_colors(
+                active,
+                prepared.region_ids,
+                prepared.colors,
+                context_opacity=1.0,
+            )
+        return colors[:, 3].copy()
+
+    def _visible_surface_faces(self, mapping, palette=None):
+        mask = self._surface_style.visible_faces(mapping)
+        alpha = self._authored_surface_alpha(mapping, palette)
+        presentation_alpha = np.full(len(self.mesh_data.presentations), 255, np.uint8)
+        np.minimum.at(presentation_alpha, self.mesh_data.presentation_ids, alpha)
+        return mask & (presentation_alpha[self.mesh_data.face_presentation_ids] > 0)
+
+    def _upload_surface_faces(self, mask, mapping):
+        """Filter canonical triangle indices and matching signed face keys together."""
+        previous = self._uploaded_face_mask
+        old_mapping = self._uploaded_face_mapping
+        was_visible = bool(np.any(self._surface_face_mask))
+        try:
+            if np.any(mask):
+                if not np.array_equal(mask, previous):
+                    indices = self.mesh_data.indices.reshape(-1, 3)[mask].reshape(-1).copy()
+                    self._check(
+                        self.dvz.dvz_visual_set_index_data(self.mesh, indices),
+                        'visible surface indices',
+                    )
+                keys = self.mesh_data.face_mapping_ids(mapping)[mask].view(np.uint64).copy()
+                self._check(
+                    self.dvz.dvz_visual_set_target_link_keys(
+                        self.mesh,
+                        self.dvz.DVZ_SCENE_TARGET_FACE,
+                        self.link_channel,
+                        keys,
+                    ),
+                    'visible surface keys',
+                )
+            self._check(
+                self.dvz.dvz_visual_set_visible(self.mesh, bool(np.any(mask))),
+                'surface visibility',
+            )
+        except Exception as error:
+            try:
+                indices = self.mesh_data.indices.reshape(-1, 3)[previous].reshape(-1).copy()
+                self._check(
+                    self.dvz.dvz_visual_set_index_data(self.mesh, indices),
+                    'surface index rollback',
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_target_link_keys(
+                        self.mesh,
+                        self.dvz.DVZ_SCENE_TARGET_FACE,
+                        self.link_channel,
+                        self.mesh_data.face_mapping_ids(old_mapping)[previous]
+                        .view(np.uint64)
+                        .copy(),
+                    ),
+                    'surface key rollback',
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_visible(self.mesh, was_visible),
+                    'surface visibility rollback',
+                )
+            except Exception:
+                self.close()
+                raise RuntimeError('surface rollback failed; viewer closed') from error
+            raise
+        if np.any(mask):
+            self._uploaded_face_mask = mask.copy()
+            self._uploaded_face_mapping = mapping
+
+    def _surface_transaction_snapshot(self):
+        """Retain public state, caches and owned native payloads before mutations."""
+        names = (
+            'mapping',
+            'palette',
+            'tree_model',
+            'region_data',
+            '_region_value_range',
+            '_region_color_scheme',
+            '_region_opacity',
+            '_surface_style',
+            '_surface_face_mask',
+            '_uploaded_face_mask',
+            '_uploaded_face_mapping',
+            '_surface_base_colors_cache',
+            '_surface_mapping_ids_cache',
+            '_surface_mapping_lookup_cache',
+            '_surface_dimmed_colors_cache',
+            '_surface_emphasis_work',
+            '_last_surface_emphasis',
+            '_surface_alpha_cap_cache',
+            '_surface_alpha_mode',
+            '_selected_region_ids',
+            '_hovered_region_ids',
+            '_highlight_region_ids',
+            '_last_mesh_region_ids',
+            '_probe_upload',
+            '_probe_colors',
+        )
+        state = {name: getattr(self, name) for name in names}
+        colors = (
+            self._surface_emphasis_work
+            if self._last_surface_emphasis is not None and self._surface_emphasis_work is not None
+            else self._surface_base_colors_cache
+        )
+        if colors is None:
+            colors = self._display_surface_colors()
+        state['colors'] = np.array(colors, order='C', copy=True)
+        state['mapping_control'] = self._mapping_control.value
+        return state
+
+    def _restore_surface_transaction(self, snapshot, widgets=()):
+        """Restore geometry, identity, colors and mode; close on any rollback failure."""
+        try:
+            for name, value in snapshot.items():
+                if name not in ('colors', 'mapping_control'):
+                    setattr(self, name, value)
+            self._mapping_control.value = snapshot['mapping_control']
+            mask = self._uploaded_face_mask
+            self._check(
+                self.dvz.dvz_visual_set_index_data(
+                    self.mesh, self.mesh_data.indices.reshape(-1, 3)[mask].reshape(-1).copy()
+                ),
+                'surface transaction index rollback',
+            )
+            self._check(
+                self.dvz.dvz_visual_set_target_link_keys(
+                    self.mesh,
+                    self.dvz.DVZ_SCENE_TARGET_FACE,
+                    self.link_channel,
+                    self.mesh_data.face_mapping_ids(self._uploaded_face_mapping)[mask]
+                    .view(np.uint64)
+                    .copy(),
+                ),
+                'surface transaction key rollback',
+            )
+            self._check(
+                self.dvz.dvz_visual_set_data(self.mesh, 'color', snapshot['colors']),
+                'surface transaction color rollback',
+            )
+            self._check(
+                self.dvz.dvz_visual_set_alpha_mode(self.mesh, self._surface_alpha_mode),
+                'surface transaction alpha rollback',
+            )
+            self._check(
+                self.dvz.dvz_visual_set_visible(self.mesh, bool(np.any(self._surface_face_mask))),
+                'surface transaction visibility rollback',
+            )
+            if self.probe_data is not None and self._probe_upload is not None:
+                self._check(
+                    self.dvz.dvz_visual_set_link_keys(
+                        self.probe_sites, self.link_channel, self._probe_upload.keys
+                    ),
+                    'surface transaction probe key rollback',
+                )
+            for widget in widgets:
+                getattr(self, f'_replace_{widget}')()
+        except Exception as rollback_error:
+            self.close()
+            raise RuntimeError(
+                'surface transaction rollback failed; viewer closed'
+            ) from rollback_error
+
+    def _commit_surface_style(self, candidate):
+        snapshot = self._surface_transaction_snapshot()
+        self._surface_style = candidate
+        try:
+            mask = self._visible_surface_faces(self.mapping)
+            colors = self._display_surface_colors()
+            self._upload_surface_faces(mask, self.mapping)
+            self._check(
+                self.dvz.dvz_visual_set_data(self.mesh, 'color', colors), 'region style colors'
+            )
+            self._surface_face_mask = mask
+            self._invalidate_surface_emphasis_cache(colors)
+            self._clear_surface_hover()
+            self._update_surface_emphasis()
+        except Exception:
+            if not self._closed:
+                self._restore_surface_transaction(snapshot)
+            raise
+
+    def set_region_visible(self, region_id, visible, *, hemisphere=None):
+        """Show/hide signed mapped faces; optional hemisphere expands an absolute ID."""
+        self._require_open()
+        candidate = self._surface_style.copy()
+        candidate.set_region(self.mapping, region_id, hemisphere=hemisphere, visible=visible)
+        self._commit_surface_style(candidate)
+
+    def show_region(self, region_id, *, hemisphere=None):
+        """Restore mapped-region faces without changing color or opacity."""
+        self.set_region_visible(region_id, True, hemisphere=hemisphere)
+
+    def hide_region(self, region_id, *, hemisphere=None):
+        """Suppress mapped-region faces and their native picking targets."""
+        self.set_region_visible(region_id, False, hemisphere=hemisphere)
+
+    def set_region_color(self, region_id, color, *, hemisphere=None):
+        """Override 3-D region RGB(A); scientific values and table colors stay intact."""
+        self._require_open()
+        candidate = self._surface_style.copy()
+        candidate.set_region(self.mapping, region_id, hemisphere=hemisphere, color=color)
+        self._commit_surface_style(candidate)
+
+    def set_region_opacity(self, region_id, opacity, *, hemisphere=None):
+        """Multiply authored region alpha, preserving it through hover/selection."""
+        self._require_open()
+        candidate = self._surface_style.copy()
+        candidate.set_region(self.mapping, region_id, hemisphere=hemisphere, opacity=opacity)
+        self._commit_surface_style(candidate)
+
+    def reset_region_style(self, region_id, *, hemisphere=None):
+        """Reset region overrides in the current mapping, preserving hemisphere controls."""
+        self._require_open()
+        candidate = self._surface_style.copy()
+        candidate.reset_region(self.mapping, region_id, hemisphere=hemisphere)
+        self._commit_surface_style(candidate)
+
+    def set_hemisphere_visible(self, hemisphere, visible):
+        """Filter canonical left/right face membership without changing the atlas mesh."""
+        self._require_open()
+        candidate = self._surface_style.copy()
+        candidate.set_hemisphere_visible(hemisphere, visible)
+        self._commit_surface_style(candidate)
+
+    def set_hemisphere(self, hemisphere):
+        """Show left, right or both anatomical hemispheres."""
+        self._require_open()
+        if hemisphere not in ('left', 'right', 'both'):
+            raise ValueError('hemisphere must be left, right or both')
+        candidate = self._surface_style.copy()
+        for side in ('left', 'right'):
+            candidate.set_hemisphere_visible(side, hemisphere in ('both', side))
+        self._commit_surface_style(candidate)
+
+    def visible_region_ids(self):
+        """Return signed IDs with visible faces in the current mapping."""
+        ids = self.mesh_data.face_mapping_ids(self.mapping)[self._surface_face_mask]
+        return tuple(int(value) for value in np.unique(ids) if value)
 
     def set_explode(self, amount: float) -> None:
         """Explode mesh components along their canonical centroid displacement vectors."""
@@ -351,59 +617,64 @@ class AtlasViewer:
     def set_mapping(
         self, mapping: str, palette: Mapping[int, Sequence[int]] | None = None
     ) -> None:
-        """Change presentation colors and link identity without re-uploading geometry."""
+        """Change presentation colors and link identity transactionally."""
         self._require_open()
+        model = AtlasTreeModel.from_catalog(self.catalog, mapping) if self.catalog else None
         effective_palette = self.palette if palette is None else palette
-        if self.catalog is not None and palette is None:
-            self.tree_model = AtlasTreeModel.from_catalog(self.catalog, mapping)
-            effective_palette = self.tree_model.palette
+        if model is not None and palette is None:
+            effective_palette = model.palette
         surface_colors = self._display_surface_colors(mapping, effective_palette)
-        self._check(
-            self.dvz.dvz_visual_set_data(self.mesh, 'color', surface_colors),
-            'mapping color update',
-        )
-        self._check(
-            self.dvz.dvz_visual_set_target_link_keys(
-                self.mesh,
-                self.dvz.DVZ_SCENE_TARGET_FACE,
-                self.link_channel,
-                self.mesh_data.link_keys(mapping),
-            ),
-            'mapping link-key update',
-        )
-        if self.interaction is not None:
+        mask = self._visible_surface_faces(mapping, effective_palette)
+        snapshot = self._surface_transaction_snapshot()
+        widgets = []
+        try:
+            self._upload_surface_faces(mask, mapping)
             self._check(
-                self.dvz.dvz_selection_clear(
-                    self.dvz.dvz_item_interaction_selection(self.interaction)
-                ),
-                'mapping selection reset',
+                self.dvz.dvz_visual_set_data(self.mesh, 'color', surface_colors),
+                'mapping color update',
             )
-        self.mapping = mapping
-        self.palette = effective_palette
-        self._selected_region_ids = ()
-        self._hovered_region_ids = ()
-        self._highlight_region_ids = ()
-        self._invalidate_surface_emphasis_cache(surface_colors)
-        self._last_mesh_region_ids = ()
-        self._mapping_control.value = self.mesh_data.mapping_names.index(mapping)
-        if self.region_tree is not None:
-            self._replace_region_tree()
-        if self.probe_data is not None:
-            mapped_ids = self._mapped_probe_region_ids()
-            self._check(
-                self.dvz.dvz_visual_set_link_keys(
-                    self.probe_sites, self.link_channel, mapped_ids.view(np.uint64)
-                ),
-                'probe site mapping link keys',
-            )
-            if self._probe_upload is not None:
-                keys = np.array(mapped_ids.view(np.uint64), copy=True)
-                keys.setflags(write=False)
-                self._probe_upload = self._probe_upload._replace(keys=keys)
-            if self.probe_table is not None:
-                self._replace_probe_table()
-        if self.region_data is not None and self.region_table is not None:
-            self._replace_region_table()
+            self.mapping, self.palette, self.tree_model = mapping, effective_palette, model
+            self._surface_face_mask = mask
+            self._selected_region_ids = self._hovered_region_ids = self._highlight_region_ids = ()
+            self._invalidate_surface_emphasis_cache(surface_colors)
+            self._update_surface_alpha_mode()
+            self._mapping_control.value = self.mesh_data.mapping_names.index(mapping)
+            if self.region_tree is not None:
+                widgets.append('region_tree')
+                self._replace_region_tree()
+            if self.probe_data is not None:
+                mapped_ids = self._mapped_probe_region_ids()
+                self._check(
+                    self.dvz.dvz_visual_set_link_keys(
+                        self.probe_sites, self.link_channel, mapped_ids.view(np.uint64)
+                    ),
+                    'probe site mapping link keys',
+                )
+                if self._probe_upload is not None:
+                    keys = np.array(mapped_ids.view(np.uint64), copy=True)
+                    keys.setflags(write=False)
+                    self._probe_upload = self._probe_upload._replace(keys=keys)
+                if self.probe_table is not None:
+                    widgets.append('probe_table')
+                    self._replace_probe_table()
+            if self.region_data is not None and self.region_table is not None:
+                widgets.append('region_table')
+                self._replace_region_table()
+            self._clear_surface_hover()
+            # Committed native selection is unchanged until every other setter
+            # and GUI replacement has succeeded.
+            if self.interaction is not None:
+                self._check(
+                    self.dvz.dvz_selection_clear(
+                        self.dvz.dvz_item_interaction_selection(self.interaction)
+                    ),
+                    'mapping selection reset',
+                )
+            self._last_mesh_region_ids = ()
+        except Exception:
+            if not self._closed:
+                self._restore_surface_transaction(snapshot, widgets)
+            raise
 
     def _display_surface_colors(
         self,
@@ -425,9 +696,12 @@ class AtlasViewer:
         mapping: str,
         region_ids: NDArray[np.int64],
         value_colors: NDArray[np.uint8],
+        *,
+        context_opacity: float | None = None,
     ) -> NDArray[np.uint8]:
         """Expand one color per presentation region to dense mesh vertices."""
-        alpha = int(round(255 * self.surface_opacity))
+        opacity = self.surface_opacity if context_opacity is None else context_opacity
+        alpha = int(round(255 * opacity))
         lookup = np.tile(
             np.asarray((100, 112, 130, alpha), dtype=np.uint8),
             (len(self.mesh_data.presentations), 1),
@@ -438,7 +712,11 @@ class AtlasViewer:
             color = by_region.get(mapped_id)
             if color is not None:
                 lookup[presentation['presentation_id']] = color
-        return np.ascontiguousarray(lookup[self.mesh_data.presentation_ids])
+        return self._surface_style.apply(
+            mapping,
+            np.ascontiguousarray(lookup[self.mesh_data.presentation_ids]),
+            alpha_scale=opacity,
+        )
 
     def set_region_data(
         self,
@@ -463,23 +741,35 @@ class AtlasViewer:
         surface_colors = self._region_surface_colors(
             self.mapping, prepared.region_ids, prepared.colors
         )
-        self._check(
-            self.dvz.dvz_visual_set_data(self.mesh, 'color', surface_colors),
-            'region scalar color update',
-        )
-        self.region_data = data
-        self._region_value_range = value_range
-        self._region_color_scheme = color_scheme
-        self._region_opacity = opacity
-        selected = self._selected_region_ids
-        self._highlight_region_ids = ()
-        self._invalidate_surface_emphasis_cache(surface_colors)
-        if selected or self._hovered_region_ids:
-            self._apply_selected_region_ids(
-                selected, update_tree=False, update_table=False, clear_mesh=False
+        snapshot = self._surface_transaction_snapshot()
+        widgets = []
+        try:
+            self.region_data = data
+            self._region_value_range = value_range
+            self._region_color_scheme = color_scheme
+            self._region_opacity = opacity
+            mask = self._visible_surface_faces(self.mapping)
+            self._upload_surface_faces(mask, self.mapping)
+            self._check(
+                self.dvz.dvz_visual_set_data(self.mesh, 'color', surface_colors),
+                'region scalar color update',
             )
-        if self.gui is not None:
-            self._replace_region_table()
+            self._surface_face_mask = mask
+            self._highlight_region_ids = ()
+            self._invalidate_surface_emphasis_cache(surface_colors)
+            self._update_surface_alpha_mode()
+            selected = self._selected_region_ids
+            if selected or self._hovered_region_ids:
+                self._apply_selected_region_ids(
+                    selected, update_tree=False, update_table=False, clear_mesh=False
+                )
+            if self.gui is not None:
+                widgets.append('region_table')
+                self._replace_region_table()
+        except Exception:
+            if not self._closed:
+                self._restore_surface_transaction(snapshot, widgets)
+            raise
 
     def _mapped_region_values(self, mapping: str | None = None) -> RegionalView:
         """Return the active weighted-mean regional presentation."""
@@ -1169,6 +1459,9 @@ class AtlasViewer:
             else:
                 selected_hover_indices = hover_indices[selected_mask[hover_indices]]
                 colors[selected_hover_indices, 3] = 255
+        if self._surface_alpha_cap_cache is None:
+            self._surface_alpha_cap_cache = self._authored_surface_alpha()
+        colors[:, 3] = np.minimum(colors[:, 3], self._surface_alpha_cap_cache)
         self._check(
             self.dvz.dvz_visual_set_data(self.mesh, 'color', colors),
             'selection and hover color update',
@@ -1177,11 +1470,10 @@ class AtlasViewer:
         self._last_surface_emphasis = state
 
     def _update_surface_alpha_mode(self) -> None:
-        """Use transparency only when requested explicitly or required by selection."""
-        selection_active = bool(getattr(self, '_selected_region_ids', ()))
+        """Honor effective palette, regional and selection alpha in native mode."""
         mode = (
             self.dvz.DVZ_ALPHA_WBOIT
-            if self.surface_opacity < 1 or selection_active
+            if self._surface_is_translucent()
             else self.dvz.DVZ_ALPHA_OPAQUE
         )
         if mode == self._surface_alpha_mode:
@@ -1191,6 +1483,16 @@ class AtlasViewer:
             'surface transparency mode',
         )
         self._surface_alpha_mode = mode
+
+    def _surface_is_translucent(self):
+        colors = self._surface_base_colors_cache
+        if colors is None:
+            colors = self._display_surface_colors()
+        return (
+            self.surface_opacity < 1
+            or bool(self._selected_region_ids)
+            or bool(np.any(colors[:, 3] < 255))
+        )
 
     def _invalidate_surface_emphasis_cache(
         self, base_colors: NDArray[np.uint8] | None = None
@@ -1202,6 +1504,7 @@ class AtlasViewer:
         self._surface_dimmed_colors_cache = None
         self._surface_emphasis_work = None
         self._last_surface_emphasis = None
+        self._surface_alpha_cap_cache = None
 
     def _surface_emphasis_inputs(self) -> tuple[NDArray[np.uint8], NDArray[np.int64]]:
         """Return cached canonical colors and absolute region IDs for interactive styling."""
@@ -1219,7 +1522,8 @@ class AtlasViewer:
             _, mapping_ids = self._surface_emphasis_inputs()
             unique_ids, inverse = np.unique(mapping_ids, return_inverse=True)
             self._surface_mapping_lookup_cache = (
-                np.array(unique_ids, copy=True), np.array(inverse, dtype=np.intp, copy=True)
+                np.array(unique_ids, copy=True),
+                np.array(inverse, dtype=np.intp, copy=True),
             )
         unique_ids, inverse = self._surface_mapping_lookup_cache
         return np.isin(unique_ids, region_ids)[inverse]

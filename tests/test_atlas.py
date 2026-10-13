@@ -151,6 +151,10 @@ class FakeDatoviz:
         self.calls.append(('indices', np.array(indices, copy=True)))
         return 0
 
+    def dvz_visual_set_visible(self, visual, visible):
+        self.calls.append(('visible', visual.name, bool(visible)))
+        return 0
+
     def dvz_visual_set_query_capabilities(self, *_args):
         return 0
 
