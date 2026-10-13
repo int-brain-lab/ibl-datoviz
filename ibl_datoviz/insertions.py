@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 from .component import ComponentVisual, owned, rgba_array
 
+_UNSET = object()
+
 
 @dataclass(frozen=True)
 class InsertionTrajectory:
@@ -129,6 +131,11 @@ class InsertionCollectionVisual(ComponentVisual):
         visual = self._required(self.dvz.dvz_path(self.scene, 0), 'dvz_path')
         try:
             self._check(
+                self.dvz.dvz_visual_set_alpha_mode(visual, self.dvz.DVZ_ALPHA_OPAQUE),
+                'insertion opaque alpha',
+            )
+            self._check(self.dvz.dvz_visual_set_depth_test(visual, True), 'insertion depth test')
+            self._check(
                 self.dvz.dvz_path_set_caps(
                     visual,
                     self.dvz.DVZ_SEGMENT_CAP_ROUND,
@@ -188,7 +195,7 @@ class InsertionCollectionVisual(ComponentVisual):
         current.data = data
         current.display_positions = display_positions
 
-    def _replace_attribute(self, key, *, color=None, width_px=None):
+    def _replace_attribute(self, key, *, color=_UNSET, width_px=_UNSET):
         self._require_open()
         insertion_id = _identity(key)
         try:
@@ -197,19 +204,19 @@ class InsertionCollectionVisual(ComponentVisual):
             raise KeyError(f'unknown insertion identity: {insertion_id!r}') from exc
         data = InsertionTrajectory.from_arrays(
             current.data.positions_um,
-            color=current.data.color if color is None else color,
-            width_px=current.data.width_px if width_px is None else width_px,
+            color=current.data.color if color is _UNSET else color,
+            width_px=current.data.width_px if width_px is _UNSET else width_px,
         )
-        attribute = 'color' if color is not None else 'stroke_width_px'
+        attribute = 'color' if color is not _UNSET else 'stroke_width_px'
         new_value = (
             np.tile(data.color, (len(data.positions_um), 1))
-            if color is not None
+            if color is not _UNSET
             else np.full(len(data.positions_um), data.width_px, dtype=np.float32)
         )
         new_value.setflags(write=False)
         old_value = (
             np.tile(current.data.color, (len(current.data.positions_um), 1))
-            if color is not None
+            if color is not _UNSET
             else np.full(len(current.data.positions_um), current.data.width_px, dtype=np.float32)
         )
         old_value.setflags(write=False)

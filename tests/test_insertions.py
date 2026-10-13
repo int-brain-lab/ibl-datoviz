@@ -7,6 +7,7 @@ from ibl_datoviz.insertions import InsertionCollectionVisual, InsertionTrajector
 
 
 class FakeDatoviz:
+    DVZ_ALPHA_OPAQUE = 0
     DVZ_SEGMENT_CAP_ROUND = 1
     DVZ_PATH_JOIN_ROUND = 2
 
@@ -35,6 +36,14 @@ class FakeDatoviz:
 
     def dvz_path_set_caps(self, visual, first, last):
         return self._status('caps')
+
+    def dvz_visual_set_alpha_mode(self, visual, mode):
+        self.visuals[visual]['alpha_mode'] = mode
+        return self._status('alpha')
+
+    def dvz_visual_set_depth_test(self, visual, enabled):
+        self.visuals[visual]['depth_test'] = enabled
+        return self._status('depth')
 
     def dvz_path_set_join(self, visual, join, miter):
         return self._status('join')
@@ -184,7 +193,9 @@ def test_failed_replacement_rolls_back_native_and_python_state():
     collection.close()
 
 
-@pytest.mark.parametrize('failure', ['caps', 'join', 'upload', 'visible', 'attach'])
+@pytest.mark.parametrize(
+    'failure', ['alpha', 'depth', 'caps', 'join', 'upload', 'visible', 'attach']
+)
 def test_new_path_setup_failure_destroys_only_candidate(failure):
     native = FakeDatoviz()
     collection = InsertionCollectionVisual(native, 'scene', 'panel')
@@ -213,3 +224,17 @@ def test_null_path_constructor_and_close_are_retryable_and_idempotent():
     assert visual not in native.visuals
     with pytest.raises(RuntimeError, match='closed'):
         collection.set_insertion('again', path())
+
+
+@pytest.mark.parametrize('method', ['set_color', 'set_width'])
+def test_explicit_none_style_is_rejected_without_mutation(method):
+    native = FakeDatoviz()
+    collection = InsertionCollectionVisual(native, 'scene', 'panel')
+    collection.set_insertion('track', path())
+    previous = collection.get_data('track')
+    calls = len(native.calls)
+    with pytest.raises(ValueError):
+        getattr(collection, method)('track', None)
+    assert collection.get_data('track') is previous
+    assert len(native.calls) == calls
+    collection.close()

@@ -133,7 +133,11 @@ def test_native_paths_render_independently_replace_remove_and_leave_scene_alive(
 
 
 class InsertionsFake(FakeDatoviz):
-    """Viewer fake that tracks and destroys only path visuals owned by insertions."""
+    """Viewer fake tracking only path visuals owned by insertions."""
+
+    def dvz_visual_set_depth_test(self, visual, enabled):
+        self.calls.append(('depth_test', visual.name, bool(enabled)))
+        return 0
 
     def __init__(self):
         super().__init__()
