@@ -1,5 +1,40 @@
 # Audit follow up and implementation handoff
 
+## Paper video components — October 13 2026
+
+Branch `feature/video-components` builds on the reference-envelope branch.
+`PointCollection` restores arbitrary scalar/RGBA channel collections independently
+of `ProbeSites`. `SampledPlane` owns rectangular world geometry and RGBA textures.
+Both payloads own immutable arrays; their visual adapters borrow a caller's
+scene/panel and apply its display transform exactly once. They own no app,
+camera, GUI or frame loop. Existing public names and ProbeSites semantics remain.
+
+Points support color/size-only updates, full replacement, logical empty payloads
+and independent visibility. Planes support pixel/corner updates, texture resizing,
+empty/restore, explicit sampling and rollback. Constructor/upload failure releases
+candidate resources; close is idempotent and precedes caller scene destruction.
+The adapters reject unsupported WBOIT/mask/peeling or true plane-depth requests.
+Current plane rendering is explicitly an overlay preview, even with XYZ placement.
+See [component contracts](api/components.md).
+
+Validation: **327 tests pass, zero skips**, including explicitly selected real
+registered assets and two new native component tests, on Linux with Datoviz source
+`858bdf261fe4b8a41b4102a89684e60071e3df66` and library SHA256
+`1275a85fdf34149fc2a42afea837ca5c8709c9ff21c769b15b2e3bc8190e26c5`.
+The focused component set has 53 passing tests, including native pixel/range
+checks for replacement, empty restore, visibility, recoloring, texture resize and
+caller-scene survival after close. Package lint, changed-file formatting, strict
+MkDocs and whitespace checks pass. Existing formatting differences in unrelated
+files were left untouched. Logs are ignored `build/video-components-{tests,lint,docs}.log`.
+
+The engine was updated independently during this work; no engine source/build,
+dependency pin or lock was changed here. These checks validate a development
+source/library pairing, not released artifact or platform certification. The paper
+apps now consume these components and have deterministic capture/export tooling.
+Shared mesh/point/plane WBOIT and correct 3D plane depth/cutout remain engine gates.
+Independent region/hemisphere controls and multiple insertion controllers remain
+broader restoration work; they are not needed by the current two video storyboards.
+
 ## Shared Allen reference envelope — October 13 2026
 
 Branch `feature/allen-reference-envelope` adds `AtlasEnvelope`, a companion
