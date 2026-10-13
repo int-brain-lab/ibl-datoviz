@@ -98,9 +98,10 @@ class LinkedAtlasNavigator(AtlasViewer):
     def __init__(  # noqa: PLR0912, PLR0915
         self,
         mesh: AtlasMesh,
-        volumes: AtlasVolumes,
+        volumes: AtlasVolumes | None = None,
         *,
         slice_source=None,
+        render_volume: bool = True,
         mapping: str = 'allen',
         width: int = 1280,
         height: int = 900,
@@ -117,15 +118,25 @@ class LinkedAtlasNavigator(AtlasViewer):
     ) -> None:
         if palette is not None:
             raise ValueError('linked atlas slices require the verified catalog palette')
+        if render_volume and volumes is None:
+            raise ValueError('render_volume=True requires atlas volumes')
         slice_source = volumes if slice_source is None else slice_source
-        if mesh.reference_space != volumes.regions.reference_space_id:
+        if slice_source is None:
+            raise ValueError('volume-free navigation requires an explicit slice_source')
+        if volumes is not None and mesh.reference_space != volumes.regions.reference_space_id:
             raise ValueError('mesh and volume reference spaces differ')
         if mesh.reference_space != slice_source.regions.reference_space_id:
             raise ValueError('mesh and slice reference spaces differ')
+        slice_reference = getattr(
+            slice_source.grid, 'reference_space_id', slice_source.regions.reference_space_id
+        )
+        if mesh.reference_space != slice_reference:
+            raise ValueError('mesh and slice grid reference spaces differ')
+        catalog = volumes.regions if render_volume else slice_source.regions
         for atlas_mapping in mesh.mapping_names:
-            if atlas_mapping not in volumes.regions.mappings:
-                raise ValueError(f'mesh mapping is absent from volume catalog: {atlas_mapping}')
-            catalog_ids = {row.atlas_id for row in volumes.regions.physical(atlas_mapping)}
+            if atlas_mapping not in catalog.mappings:
+                raise ValueError(f'mesh mapping is absent from atlas catalog: {atlas_mapping}')
+            catalog_ids = {row.atlas_id for row in catalog.physical(atlas_mapping)}
             mesh_ids = {
                 int(region_id)
                 for region_id in np.unique(mesh.mapping_ids(atlas_mapping))
@@ -134,7 +145,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             missing = sorted(mesh_ids - catalog_ids)
             if missing:
                 raise ValueError(
-                    f'mesh {atlas_mapping} IDs are absent from volume catalog: {missing}'
+                    f'mesh {atlas_mapping} IDs are absent from atlas catalog: {missing}'
                 )
         if not np.isfinite(annotation_opacity) or not 0 <= annotation_opacity <= 1:
             raise ValueError('annotation_opacity must be between zero and one')
@@ -153,9 +164,11 @@ class LinkedAtlasNavigator(AtlasViewer):
         ):
             raise ValueError('slice_background must contain three 8-bit values')
         self.volumes = volumes
+        self.render_volume = bool(render_volume)
+        self.volume = self.volume_field = None
         self.slice_source = slice_source
         self.slice_resolution_label = _resolution_label(slice_source.grid)
-        self.volume_resolution_label = _resolution_label(volumes.grid)
+        self.volume_resolution_label = _resolution_label(volumes.grid) if render_volume else None
         self.cursor = AtlasCursor.centre(slice_source)
         self.slice_composer = AtlasSliceComposer(slice_source, mapping)
         self._slice_preparation = SlicePreparation(slice_source, mapping)
@@ -216,7 +229,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             super().__init__(
                 mesh,
                 mapping=mapping,
-                catalog=volumes.regions,
+                catalog=catalog,
                 width=width,
                 height=height,
                 surface_opacity=surface_opacity,
@@ -224,7 +237,8 @@ class LinkedAtlasNavigator(AtlasViewer):
                 **kwargs,
             )
             self._create_slices()
-            self._create_anatomical_volume()
+            if self.render_volume:
+                self._create_anatomical_volume()
             self._create_cursor_marker()
         except Exception:
             self.close()
@@ -269,6 +283,40 @@ class LinkedAtlasNavigator(AtlasViewer):
         """Create a navigator from verified mesh and volume packs."""
         volumes = open_volume_pack(volume_pack).load_volumes()
         return cls(AtlasMesh.from_pack(mesh_pack), volumes, **kwargs)
+
+    @classmethod
+    def from_slice_source(cls, mesh: AtlasMesh, slice_source, **kwargs) -> LinkedAtlasNavigator:
+        """Use compatible explicit atlas slices without constructing a 3-D volume."""
+        if kwargs.pop('render_volume', False):
+            raise ValueError('from_slice_source() requires render_volume=False')
+        return cls(mesh, slice_source=slice_source, render_volume=False, **kwargs)
+
+    @classmethod
+    def from_registered_slices(
+        cls,
+        mesh_pack: str | Path,
+        intensity_pack: str | Path,
+        assets: MaterializedRegisteredAssets,
+        *,
+        catalog,
+        **kwargs,
+    ) -> LinkedAtlasNavigator:
+        """Use verified registered slices and an explicit catalog without a volume pack.
+
+        Materialized registered assets provide projection readers, not a region
+        catalog. Supply the independently verified catalog used by those assets.
+        Existing reader errors for absent sections remain explicit.
+        """
+        if not isinstance(assets, MaterializedRegisteredAssets):
+            raise TypeError('assets must be verified MaterializedRegisteredAssets')
+        projections = {
+            projection.world_slice_axis: projection for projection in assets.projections.values()
+        }
+        if len(assets.projections) != 3 or set(projections) != {'ap', 'ml', 'dv'}:
+            raise ValueError('registered assets must contain one ap/ml/dv projection')
+        intensity = open_intensity_block_pack(intensity_pack)
+        slices = AtlasSliceSource(intensity, projections, catalog)
+        return cls.from_slice_source(AtlasMesh.from_pack(mesh_pack), slices, **kwargs)
 
     @classmethod
     def from_multiresolution_packs(
@@ -648,9 +696,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         ):
             self.dvz.dvz_view_wake(self.view)
 
-    def _upload_slice_payload(
-        self, request: SliceRequest, payload: PreparedSliceLayers
-    ) -> None:
+    def _upload_slice_payload(self, request: SliceRequest, payload: PreparedSliceLayers) -> None:
         """Upload one fully prepared slice payload on the view owner thread."""
         axis = request.axis
         anatomy, annotation = payload.anatomy, payload.annotation
@@ -796,9 +842,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             )
         # Keeping previous nonempty storage is safe while hidden. A subsequent
         # nonempty upload replaces it before making the layer visible again.
-        self._check(
-            self.dvz.dvz_visual_set_visible(visual, bool(count)), f'{context} visibility'
-        )
+        self._check(self.dvz.dvz_visual_set_visible(visual, bool(count)), f'{context} visibility')
 
     def _create_anatomical_volume(self) -> None:
         self.volume_field = self.dvz.dvz_sampled_field_from_array(
@@ -871,14 +915,11 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._update_surface_alpha_mode()
 
     def _update_surface_alpha_mode(self) -> None:
-        selection_active = bool(getattr(self, '_selected_region_ids', ()))
-        mode = (
-            self.dvz.DVZ_ALPHA_BLENDED
-            if self.volume_opacity > 0
-            else self.dvz.DVZ_ALPHA_WBOIT
-            if self.surface_opacity < 1 or selection_active
-            else self.dvz.DVZ_ALPHA_OPAQUE
-        )
+        if not self.render_volume or self.volume_opacity <= 0:
+            super()._update_surface_alpha_mode()
+            return
+        # The bounded volume route still composes through source-over blending.
+        mode = self.dvz.DVZ_ALPHA_BLENDED
         if mode == self._surface_alpha_mode:
             return
         self._check(
@@ -1170,10 +1211,13 @@ class LinkedAtlasNavigator(AtlasViewer):
         world = self.cursor.world_um(self.slice_source)
         row = self.cursor.region(self.slice_source, self.mapping)
         region = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
+        volume_label = (
+            f'3-D {self.volume_resolution_label}' if self.render_volume else '3-D volume disabled'
+        )
         self.dvz.dvz_gui_separator_text(gui, b'Cursor and selection')
         self.dvz.dvz_gui_text(
             gui,
-            f'Slices {self.slice_resolution_label} | 3-D {self.volume_resolution_label}'.encode(),
+            f'Slices {self.slice_resolution_label} | {volume_label}'.encode(),
         )
         self.dvz.dvz_gui_text(
             gui,
@@ -1237,7 +1281,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             self.boundary_opacity = float(self._boundary_opacity_control.value)
             for axis in self._boundary_visuals:
                 self._refresh_boundaries(axis)
-        if self.dvz.dvz_gui_slider_float(
+        if self.volume and self.dvz.dvz_gui_slider_float(
             gui,
             b'Volume opacity',
             ctypes.byref(self._volume_opacity_control),
