@@ -56,6 +56,8 @@ nav:
       - Atlas viewer: api/viewer.md
       - Data models: api/data-models.md
       - Composable points and planes: api/components.md
+      - Multiple insertions: api/insertions.md
+      - Volume-free navigator: api/volume-free.md
   - Development:
       - Audit follow up: NEXT_STEPS.md
       - Guide: development.md

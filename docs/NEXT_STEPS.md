@@ -1,5 +1,71 @@
 # Audit follow up and implementation handoff
 
+## Viewer restoration — October 13 2026
+
+Branch `feature/viewer-restoration` builds on `feature/video-components`. The
+authorized batch restores independent region/hemisphere controls, multiple
+insertion trajectories and volume-free navigation. Video presentation and final
+scientific review are explicitly postponed; paper/media inputs and video files
+were not changed by this batch.
+
+Signed-region visibility, RGB(A), opacity and reset controls are available on
+AtlasViewer and the linked navigator. Overrides are scoped to the active mapping;
+global hemisphere visibility uses canonical side metadata and persists across
+mapping changes. Visibility compacts triangle indices and their corresponding
+64-bit signed face keys together. Empty/zero-authored-alpha regions do not render
+or remain native picking targets; committed linked selection survives hiding.
+Palette and scalar alpha now select the native transparency mode correctly, and
+selection/hover cannot override authored alpha. Geometry, normalization and
+scientific values stay unchanged. Hemisphere filtering uses canonical faces,
+without new clipping or cut caps.
+
+Native style, scalar-data and mapping updates are transactional across geometry,
+keys, colors, alpha mode, caches and selection. Injected failures restore prior
+state; a failed rollback closes the viewer. The earlier explicit-palette mapping
+path also now refreshes its ontology model for the target mapping. These updates
+preserve the existing mapping selection-reset policy and ProbeSites semantics.
+
+`InsertionTrajectory` and `InsertionCollectionVisual` own validated world-space
+paths and provide independent stable string/integer IDs, color, width, visibility,
+replacement and removal. AtlasViewer wraps these operations; the original single
+`set_probe()` remains independent. Paths explicitly use opaque alpha and depth
+testing, with round caps/joins. Transparent paths and trajectory picking/linking
+are outside this batch. Components close before their borrowed scene is destroyed.
+
+`LinkedAtlasNavigator(render_volume=False)` omits native volume visuals and 3D
+sampled fields. `from_slice_source()` can use a compatible explicit source;
+`from_registered_slices()` takes verified registered assets, intensity transport
+and an explicit catalog, with no dense volume pack required. Existing volume
+factories retain their defaults. Missing registered sections still fail explicitly,
+and slice/cursor/selection layers and worker shutdown keep their prior contracts.
+Volume-free surfaces use the base alpha policy; positive-opacity bounded volumes
+retain their existing source-over limitation.
+
+Validation: **400 tests pass, zero skips**, including explicitly configured D070
+and registered real assets, native surface visibility/restore, multiple-path
+rendering and no-volume allocation guards. Package lint, changed-file formatting,
+strict MkDocs and whitespace checks pass. All six real-data examples complete
+three-frame desktop startup. Native checks use Datoviz
+`858bdf261fe4b8a41b4102a89684e60071e3df66`, library SHA256
+`1275a85fdf34149fc2a42afea837ca5c8709c9ff21c769b15b2e3bc8190e26c5`.
+No engine source/build, dependency pin, anatomy asset or shared environment changed.
+
+An ignored real-data review at `build/restoration-review/` uses D070, the existing
+complete 50 um slice source and three identified W39 channel-coordinate paths.
+Source hashes, selection rule and coordinate conversion are recorded locally.
+Native captures exercise left/right/both visibility, selected-region hiding,
+regional opacity, independent insertion styles/removal, Allen/Beryl/Cosmos and
+empty/restored surface state. Canonical indices remain byte-identical; no native
+volume visual/field exists. Representative captures were inspected. This is
+scripted native behavior evidence, not exhaustive mouse/GUI design acceptance.
+Logs are `build/restoration-final-{tests,lint,docs}.log`,
+`build/restoration-example-startup.log` and `build/restoration-real-review.log`.
+
+See [viewer controls](api/viewer.md), [insertions](api/insertions.md) and
+[volume-free navigation](api/volume-free.md). Shared point/plane/mesh WBOIT and
+depth-correct sampled planes remain upstream work; these restored workflows do
+not claim that profile or release/cross-platform certification.
+
 ## Paper video components — October 13 2026
 
 Branch `feature/video-components` builds on the reference-envelope branch.

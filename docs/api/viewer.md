@@ -14,12 +14,19 @@ colors are three or four integer channels in `[0, 255]`.
         - from_registered_assets
         - from_multiresolution_packs
         - from_anatomy_packs
+        - from_slice_source
+        - from_registered_slices
         - set_cursor
         - set_cursor_from_slice_data
         - set_mapping
         - set_probe
         - set_probe_data
         - set_region_data
+        - set_region_visible
+        - set_region_color
+        - set_region_opacity
+        - set_hemisphere
+        - set_insertion
         - render_offscreen
         - show
         - close
@@ -73,9 +80,70 @@ limited by the current 64-entry GPU categorical palette.
         - set_probe_sites
         - set_probe_data
         - set_region_data
+        - set_region_visible
+        - show_region
+        - hide_region
+        - set_region_color
+        - set_region_opacity
+        - reset_region_style
+        - set_hemisphere_visible
+        - set_hemisphere
+        - visible_region_ids
+        - set_insertion
+        - set_insertion_color
+        - set_insertion_width
+        - set_insertion_visible
+        - remove_insertion
+        - insertion_ids
         - selected_region_ids
         - set_selected_region_ids
         - clear_selection
         - render_offscreen
         - show
         - close
+
+## Independent surface presentation
+
+Region controls use signed IDs from the current mapping: negative is left,
+positive is right. `hemisphere="left"`, `"right"` or `"both"` explicitly expands
+an absolute region ID; omitting it targets the supplied signed ID exactly.
+Unknown or unmapped IDs fail before native changes. Overrides are stored per
+mapping, so switching back restores that mapping's region styles. Global
+hemisphere visibility persists across mappings and uses verified presentation
+side metadata, including unmapped faces.
+
+```python
+viewer.set_region_color(-315, (220, 80, 40))
+viewer.set_region_opacity(-315, 0.3)
+viewer.hide_region(315)
+viewer.show_region(315)
+viewer.set_region_visible(315, False, hemisphere="both")
+viewer.reset_region_style(315, hemisphere="both")
+viewer.set_hemisphere("left")
+viewer.set_hemisphere_visible("right", True)
+```
+
+Visibility filters canonical triangle indices and their matching face link keys,
+preserving atlas identity arrays, normalization and framing. Hidden faces and
+faces with zero authored alpha are absent from picking as well as shading; an empty surface suppresses
+drawing without unsupported zero-count uploads. Hemisphere controls select the
+pack's canonical face partition. They do not reclip geometry, generate cut caps,
+or replace the scientific annotation with a mesh.
+
+RGB overrides retain source alpha; RGBA overrides replace authored region alpha,
+scaled by global surface opacity. Regional opacity multiplies authored alpha.
+Hover/selection cannot raise alpha above authored palette or regional overrides;
+the existing global-opacity selection emphasis remains available. Native alpha
+mode respects effective palette/scalar alpha, not only global opacity. An active
+bounded volume retains its documented source-over composition; the volume-free
+route can use mesh WBOIT directly.
+
+Manual appearance overrides affect the 3D surface only. They do not change
+scientific values, reductions, linked table colors or slice annotations. Hiding a
+selected region preserves committed linked selection; changing mappings retains
+the established selection-reset policy. Failed native style/data/mapping updates
+restore prior identity, geometry, colors, alpha mode and public/cache state. A
+failed rollback closes the viewer rather than leaving a partially updated scene.
+
+See [multiple insertions](insertions.md) and [volume-free navigation](volume-free.md)
+for the independent trajectory and slice-source contracts.

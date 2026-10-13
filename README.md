@@ -1,5 +1,11 @@
 # ibl-datoviz
 
+Independent signed-region/hemisphere controls, multiple identified insertion
+trajectories and a volume-free linked navigator are available in the current
+development branch. See the [viewer API](docs/api/viewer.md),
+[insertion components](docs/api/insertions.md) and
+[volume-free navigation](docs/api/volume-free.md) for ownership and rendering limits.
+
 Native Python visualization for International Brain Laboratory atlas data, built on Datoviz
 v0.4.
 
