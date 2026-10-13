@@ -4,6 +4,7 @@ import ibl_datoviz
 def test_public_api_is_explicit_and_stable():
     assert ibl_datoviz.__all__ == [
         'AtlasMesh',
+        'AtlasEnvelope',
         'AtlasSliceSource',
         'AtlasCursor',
         'AtlasSliceComposer',

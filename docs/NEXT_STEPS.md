@@ -1,5 +1,30 @@
 # Audit follow up and implementation handoff
 
+## Shared Allen reference envelope — October 13 2026
+
+Branch `feature/allen-reference-envelope` adds `AtlasEnvelope`, a companion
+display adapter for the shared root-997 asset in `ibl-anatomy`. Its default
+offline source is the original smooth Allen reference surface. The adapter
+owns its arrays, rejects mismatched reference spaces, and uses the regional
+`AtlasMesh` transform without reapplying the source affine or changing D070
+positions, indices, presentation identities or framing. Explicit prepared
+`annotation-boundary` arrays are supported for diagnostics; no silent fallback
+or runtime smoothing occurs.
+
+The paper media apps use this adapter with a prepared Allen envelope. The
+companion source has 49,324 vertices, 98,638 triangles and six open edges, so it
+remains a display surface rather than a replacement for annotation queries.
+Datoviz's source/library and dependency pin are unchanged. The anatomy source
+pin is intentionally advanced to the envelope implementation for reproducible
+installed use; shared D070 assets remain byte-identical.
+
+Validation: 274 tests pass with zero skips using the configured native facade
+and library, D070 and registered real-asset roots. Four adapter regression tests
+cover array ownership, shared normalization, reference-space rejection, and
+invalid normals/indices. Ruff lint/formatting, strict MkDocs and whitespace
+checks pass. Both real paper apps produce reviewed native captures. macOS and
+release artifact certification remain separate.
+
 The October 5, 2026 implementation queue has landed: the three reproduced correctness fixes,
 documentation/dependency alignment, and R1–R5 extractions are complete. The specifications and
 original reproductions below are retained as regression acceptance criteria, not unresolved defects.

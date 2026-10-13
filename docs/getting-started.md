@@ -1,5 +1,30 @@
 # Getting started
 
+## Shared reference envelope
+
+Regional displays use the original D070 Allen geometry. A whole-brain context
+shell uses the companion source-native Allen root asset from `ibl-anatomy`,
+without additional smoothing. Prepare it explicitly, then read it offline:
+
+```python
+from ibl_anatomy import materialize_surface_asset
+from ibl_datoviz import AtlasEnvelope, AtlasMesh
+
+materialize_surface_asset("build/allen-root")  # new destination; source hash checked
+atlas = AtlasMesh.from_pack("build/atlas-d070/mesh-pack")
+envelope = AtlasEnvelope.from_source("build/allen-root", atlas)
+```
+
+Upload `envelope.positions`, `envelope.normals` and `envelope.indices` to a
+separate mesh visual. The envelope shares the regional mesh's exact display
+transform; it does not supply regional picking identities or change the atlas's
+framing. Its source coordinates are already converted to world µm before display
+normalization. Different reference spaces fail explicitly. The companion source
+has six open boundary edges and is for display, not voxel-label or closed-solid
+computations. `from_world_arrays()` also accepts explicitly prepared
+`annotation-boundary` geometry for diagnostic tools. No default fallback or
+runtime geometry smoothing is performed.
+
 ## Contributor workflow
 
 Datoviz is a separate prerequisite: clone and build your chosen local checkout and establish its

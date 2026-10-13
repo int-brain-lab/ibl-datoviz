@@ -19,6 +19,20 @@ or `KeyError` before native upload.
         - link_keys
         - normalize_points
 
+## Reference brain envelope
+
+`AtlasEnvelope` owns a separate whole-brain display surface. It uses the same
+normalization as `AtlasMesh`, preserving scientific world coordinates and regional
+identities. Its default source is the verified source-native Allen envelope;
+annotation-boundary arrays require an explicit variant.
+
+::: ibl_datoviz.envelope.AtlasEnvelope
+    options:
+      members:
+        - from_source
+        - from_geometry
+        - from_world_arrays
+
 ## Registered atlas slices
 
 `AtlasSliceSource` adapts verified registered projections and scalar intensity blocks. It owns its

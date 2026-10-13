@@ -2,6 +2,7 @@
 
 from .atlas import AtlasMesh
 from .atlas_slice_source import AtlasSliceSource
+from .envelope import AtlasEnvelope
 from .linked_atlas import LinkedAtlasNavigator
 from .navigator import (
     AtlasCursor,
@@ -15,6 +16,7 @@ from .viewer import AtlasViewer
 
 __all__ = [
     'AtlasMesh',
+    'AtlasEnvelope',
     'AtlasSliceSource',
     'AtlasCursor',
     'AtlasSliceComposer',
