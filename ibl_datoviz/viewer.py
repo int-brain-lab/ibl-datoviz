@@ -21,6 +21,7 @@ from ibl_anatomy import (
 
 from .atlas import AtlasMesh
 from .gui_data import create_probe_table, create_region_table, create_region_tree
+from .insertions import InsertionCollectionVisual
 from .ontology import AtlasTreeModel
 from .presentation import region_presentation, scalar_colors
 from .selection import (
@@ -109,6 +110,7 @@ class AtlasViewer:
         self.camera_angles = self._validated_camera_angles(camera_angles)
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
+        self._insertions = None
         self.mapping = mapping
         self.catalog = catalog
         self.tree_model = AtlasTreeModel.from_catalog(catalog, mapping) if catalog else None
@@ -530,6 +532,42 @@ class AtlasViewer:
             labels,
             presentation.colors,
         )
+
+    def _insertion_collection(self):
+        self._require_open()
+        if self._insertions is None:
+            self._insertions = InsertionCollectionVisual(
+                self.dvz, self.scene, self.panel, transform=self.mesh_data.normalize_points
+            )
+        return self._insertions
+
+    def set_insertion(self, insertion_id, points_um, *, color=(255, 205, 72, 255), width_px=4.0):
+        """Add/replace an independently identified opaque trajectory in world micrometres."""
+        self._insertion_collection().set_insertion(
+            insertion_id, points_um, color=color, width_px=width_px
+        )
+
+    def set_insertion_color(self, insertion_id, color):
+        """Change one trajectory's opaque RGB(A) color."""
+        self._insertion_collection().set_color(insertion_id, color)
+
+    def set_insertion_width(self, insertion_id, width_px):
+        """Change one trajectory's stroke width in pixels."""
+        self._insertion_collection().set_width(insertion_id, width_px)
+
+    def set_insertion_visible(self, insertion_id, visible):
+        """Show/hide one insertion, independently of atlas visibility and selection."""
+        self._insertion_collection().set_visible(insertion_id, visible)
+
+    def remove_insertion(self, insertion_id):
+        """Remove one insertion and its native path, preserving unrelated trajectories."""
+        self._insertion_collection().remove(insertion_id)
+
+    @property
+    def insertion_ids(self):
+        """Return independent insertion identities in insertion order."""
+        self._require_open()
+        return () if self._insertions is None else self._insertions.ids
 
     def set_probe(
         self,
@@ -1358,6 +1396,9 @@ class AtlasViewer:
         if getattr(self, '_closed', False):
             return
         datoviz = getattr(self, 'dvz', None)
+        if getattr(self, '_insertions', None) is not None:
+            self._insertions.close()
+            self._insertions = None
         if getattr(self, '_viewport_input', None) is not None:
             self._viewport_input.close()
             self._viewport_input = None

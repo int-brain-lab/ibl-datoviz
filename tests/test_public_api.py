@@ -18,5 +18,7 @@ def test_public_api_is_explicit_and_stable():
         'PointCollectionVisual',
         'SampledPlane',
         'SampledPlaneVisual',
+        'InsertionTrajectory',
+        'InsertionCollectionVisual',
     ]
     assert all(hasattr(ibl_datoviz, name) for name in ibl_datoviz.__all__)

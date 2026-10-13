@@ -3,6 +3,7 @@
 from .atlas import AtlasMesh
 from .atlas_slice_source import AtlasSliceSource
 from .envelope import AtlasEnvelope
+from .insertions import InsertionCollectionVisual, InsertionTrajectory
 from .linked_atlas import LinkedAtlasNavigator
 from .navigator import (
     AtlasCursor,
@@ -32,6 +33,8 @@ __all__ = [
     'PointCollectionVisual',
     'SampledPlane',
     'SampledPlaneVisual',
+    'InsertionTrajectory',
+    'InsertionCollectionVisual',
 ]
 
 __version__ = '0.2.0.dev0'
