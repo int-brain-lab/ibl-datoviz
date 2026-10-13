@@ -9,6 +9,15 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Reproducible review follow-up
+
+The next authorized batch stays on `feature/datoviz-v04`: runnable real-data
+examples for restored region/hemisphere styling, multiple insertions and
+volume-free navigation, plus an isolated installed-wheel CPU check. Paper-side
+acceptance reporting stays on `feature/datoviz-media`. These checks do not
+advance dependency pins or rebuild Datoviz. Video presentation and scientific
+review remain deferred; the anatomy coverage audit is a later batch.
+
 ## Viewer restoration — October 13 2026
 
 Branch `feature/viewer-restoration` builds on `feature/video-components`. The
