@@ -18,6 +18,14 @@ Datoviz's source/library and dependency pin are unchanged. The anatomy source
 pin is intentionally advanced to the envelope implementation for reproducible
 installed use; shared D070 assets remain byte-identical.
 
+The locked anatomy revision is `0bd6a63c7c46d4ef0fdd710934e059135b342d7b`.
+Locked resolution and installation pass with no other dependency changes.
+The previous fixture cache was preserved and a new cache fetched at that
+revision. Standard `just doctor` passes with the existing local Datoviz-revision
+warning; `just test` passes 273 tests with one expected registered-asset skip
+when its optional environment variable is unset. The explicitly configured
+registered root is included in the zero-skip native run below.
+
 Validation: 274 tests pass with zero skips using the configured native facade
 and library, D070 and registered real-asset roots. Four adapter regression tests
 cover array ownership, shared normalization, reference-space rejection, and
