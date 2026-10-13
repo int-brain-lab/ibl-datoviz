@@ -1,5 +1,14 @@
 # Audit follow up and implementation handoff
 
+## Active branch
+
+Continue all Datoviz v0.4 work on `feature/datoviz-v04`, keeping `main` unchanged
+until an explicit merge request from the user. The former envelope,
+video-component, viewer-restoration and v0.4-spike branches have been consolidated;
+all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
+Branch names in the dated entries below identify historical implementation batches.
+See `AGENTS.md` for the working-branch policy.
+
 ## Viewer restoration — October 13 2026
 
 Branch `feature/viewer-restoration` builds on `feature/video-components`. The

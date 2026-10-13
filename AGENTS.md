@@ -1,5 +1,13 @@
 # Working in ibl-datoviz
 
+## Working branch
+
+Keep ongoing Datoviz v0.4 work on `feature/datoviz-v04`. This branch contains the
+accumulated envelope, video-component and viewer-restoration work. Continue new
+implementation and documentation commits there; do not create a branch for each
+batch. Keep `main` unchanged until the user explicitly requests a merge or changes
+this branch policy.
+
 Read `docs/NEXT_STEPS.md` for completed work, validation evidence, and remaining release gates.
 Use `docs/REAL_DATA_EXAMPLE_ROADMAP.md` for interactive review criteria. Preserve the public API
 and native ownership contracts: retained arrays must own their storage; scene-owned resources,
