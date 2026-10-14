@@ -47,6 +47,14 @@ class FakeTreeAnnotation(ctypes.Structure):
     ]
 
 
+class FakeItemStateBufferDesc(ctypes.Structure):
+    _fields_ = [('slot_count', ctypes.c_uint32), ('words', ctypes.POINTER(ctypes.c_uint32))]
+
+
+class FakeStateStyle(ctypes.Structure):
+    _fields_ = [('struct_size', ctypes.c_uint32)]
+
+
 class FakeDatoviz:
     DvzSelectionItem = FakeSelectionItem
     DvzGuiTreeTextSpan = FakeTreeTextSpan
@@ -69,6 +77,10 @@ class FakeDatoviz:
     DVZ_GUI_DATA_SET_FLAGS_RESET_STATE = 1
     DVZ_SEGMENT_CAP_ROUND = 1
     DVZ_PATH_JOIN_ROUND = 1
+    DVZ_ITEM_STATE_HOVERED = 1
+    DVZ_ITEM_STATE_SELECTED = 2
+    DVZ_ITEM_STATE_VISUAL_ALPHA = 1
+    DVZ_ITEM_STATE_VISUAL_TINT = 2
     DVZ_ALPHA_OPAQUE = 0
     DVZ_ALPHA_WBOIT = 2
     DVZ_GUI_TABLE_COLUMN_TEXT = 0
@@ -97,6 +109,44 @@ class FakeDatoviz:
     @staticmethod
     def DvzColor(*rgba):  # noqa: N802 - mirrors the generated Datoviz type
         return rgba
+
+    @staticmethod
+    def dvz_item_state_buffer_desc():
+        return FakeItemStateBufferDesc()
+
+    @staticmethod
+    def dvz_selection_visual_style():
+        return FakeStateStyle()
+
+    @staticmethod
+    def dvz_item_state_visual_style():
+        return FakeStateStyle()
+
+    def dvz_item_state_buffer(self, _scene, descriptor):
+        bank = self._handle('item_state_buffer')
+        if bank is not None:
+            desc = descriptor._obj
+            bank.words = np.ctypeslib.as_array(desc.words, shape=(desc.slot_count,)).copy()
+        return bank
+
+    def dvz_visual_set_item_state_buffer(self, _visual, _bank, indices):
+        self.calls.append(('state_binding', np.array(indices, copy=True)))
+        return 0
+
+    def dvz_item_state_buffer_update(self, bank, slots, words):
+        bank.words[slots] = words
+        self.calls.append(('state_update', np.array(slots, copy=True), np.array(words, copy=True)))
+        return 0
+
+    def dvz_item_state_buffer_style(self, bank, selection, hovered, active):
+        bank.active = bool(active)
+        bank.context_alpha = selection._obj.unselected_alpha
+        bank.tint_mix = hovered._obj.tint_mix
+        self.calls.append(('state_style', bank.active, bank.context_alpha, bank.tint_mix))
+        return 0
+
+    def dvz_item_state_buffer_destroy(self, _bank):
+        self.calls.append(('state_destroy',))
 
     def dvz_scene(self):
         return self._handle('scene')
@@ -609,143 +659,109 @@ def test_translucent_surface_uses_wboit_and_preserves_alpha(mesh):
         viewer.set_selected_region_ids([-315])
         color_calls = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')]
         selected_colors = color_calls[-1]
-        np.testing.assert_array_equal(selected_colors[3][:, 3], [255] * len(mesh.positions))
+        np.testing.assert_array_equal(selected_colors[3][:, 3], [64] * len(mesh.positions))
 
 
-def test_hover_brightens_only_hovered_region_without_selection_dimming(mesh):
+def test_hover_uses_gpu_state_without_changing_authored_colors(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake) as viewer:
-        base = viewer._display_surface_colors()
-        viewer._set_hovered_region_ids((997,))
-        hover_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][-1][
-            3
-        ]
-        hovered = np.abs(mesh.mapping_ids('allen')) == 997
-
+        before = len(fake.calls)
+        viewer._set_hovered_region_ids((315,))
+        np.testing.assert_array_equal(
+            viewer._surface_state.words, [fake.DVZ_ITEM_STATE_HOVERED] * len(mesh.presentations)
+        )
         assert viewer.selected_region_ids() == ()
-        assert viewer._emphasis_region_ids() == ()
         assert viewer._highlight_region_ids == ()
-        np.testing.assert_array_equal(hover_colors[~hovered], base[~hovered])
-        assert np.all(hover_colors[hovered, :3] >= base[hovered, :3])
-
-        viewer.set_selected_region_ids([-315])
+        assert viewer._surface_state.handle.tint_mix == 0.28
+        assert not any(call[:3] == ('data', 'mesh', 'color') for call in fake.calls[before:])
+        viewer.set_selected_region_ids((-315,))
         viewer._set_hovered_region_ids(())
+        np.testing.assert_array_equal(
+            viewer._surface_state.words, [fake.DVZ_ITEM_STATE_SELECTED] * len(mesh.presentations)
+        )
         assert viewer.selected_region_ids() == (-315,)
-        assert viewer._emphasis_region_ids() == (-315,)
         assert viewer._highlight_region_ids == (315,)
 
 
-def test_selection_dims_every_nonselected_surface_region(mesh):
+def test_selection_context_and_hover_have_independent_gpu_bits(mesh):
     presentations = tuple(
-        {
-            **presentation,
-            'mappings': {
-                **presentation['mappings'],
-                'allen': -315 if presentation['presentation_id'] == 0 else 997,
-            },
-        }
-        for presentation in mesh.presentations
+        {**p, 'mappings': {**p['mappings'], 'allen': -315 if p['presentation_id'] == 0 else 997}}
+        for p in mesh.presentations
     )
-    multi_region_mesh = replace(mesh, presentations=presentations)
     fake = FakeDatoviz()
     with AtlasViewer(
-        multi_region_mesh,
-        datoviz=fake,
-        selection_dim_factor=0.25,
-        selection_context_opacity=0.18,
+        replace(mesh, presentations=presentations), datoviz=fake, selection_context_opacity=0.18
     ) as viewer:
-        base = viewer._display_surface_colors()
+        before = len(fake.calls)
         viewer.set_selected_region_ids((-315,))
-        selected_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][
-            -1
-        ][3]
-        selected = np.abs(multi_region_mesh.mapping_ids('allen')) == 315
-
-        np.testing.assert_array_equal(selected_colors[selected, :3], base[selected, :3])
-        np.testing.assert_array_equal(selected_colors[selected, 3], 255)
-        np.testing.assert_array_equal(selected_colors[~selected, :3], base[~selected, :3])
         np.testing.assert_array_equal(
-            selected_colors[~selected, 3],
-            np.rint(base[~selected, 3].astype(np.float32) * 0.18).astype(np.uint8),
+            viewer._surface_state.words, [fake.DVZ_ITEM_STATE_SELECTED, 0]
         )
-        alpha_modes = [call[2] for call in fake.calls if call[:2] == ('alpha_mode', 'mesh')]
-        assert alpha_modes == [fake.DVZ_ALPHA_OPAQUE, fake.DVZ_ALPHA_WBOIT]
-
+        assert viewer._surface_state.handle.active
+        assert viewer._surface_state.handle.context_alpha == 0.18
         viewer._set_hovered_region_ids((997,))
-        hovered_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][
-            -1
-        ][3]
-        np.testing.assert_array_equal(hovered_colors[~selected, 3], selected_colors[~selected, 3])
-        np.testing.assert_array_equal(hovered_colors[selected, 3], 255)
-
+        np.testing.assert_array_equal(
+            viewer._surface_state.words,
+            [fake.DVZ_ITEM_STATE_SELECTED, fake.DVZ_ITEM_STATE_HOVERED],
+        )
         viewer.clear_selection()
-        alpha_modes = [call[2] for call in fake.calls if call[:2] == ('alpha_mode', 'mesh')]
-        assert alpha_modes[-1] == fake.DVZ_ALPHA_OPAQUE
+        assert not viewer._surface_state.handle.active
+        np.testing.assert_array_equal(
+            viewer._surface_state.words, [0, fake.DVZ_ITEM_STATE_HOVERED]
+        )
+        assert not any(call[:3] == ('data', 'mesh', 'color') for call in fake.calls[before:])
+        assert [c[2] for c in fake.calls if c[:2] == ('alpha_mode', 'mesh')] == [
+            fake.DVZ_ALPHA_OPAQUE,
+            fake.DVZ_ALPHA_WBOIT,
+            fake.DVZ_ALPHA_OPAQUE,
+        ]
 
 
-def test_surface_emphasis_reuses_and_invalidates_derived_arrays(mesh):
+def test_interaction_reuses_bank_and_vertex_indices_across_mapping(mesh):
     fake = FakeDatoviz()
-    with AtlasViewer(mesh, datoviz=fake, selection_dim_factor=0.25) as viewer:
-        initial_base = viewer._surface_base_colors_cache
-        assert initial_base is not None
-        assert viewer._surface_mapping_ids_cache is None
-
-        viewer._set_hovered_region_ids((997,))
-        initial_mapping_ids = viewer._surface_mapping_ids_cache
-        initial_lookup = viewer._surface_mapping_lookup_cache
-        assert all(array.flags.owndata for array in initial_lookup)
-        initial_work = viewer._surface_emphasis_work
-        assert initial_mapping_ids is not None
-        assert initial_work is not None
-
-        viewer._set_hovered_region_ids((-315,))
-        assert viewer._surface_base_colors_cache is initial_base
-        assert viewer._surface_mapping_ids_cache is initial_mapping_ids
-        assert viewer._surface_mapping_lookup_cache is initial_lookup
-        assert viewer._surface_emphasis_work is initial_work
-
+    with AtlasViewer(mesh, datoviz=fake) as viewer:
+        bank, indices = viewer._surface_state.handle, viewer._surface_state.indices
+        before = len(fake.calls)
+        viewer._set_hovered_region_ids((315,))
         viewer.set_selected_region_ids((-315,))
-        initial_dimmed = viewer._surface_dimmed_colors_cache
-        assert initial_dimmed is not None
-        viewer.set_selected_region_ids((997,))
-        assert viewer._surface_dimmed_colors_cache is initial_dimmed
-
         viewer.set_mapping('beryl')
-        assert viewer._surface_base_colors_cache is not initial_base
-        assert viewer._surface_mapping_ids_cache is None
-        assert viewer._surface_mapping_lookup_cache is None
-        assert viewer._surface_dimmed_colors_cache is None
-        assert viewer._surface_emphasis_work is None
-
-        viewer._set_hovered_region_ids((997,))
-        assert viewer._surface_mapping_ids_cache is not initial_mapping_ids
+        assert viewer._surface_state.handle is bank
+        assert viewer._surface_state.indices is indices
+        assert indices.flags.owndata
+        assert viewer._surface_state._mapping == 'beryl'
+        assert not bank.active
+        np.testing.assert_array_equal(bank.words, np.zeros(len(mesh.presentations), np.uint32))
+        assert not any(c[0] in ('state_binding', 'item_state_buffer') for c in fake.calls[before:])
 
 
 @pytest.mark.parametrize('mapping', ['allen', 'beryl', 'cosmos'])
-def test_surface_region_mask_preserves_per_vertex_mapping_membership(mesh, mapping):
+def test_surface_state_slots_preserve_mapping_membership(mesh, mapping):
     with AtlasViewer(mesh, datoviz=FakeDatoviz(), mapping=mapping) as viewer:
-        mapping_ids = np.abs(mesh.mapping_ids(mapping))
-        for ids in ((), (0,), (997,), (315, 997), (99999999,)):
-            np.testing.assert_array_equal(
-                viewer._surface_region_mask(ids), np.isin(mapping_ids, ids)
-            )
+        for selected in ((), (0,), (997,), (315, 997), (99999999,)):
+            viewer._surface_state.update(selected, (), selection_active=bool(selected))
+            expected = [
+                2
+                if p['mappings'][mapping] is not None
+                and abs(int(p['mappings'][mapping])) in selected
+                and int(p['mappings'][mapping]) != 0
+                else 0
+                for p in mesh.presentations
+            ]
+            np.testing.assert_array_equal(viewer._surface_state.words, expected)
 
 
-def test_region_data_replaces_surface_emphasis_base_cache(mesh):
+def test_region_data_changes_authored_colors_without_rebinding_state(mesh):
     catalog = open_region_catalog(REGIONS)
     data = AtlasRegionValues.from_arrays([-997, -8], [1.0, 2.5])
     fake = FakeDatoviz()
     with AtlasViewer(mesh, catalog=catalog, datoviz=fake) as viewer:
-        initial_base = viewer._surface_base_colors_cache
-        viewer._set_hovered_region_ids((997,))
-        assert viewer._surface_mapping_ids_cache is not None
-
+        initial_base, bank = viewer._surface_base_colors_cache, viewer._surface_state.handle
+        viewer._set_hovered_region_ids((315,))
         viewer.set_region_data(data, value_range=(0, 5), mapping_reduction='weighted_mean')
-
         assert viewer._surface_base_colors_cache is not initial_base
-        assert viewer._surface_mapping_ids_cache is not None
-        color_updates = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')]
-        np.testing.assert_array_equal(viewer._surface_base_colors_cache, color_updates[-2][3])
+        assert viewer._surface_state.handle is bank
+        color_updates = [c for c in fake.calls if c[:3] == ('data', 'mesh', 'color')]
+        np.testing.assert_array_equal(viewer._surface_base_colors_cache, color_updates[-1][3])
 
 
 def test_region_data_uses_readable_neutral_context(mesh):
@@ -1149,3 +1165,21 @@ def test_hover_can_be_disabled_without_disabling_click_selection(mesh):
         assert viewer._hovered_region_ids == ()
         fake.mesh_selection = [encode_region_key(-315)]
         assert viewer._mesh_selected_region_ids() == (-315,)
+
+
+def test_interaction_never_rebuilds_vertex_membership_or_reuploads_base_colors(mesh, monkeypatch):
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake) as viewer:
+
+        def unexpected_scan(*_args, **_kwargs):
+            pytest.fail('interaction expanded region membership across mesh vertices')
+
+        monkeypatch.setattr(AtlasMesh, 'mapping_ids', unexpected_scan)
+        before = len(fake.calls)
+        viewer._set_hovered_region_ids((315,))
+        viewer.set_selected_region_ids((-315,))
+        viewer._set_hovered_region_ids(())
+        calls = fake.calls[before:]
+        assert any(c[0] == 'state_update' for c in calls)
+        assert not any(c[0] in ('data', 'data_many', 'indices', 'state_binding') for c in calls)
+        assert viewer._surface_state.handle.active

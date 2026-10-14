@@ -33,6 +33,7 @@ from .selection import (
     selection_decision,
     tree_selection_keys,
 )
+from .surface_state import SurfaceState
 from .surface_style import SurfaceStyle
 from .viewport_input import ViewportInputAdapter
 
@@ -119,6 +120,7 @@ class AtlasViewer:
         self._uploaded_face_mask = self._surface_face_mask.copy()
         self._uploaded_face_mapping = mapping
         self._insertions = None
+        self._surface_state = None
         self.mapping = mapping
         self.catalog = catalog
         self.tree_model = AtlasTreeModel.from_catalog(catalog, mapping) if catalog else None
@@ -171,14 +173,8 @@ class AtlasViewer:
         self._highlight_region_ids: tuple[int, ...] = ()
         self._last_surface_emphasis: tuple[tuple[int, ...], tuple[int, ...]] | None = None
         self._surface_base_colors_cache: NDArray[np.uint8] | None = None
-        self._surface_mapping_ids_cache: NDArray[np.int64] | None = None
-        self._surface_mapping_lookup_cache: tuple[NDArray[np.int64], NDArray[np.intp]] | None = (
-            None
-        )
-        self._surface_dimmed_colors_cache: NDArray[np.uint8] | None = None
-        self._surface_emphasis_work: NDArray[np.uint8] | None = None
+        self._surface_base_is_translucent = False
         self._surface_alpha_mode: int | None = None
-        self._surface_alpha_cap_cache = None
         self._last_mesh_region_ids: tuple[int, ...] = ()
         try:
             self.scene = self.dvz.dvz_scene()
@@ -345,6 +341,7 @@ class AtlasViewer:
             'mesh region link keys',
         )
         self._check(self.dvz.dvz_panel_add_visual(self.panel, self.mesh, None), 'mesh attach')
+        self._surface_state = SurfaceState(self)
         mask = self._visible_surface_faces(self.mapping)
         if not np.all(mask):
             self._upload_surface_faces(mask, self.mapping)
@@ -456,12 +453,8 @@ class AtlasViewer:
             '_uploaded_face_mask',
             '_uploaded_face_mapping',
             '_surface_base_colors_cache',
-            '_surface_mapping_ids_cache',
-            '_surface_mapping_lookup_cache',
-            '_surface_dimmed_colors_cache',
-            '_surface_emphasis_work',
+            '_surface_base_is_translucent',
             '_last_surface_emphasis',
-            '_surface_alpha_cap_cache',
             '_surface_alpha_mode',
             '_selected_region_ids',
             '_hovered_region_ids',
@@ -471,11 +464,7 @@ class AtlasViewer:
             '_probe_colors',
         )
         state = {name: getattr(self, name) for name in names}
-        colors = (
-            self._surface_emphasis_work
-            if self._last_surface_emphasis is not None and self._surface_emphasis_work is not None
-            else self._surface_base_colors_cache
-        )
+        colors = self._surface_base_colors_cache
         if colors is None:
             colors = self._display_surface_colors()
         state['colors'] = np.array(colors, order='C', copy=True)
@@ -528,6 +517,9 @@ class AtlasViewer:
                     ),
                     'surface transaction probe key rollback',
                 )
+            self._surface_state.invalidate()
+            self._last_surface_emphasis = None
+            self._update_surface_emphasis()
             for widget in widgets:
                 getattr(self, f'_replace_{widget}')()
             if self._selector_gui is not None and self.region_tree is not None:
@@ -717,6 +709,7 @@ class AtlasViewer:
                 widgets.append('region_table')
                 self._replace_region_table()
             self._clear_surface_hover()
+            self._update_surface_emphasis()
             # Committed native selection is unchanged until every other setter
             # and GUI replacement has succeeded.
             if self.interaction is not None:
@@ -1569,40 +1562,8 @@ class AtlasViewer:
         if state == self._last_surface_emphasis:
             return
         self._update_surface_alpha_mode()
-        base_colors, _ = self._surface_emphasis_inputs()
-        if self._surface_emphasis_work is None:
-            self._surface_emphasis_work = np.empty_like(base_colors)
-        colors = self._surface_emphasis_work
-        np.copyto(colors, base_colors)
-        selected_mask = None
-        if selected_ids:
-            selected_mask = self._surface_region_mask(selected_ids)
-            if self._surface_dimmed_colors_cache is None:
-                dimmed = base_colors.astype(np.float32)
-                dimmed[:, 3] *= self.selection_context_opacity
-                self._surface_dimmed_colors_cache = np.ascontiguousarray(
-                    np.rint(dimmed), dtype=np.uint8
-                )
-            np.copyto(colors, self._surface_dimmed_colors_cache)
-            selected_indices = np.flatnonzero(selected_mask)
-            colors[selected_indices] = base_colors[selected_indices]
-            colors[selected_indices, 3] = 255
-        if hovered_ids:
-            hover_mask = self._surface_region_mask(hovered_ids)
-            hover_indices = np.flatnonzero(hover_mask)
-            hovered_rgb = 0.72 * base_colors[hover_indices, :3].astype(np.float32) + 0.28 * 255
-            colors[hover_indices, :3] = np.rint(hovered_rgb).astype(np.uint8)
-            if selected_mask is None:
-                colors[hover_indices, 3] = np.maximum(base_colors[hover_indices, 3], 235)
-            else:
-                selected_hover_indices = hover_indices[selected_mask[hover_indices]]
-                colors[selected_hover_indices, 3] = 255
-        if self._surface_alpha_cap_cache is None:
-            self._surface_alpha_cap_cache = self._authored_surface_alpha()
-        colors[:, 3] = np.minimum(colors[:, 3], self._surface_alpha_cap_cache)
-        self._check(
-            self.dvz.dvz_visual_set_data(self.mesh, 'color', colors),
-            'selection and hover color update',
+        self._surface_state.update(
+            selected_ids, hovered_ids, selection_active=bool(self._selected_region_ids)
         )
         self._highlight_region_ids = selected_ids
         self._last_surface_emphasis = state
@@ -1623,13 +1584,12 @@ class AtlasViewer:
         self._surface_alpha_mode = mode
 
     def _surface_is_translucent(self):
-        colors = self._surface_base_colors_cache
-        if colors is None:
-            colors = self._display_surface_colors()
+        if self._surface_base_colors_cache is None:
+            self._invalidate_surface_emphasis_cache(self._display_surface_colors())
         return (
             self.surface_opacity < 1
             or bool(self._selected_region_ids)
-            or bool(np.any(colors[:, 3] < 255))
+            or self._surface_base_is_translucent
         )
 
     def _invalidate_surface_emphasis_cache(
@@ -1637,34 +1597,10 @@ class AtlasViewer:
     ) -> None:
         """Invalidate derived surface styling after canonical color or mapping changes."""
         self._surface_base_colors_cache = base_colors
-        self._surface_mapping_ids_cache = None
-        self._surface_mapping_lookup_cache = None
-        self._surface_dimmed_colors_cache = None
-        self._surface_emphasis_work = None
+        self._surface_base_is_translucent = (
+            bool(np.any(base_colors[:, 3] < 255)) if base_colors is not None else False
+        )
         self._last_surface_emphasis = None
-        self._surface_alpha_cap_cache = None
-
-    def _surface_emphasis_inputs(self) -> tuple[NDArray[np.uint8], NDArray[np.int64]]:
-        """Return cached canonical colors and absolute region IDs for interactive styling."""
-        if self._surface_base_colors_cache is None:
-            self._surface_base_colors_cache = self._display_surface_colors()
-        if self._surface_mapping_ids_cache is None:
-            self._surface_mapping_ids_cache = np.ascontiguousarray(
-                np.abs(self.mesh_data.mapping_ids(self.mapping)), dtype=np.int64
-            )
-        return self._surface_base_colors_cache, self._surface_mapping_ids_cache
-
-    def _surface_region_mask(self, region_ids: tuple[int, ...]) -> NDArray[np.bool_]:
-        """Test unique mapped IDs before expanding the result to all surface vertices."""
-        if self._surface_mapping_lookup_cache is None:
-            _, mapping_ids = self._surface_emphasis_inputs()
-            unique_ids, inverse = np.unique(mapping_ids, return_inverse=True)
-            self._surface_mapping_lookup_cache = (
-                np.array(unique_ids, copy=True),
-                np.array(inverse, dtype=np.intp, copy=True),
-            )
-        unique_ids, inverse = self._surface_mapping_lookup_cache
-        return np.isin(unique_ids, region_ids)[inverse]
 
     def _sync_selection_highlight(
         self,
@@ -1773,6 +1709,7 @@ class AtlasViewer:
         """Force restored physical selection and hover back into presentation."""
         # A failed setter can mutate native pixels before reporting failure.
         self._last_surface_emphasis = None
+        self._surface_state.invalidate()
         self._update_surface_emphasis()
 
     def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0912, PLR0915
@@ -1925,6 +1862,9 @@ class AtlasViewer:
             self._close_gui_widget('region_tree', 'tree')
             self._close_gui_widget('probe_table', 'table')
             self._close_gui_widget('region_table', 'table')
+        if getattr(self, '_surface_state', None) is not None:
+            self._surface_state.close()
+            self._surface_state = None
         if datoviz is not None and getattr(self, 'scene', None):
             self.dvz.dvz_scene_destroy(self.scene)
             self.scene = None

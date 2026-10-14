@@ -26,6 +26,10 @@ class TransactionNative(FakeDatoviz):
         self.attempts[name] = self.attempts.get(name, 0) + 1
         return self.attempts[name] in self.failures.get(name, ())
 
+    def dvz_item_state_buffer_update(self, bank, slots, words):
+        result = super().dvz_item_state_buffer_update(bank, slots, words)
+        return -1 if self._fails('state') else result
+
     def dvz_visual_set_data_many(self, visual, updates):
         if 'color' in updates and visual.name == 'mesh':
             self.colors = np.array(updates['color'], copy=True)
@@ -85,6 +89,9 @@ def native_snapshot(viewer):
         native.keys.copy(),
         native.mode,
         native.visible,
+        viewer._surface_state.handle.words.copy(),
+        viewer._surface_state.handle.active,
+        viewer._surface_state.handle.context_alpha,
     )
 
 
@@ -139,16 +146,20 @@ def test_scalar_alpha_mode_failure_leaves_prior_payload_and_mode(viewer):
     assert_native_restored(viewer, before)
 
 
-def test_scalar_emphasis_upload_failure_restores_emphasized_colors(viewer):
+def test_scalar_update_preserves_gpu_decoration_without_dense_recolor(viewer):
     select(viewer)
-    before = native_snapshot(viewer)
-    viewer.dvz.arm(colors=(2,))
-    with pytest.raises(RuntimeError, match='selection and hover'):
-        viewer.set_region_data(
-            AtlasRegionValues.from_arrays([315], [1]), mapping_reduction='weighted_mean'
-        )
-    assert viewer.region_data is None and viewer._selected_region_ids == (315,)
-    assert_native_restored(viewer, before)
+    bank = viewer._surface_state.handle
+    words = bank.words.copy()
+    before = len(viewer.dvz.calls)
+    viewer.set_region_data(
+        AtlasRegionValues.from_arrays([315], [1]), mapping_reduction='weighted_mean'
+    )
+    calls = viewer.dvz.calls[before:]
+    assert viewer._surface_state.handle is bank
+    assert viewer._selected_region_ids == (315,) and bank.active
+    np.testing.assert_array_equal(bank.words, words)
+    assert len([c for c in calls if c[:3] == ('data', 'mesh', 'color')]) == 1
+    assert not any(c[0] == 'state_update' for c in calls)
 
 
 @pytest.mark.parametrize('failure', ['keys', 'colors', 'visibility', 'alpha'])
@@ -164,7 +175,7 @@ def test_style_failure_restores_authored_state_colors_and_native_mode(viewer, fa
     assert_native_restored(viewer, before)
 
 
-@pytest.mark.parametrize('failure', ['indices', 'keys', 'colors', 'visibility'])
+@pytest.mark.parametrize('failure', ['indices', 'keys', 'colors', 'visibility', 'state'])
 def test_mapping_failure_restores_identity_palette_tree_caches_and_native_selection(
     viewer, failure
 ):

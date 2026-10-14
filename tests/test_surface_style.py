@@ -53,7 +53,6 @@ def test_empty_surface_hides_without_zero_count_upload_and_restores(mesh):
         uploads = len([call for call in fake.calls if call[0] == 'indices'])
         viewer.set_hemisphere_visible('both', False)
         assert viewer.visible_region_ids() == ()
-        assert fake.calls[-1][0] == 'data'  # style/emphasis colors, still hidden
         assert ('visible', 'mesh', False) in fake.calls
         assert len([call for call in fake.calls if call[0] == 'indices']) == uploads
         viewer.set_hemisphere('right')
@@ -85,7 +84,7 @@ def test_authored_opacity_independent_of_global_selection_opacity(mesh):
         left = mesh.mapping_ids('allen') < 0
         np.testing.assert_array_equal(last_colors(fake)[left, 3], 32)
         viewer.set_selected_region_ids((-315,))
-        np.testing.assert_array_equal(last_colors(fake)[left, 3], 64)
+        np.testing.assert_array_equal(last_colors(fake)[left, 3], 32)
         viewer.set_region_opacity(-315, 0)
         assert np.all(last_keys(fake) > 0)
         assert viewer.visible_region_ids() == (315,)

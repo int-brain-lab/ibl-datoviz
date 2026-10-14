@@ -394,31 +394,26 @@ def test_mesh_proposal_upload_failure_keeps_cache_for_next_frame_retry(viewer, m
     assert viewer._last_mesh_region_ids == (101,)
 
 
-def test_partial_surface_color_failure_forces_previous_pixels_back(viewer, monkeypatch):
+def test_partial_surface_style_failure_forces_previous_feedback_back(viewer, monkeypatch):
     viewer, fake = viewer
-    previous = viewer._display_surface_colors().copy()
-    # Establish the old cache so an unforced rollback would otherwise skip upload.
     viewer._update_surface_emphasis()
-    original = fake.dvz_visual_set_data
+    previous = viewer._surface_state.handle.words.copy()
+    original = fake.dvz_item_state_buffer_style
     calls = 0
-    pixels = previous.copy()
 
-    def partial_failure(visual, name, data):
-        nonlocal calls, pixels
-        result = original(visual, name, data)
-        if visual is viewer.mesh and name == 'color':
-            pixels = np.array(data, copy=True)
-            calls += 1
-            if calls == 1:
-                return -1
-        return result
+    def partial_failure(bank, selection, hovered, active):
+        nonlocal calls
+        result = original(bank, selection, hovered, active)
+        calls += 1
+        return -1 if calls == 1 else result
 
-    monkeypatch.setattr(fake, 'dvz_visual_set_data', partial_failure)
+    monkeypatch.setattr(fake, 'dvz_item_state_buffer_style', partial_failure)
     fake.events = [event(fake, 'ROW_CLICKED', -101)]
     with pytest.raises(RuntimeError, match='selection and hover'):
         viewer._gui_callback(None, None, None)
     assert viewer.selected_region_ids() == ()
-    np.testing.assert_array_equal(pixels, previous)
+    np.testing.assert_array_equal(viewer._surface_state.handle.words, previous)
+    assert not viewer._surface_state.handle.active
     assert calls == 2
     assert not viewer._closed
 

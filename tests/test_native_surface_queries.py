@@ -66,3 +66,26 @@ def test_native_surface_queries_preserve_signed_keys_across_retained_updates():
     except RuntimeError as error:
         _skip_without_native_datoviz(error)
         raise
+
+
+def test_gpu_selection_decoration_does_not_hide_authored_face_queries():
+    mesh = AtlasMesh.from_pack(FIXTURE)
+    try:
+        with AtlasViewer(mesh, width=256, height=192, selection_context_opacity=0) as viewer:
+            viewer._create_view(offscreen=True, title='Decoration versus authored coverage')
+            assert query_at(viewer, 90, 96, 1) == (True, -315)
+            # A logical selection with no mesh parts still activates context dimming.
+            viewer.set_selected_region_ids((997,))
+            assert viewer._surface_state.words.sum() == 0
+            assert query_at(viewer, 90, 96, 2) == (True, -315)
+            viewer._set_hovered_region_ids((-315,))
+            assert query_at(viewer, 90, 96, 3) == (True, -315)
+            # Authoring zero opacity remains a real visibility/picking change.
+            viewer.set_region_opacity(-315, 0)
+            assert query_at(viewer, 90, 96, 4) != (True, -315)
+            viewer.reset_region_style(-315)
+            viewer.clear_selection()
+            assert query_at(viewer, 90, 96, 5) == (True, -315)
+    except RuntimeError as error:
+        _skip_without_native_datoviz(error)
+        raise
