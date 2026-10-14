@@ -25,6 +25,7 @@ from ibl_anatomy import bundled_asset_set, open_volume_pack, verify_materialized
 from ibl_datoviz import AtlasCursor, AtlasMesh, LinkedAtlasNavigator, SampledPlaneVisual
 
 PRESETS = ('anatomy', 'labels', 'volume-context', 'physical-slice')
+PRESET_LABELS = ('Anatomy', 'Region labels', 'Volume context', 'Physical slice')
 AXES = ('ap', 'ml', 'dv')
 PLANE_MODES = ('wboit', 'mask')
 PLANE_LAYERS = ('anatomy', 'annotation')
@@ -127,10 +128,16 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
                 self._sync_physical_plane()
             if self.physical_plane is not None:
                 self.physical_plane.set_visible(visible)
-        except Exception:
+        except Exception as error:
             self.plane_visible = previous
             self._plane_visible_control.value = previous
-            super().set_volume_opacity(previous_volume_opacity)
+            try:
+                if self.physical_plane is not None:
+                    self.physical_plane.set_visible(previous)
+                super().set_volume_opacity(previous_volume_opacity)
+            except Exception:
+                self.close()
+                raise RuntimeError('plane visibility rollback failed; review closed') from error
             raise
         self._plane_visible_control.value = self.plane_visible
 
@@ -174,9 +181,19 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
 
     def set_volume_opacity(self, opacity):
         """Use native volume context independently of the physical-plane route."""
-        super().set_volume_opacity(opacity)
-        if opacity > 0 and self.plane_visible:
-            self.set_physical_plane(False)
+        previous = self.volume_opacity
+        try:
+            super().set_volume_opacity(opacity)
+            if opacity > 0 and self.plane_visible:
+                self.set_physical_plane(False)
+        except Exception as error:
+            if not self._closed:
+                try:
+                    super().set_volume_opacity(previous)
+                except Exception:
+                    self.close()
+                    raise RuntimeError('volume context rollback failed; review closed') from error
+            raise
 
     def set_cursor(self, cursor, *, select_region=False):
         """Move all linked slices and the optional physical plane together."""
@@ -204,15 +221,38 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
         """Change review layers without replacing panels, views or cameras."""
         if preset not in PRESETS:
             raise ValueError(f'unknown review preset: {preset}')
-        self.set_physical_plane(False)
-        self.set_volume_opacity(0.12 if preset == 'volume-context' else 0.0)
-        self.set_slice_layers(
-            anatomy=preset != 'labels',
-            annotations=preset != 'anatomy',
-            boundaries=preset != 'anatomy',
+        previous = (
+            self.anatomy_visible,
+            self.annotation_visible,
+            self.boundaries_visible,
+            self.volume_opacity,
+            self.plane_visible,
+            self._preset_control.value,
         )
-        if preset == 'physical-slice':
-            self.set_physical_plane(True)
+        try:
+            self.set_physical_plane(False)
+            self.set_volume_opacity(0.12 if preset == 'volume-context' else 0.0)
+            self.set_slice_layers(
+                anatomy=preset != 'labels',
+                annotations=preset != 'anatomy',
+                boundaries=preset != 'anatomy',
+            )
+            if preset == 'physical-slice':
+                self.set_physical_plane(True)
+        except Exception as error:
+            if not self._closed:
+                try:
+                    self.set_physical_plane(False)
+                    self.set_volume_opacity(previous[3])
+                    self.set_slice_layers(
+                        anatomy=previous[0], annotations=previous[1], boundaries=previous[2]
+                    )
+                    self.set_physical_plane(previous[4])
+                    self._preset_control.value = previous[5]
+                except Exception:
+                    self.close()
+                    raise RuntimeError('linked preset rollback failed; review closed') from error
+            raise
         self._preset_control.value = PRESETS.index(preset)
 
     def reset_review(self):
@@ -238,7 +278,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
 
     def _draw_review_gui(self, gui):
         self.dvz.dvz_gui_separator_text(gui, b'Linked review')
-        if self._combo(gui, b'Preset', self._preset_control, PRESETS):
+        if self._combo(gui, b'Preset', self._preset_control, PRESET_LABELS):
             self.apply_preset(PRESETS[self._preset_control.value])
             self._review_error = None
         if self.dvz.dvz_gui_button(gui, b'Reset linked review'):

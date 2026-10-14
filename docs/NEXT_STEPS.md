@@ -9,6 +9,69 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Two fixed-layout review apps — October 14 2026
+
+The default review workflow now has two applications. `just review 1` opens one
+3D scientific viewport with a control/ontology sidebar and persistent data area;
+`just review 2` opens the AP/ML/DV plus 3D navigator. Bare `just review` opens 1,
+and `just review all` opens 1 then 2. Older named examples remain individual
+diagnostics. Presets and layer controls retain existing scenes, figures, views,
+panels and camera state; explicit reset restores the initial camera and settings.
+See the [review guide](review-apps.md) for the two scenario checklists.
+
+App 1 combines verified D070, the pinned 192-site BWM fixture, a real Allen 50 um
+physical plane and optionally prepared W39 paths. It exposes mapping, picking,
+ontology, global/signed region/hemisphere styles, point color/size/opacity, path
+styles, layer visibility and WBOIT/mask plane controls. Typed probe data/table
+remain retained even when analytic spheres are hidden and arbitrary points render
+the sites. Presets preserve the table handle and state; mapping changes retain
+the established selection-reset policy. Missing W39 data disable the multiple-path
+preset with preparation instructions; corrupt present assets fail explicitly.
+The table remains the identified BWM fixture and does not claim W39 firing rates.
+The visible FR scale states the finite 5th/95th percentile range in Hz; scalar
+missing points have alpha zero, while analytic/table missing values are gray.
+Detailed encodings are expandable so table rows remain readable at 1.5 UI scale.
+
+App 2 keeps all four views, cursor/slice controls and ontology navigation. Anatomy,
+label, volume-context and physical-slice presets change existing layers. A physical
+anatomy/annotation plane tracks the chosen axis, cursor and mapping using the source
+affine and the existing cached slice composer. Volume context and that plane are
+mutually exclusive composition routes without layout changes. Volume resources
+are allocated once and zero opacity hides them; this review is not the separate
+zero-volume-allocation factory contract. The complete 50 um source is used, with
+no substitution of sampled registered sections.
+
+Additive retained-viewer setters expose whole-surface visibility/opacity/style
+reset and linked slice-layer/volume-opacity changes. Surface visibility composes
+with authored hemisphere/region filtering, including across mapping changes.
+Native failures restore public/native state or close on failed rollback. The review
+apps close their borrowed-scene point/plane components before the caller's scene;
+the linked navigator preserves worker shutdown. Scene presets, volume/plane mutual
+exclusion and finalizer cleanup have regression coverage.
+
+Validation: **510 tests pass, zero skips** on Linux/Python 3.10.17 with both real
+asset roots and the strict configured RC4 source/library pairing. Two additional
+native app tests switch presets/layers in retained views and restore baseline
+pixels exactly. Bounded real-data desktop checks at scales 1.0 and 1.5 exercise
+every preset, independent paths, styles, point updates, mask replacement, mapping
+changes, cursor/plane synchronization and reset. Native handle identity checks and
+inspected GUI captures confirm the fixed workspaces and persistent app-1 table
+through presets. Both numeric apps pass three-frame startup and offscreen capture;
+the new preset and spaced output-path forwarding are checked. Vulkan validation
+is enabled and logs contain no validation errors. This remains scripted behavior
+evidence, not live scientific/design acceptance.
+
+Lint, changed-file formatting, strict MkDocs, justfile parsing/discovery/argument
+forwarding and whitespace checks pass. Built-wheel isolated CPU installation checks
+pass on Python 3.10.17 and 3.13.3. Evidence and receipts are ignored
+`build/review-apps/`: `tests.log`, `native-tests.log`, `desktop.log`,
+`desktop-receipt.json`, `final-startup.log`, `final-captures.log`, and
+`install/receipt{310,313}.json`. Datoviz pin/native library, anatomy pin and canonical
+media are unchanged from the RC4 migration below; no upstream engine changes or
+build were needed. Main stays unchanged. CI for the pushed revision, live user
+review, native Python 3.13, physical macOS/Windows and distributable certification
+remain separate gates.
+
 ## RC4 source migration — October 14 2026
 
 The package now pins Datoviz to `c761eb2404f0ae0d39ec25a7ef96472b11d9ad6e`

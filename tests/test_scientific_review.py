@@ -329,3 +329,21 @@ def test_point_opacity_zero_and_restore_preserve_nan_and_authored_colors(viewer)
     with pytest.raises(ValueError, match='point opacity'):
         viewer.set_point_opacity(float('nan'))
     assert viewer.point_opacity == 1
+
+
+def test_finalizer_closes_components_before_the_borrowed_scene(viewer, monkeypatch):
+    points, plane = viewer.review_points, viewer.review_plane
+    closed = []
+
+    def close_scene(instance):
+        assert points.closed and plane.closed
+        if not instance._closed:
+            closed.append(instance.scene)
+        instance._closed = True
+
+    monkeypatch.setattr(AtlasViewer, 'close', close_scene)
+    viewer.__del__()
+    assert points.closed and plane.closed
+    assert viewer._closed and closed == [viewer.scene]
+    viewer.__del__()
+    assert len(closed) == 1

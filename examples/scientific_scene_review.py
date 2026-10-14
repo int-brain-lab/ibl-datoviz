@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import textwrap
+from contextlib import suppress
 from pathlib import Path
 
 import numpy as np
@@ -499,6 +500,11 @@ class ScientificSceneReview(AtlasViewer):
                 component.close()
                 setattr(self, name, None)
         super().close()
+
+    def __del__(self):
+        """Keep component-before-scene cleanup when the caller omits explicit close."""
+        with suppress(Exception):
+            self.close()
 
 
 def main():

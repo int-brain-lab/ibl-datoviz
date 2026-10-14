@@ -373,3 +373,53 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
     )
     assert calls[3] == ('finish', 3, None, 'D070 linked atlas review')
     assert calls[4] == ('close',)
+
+
+def test_failed_plane_visibility_restores_native_visibility_and_volume(viewer, monkeypatch):
+    viewer.set_volume_opacity(0.12)
+    viewer.set_physical_plane(True)
+    viewer.set_physical_plane(False)
+    viewer.set_volume_opacity(0.12)
+    adapter = viewer.physical_plane
+    original = adapter.set_visible
+    failed = False
+
+    def fail_once(visible):
+        nonlocal failed
+        if not failed:
+            failed = True
+            adapter.visible = visible  # Emulate a setter that partially mutated before failing.
+            raise RuntimeError('injected visibility failure')
+        original(visible)
+
+    monkeypatch.setattr(adapter, 'set_visible', fail_once)
+    with pytest.raises(RuntimeError, match='injected'):
+        viewer.set_physical_plane(True)
+    assert not viewer.plane_visible and not adapter.visible
+    assert viewer.volume_opacity == 0.12
+
+
+def test_failed_physical_preset_restores_previous_slice_and_volume_state(viewer, monkeypatch):
+    viewer.apply_preset('volume-context')
+    previous = (
+        viewer.anatomy_visible,
+        viewer.annotation_visible,
+        viewer.boundaries_visible,
+        viewer.volume_opacity,
+        viewer._preset_control.value,
+    )
+
+    def failure():
+        raise RuntimeError('injected plane source failure')
+
+    monkeypatch.setattr(viewer, '_plane_data', failure)
+    with pytest.raises(RuntimeError, match='injected'):
+        viewer.apply_preset('physical-slice')
+    assert (
+        viewer.anatomy_visible,
+        viewer.annotation_visible,
+        viewer.boundaries_visible,
+        viewer.volume_opacity,
+        viewer._preset_control.value,
+    ) == previous
+    assert not viewer.plane_visible
