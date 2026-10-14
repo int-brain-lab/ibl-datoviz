@@ -9,6 +9,63 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## GPU interaction state — October 14 2026
+
+The immutable Datoviz baseline is now `a9d943aae9292d40e79ed30c2f8f227259f5053c`
+on `rc4/scientific-3d`; the anatomy pin remains
+`81bd7d79044e4dc3a528abe50a0296381143f03e`. The rebuilt Linux library SHA256 is
+`c6e061e44842e8b1be4c04387a0edd9e4766cf744089f88efbad70e4ec4f28ec`.
+Historical dependency metadata still identifies unreleased source snapshots.
+
+Both atlas viewers now bind one scene-owned Datoviz item-state buffer to stable
+presentation indices. Hover and selection replace sparse u32 flags and use existing
+generic tint/context-alpha styles in the shader. The private `SurfaceState` adapter
+maps Allen/Beryl/Cosmos identities at presentation granularity; static indices and
+authored vertex colors are retained. The buffer closes before its scene, and
+transaction rollback forces restoration after partially failing native setters.
+Scalar data, mapping identities and explicit region styles retain their existing
+authored upload paths and query semantics.
+
+Selection and hover preserve authored/global alpha. Selected regions no longer
+become artificially opaque. Context dimming is decoration and does not remove
+scientific pick coverage, including at zero context opacity; authored zero-alpha
+regions remain unpickable. Hover tint remains white at mix 0.28, with only the
+small shader-versus-uint8 rounding difference from the previous CPU path. Review
+apps retain hover-off defaults and click selection; `--hover` enables the new path.
+
+On the RTX 5090, three bounded XTest sweeps of real D070/Beryl at 1600 × 1200,
+UI scale 1.5 and opacity 1.0 measure 22.8–24.1 ms tree-hover frames and 30.4–31.1 ms
+brain-hover frames, versus prior 151 ms and 91–101 ms. Tree/brain phases request
+1,600/2,000 state-payload bytes over 40 frames, with no dense color uploads and no
+static query rebuilds after warmup. Native emitted-upload tests separately verify
+two distant four-byte writes. The synthetic API benchmark requests eight bytes
+per leaf hover/selection update and no dense colors. Actual mouse captures were
+inspected and brain click selection succeeds after each sweep. Timings depend on
+this GPU, virtual display and other host activity.
+
+Validation: 553 tests pass with zero skips, both verified real roots and Vulkan
+validation enabled. Lint, changed-file formatting, strict MkDocs and whitespace
+checks pass. The independent engine audit covers ownership, copied atomic updates,
+shared figure consumers, upload-failure retry, query revision invariance, twelve
+shader emission profiles, six native rendering profiles and a deterministic live
+WebGPU state transition. The rebuilt canonical engine scene suite passes 789/789
+with zero failures/skips. An initial broader run exposed one stale legacy test
+object with missing header dependencies; rebuilding that object resolves all eight
+failures without source or expectation changes. Evidence remains ignored in
+`build/indexed-state/`.
+
+Clean wheel and source-archive builds pass. Isolated installed-wheel CPU checks
+pass on Python 3.10.17 and 3.13.3 with the exact locked dependency revisions;
+`surface_state.py` is included and importing it does not load native bindings.
+These packaging checks do not certify a distributable Datoviz release artifact.
+
+This is the bounded RC4 indexed-state capability proposed for v0.4. It does not
+introduce mesh parts, per-part transforms, draw ranges or a category color palette.
+Those larger APIs and asynchronous picking remain post-v0.4 candidates. Physical
+platform/user acceptance and distributable dependency certification remain release
+gates. Hemisphere-boundary parity and the reserved region-browser layout remain
+the next manual-feedback implementation batches; see [the feedback log](REVIEW_FEEDBACK.md).
+
 ## App 1 manual-review corrections — October 14 2026
 
 Ongoing user observations, unresolved hover performance, hemisphere-boundary
@@ -17,8 +74,8 @@ Both review apps now default to click selection without tree/brain hover emphasi
 or native hover queries. `--hover` explicitly restores the feature. Library callers
 can set `enable_hover=False`; their existing default remains unchanged. Native
 profiling reproduces 91–101 ms brain-hover and 151 ms leaf-hover frames, dominated
-by query geometry invalidation after recoloring. Separating static geometry from
-query appearance invalidation remains an engine performance task.
+by query geometry invalidation after recoloring. The GPU-state batch above replaces
+this interactive recoloring path; these figures describe the original diagnosis.
 
 App 1 now starts with an opaque atlas (surface opacity 1.0 instead of the inherited
 probe-context 0.16). The scientific-data window starts hidden; **Show scientific

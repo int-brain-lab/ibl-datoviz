@@ -21,6 +21,11 @@ performance, launch with `just review 1 --ui-scale 1.5 --hover` (or app `2`).
 The library constructor also accepts `enable_hover=False` without disabling
 click selection; its existing default remains enabled for compatibility.
 
+Hover and selection now use GPU state while retaining the authored region colors
+and global opacity. Hover adds a white tint; selection dims the surrounding brain
+without making selected regions more opaque. This decoration does not change
+picking coverage: even fully dimmed context remains selectable. Explicitly hidden
+regions and regions with authored zero opacity remain unavailable to surface picks.
 
 Check branch folding and leaf selection separately. Search for a parent acronym, open a retained descendant branch, then clear search and verify that ordinary folding returns. Select multiple leaves with Ctrl/Cmd and the Multiple selection checkbox; use Shift-click for visible siblings. Use the arrow keys and Enter/Space without moving focus back to the search box. A search with no matches should leave an empty browser and remain editable.
 

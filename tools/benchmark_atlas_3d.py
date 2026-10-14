@@ -20,6 +20,7 @@ from time import perf_counter
 from typing import TYPE_CHECKING
 
 import datoviz as dvz
+import datoviz._ctypes as native
 import numpy as np
 
 from ibl_anatomy import open_region_catalog
@@ -98,9 +99,7 @@ class _BenchmarkAtlasViewer(AtlasViewer):
     def _sync_viewport_hover(self, hovered: bool) -> None:
         # Synthetic events are emitted directly into the viewport's input router.
         # Treat their inside positions as hovered regardless of the desktop cursor.
-        super()._sync_viewport_hover(
-            True if self._benchmark_gui_profile == 'pointer' else hovered
-        )
+        super()._sync_viewport_hover(True if self._benchmark_gui_profile == 'pointer' else hovered)
 
     def _gui_callback(self, gui, _view, _user_data) -> None:
         if self._benchmark_gui_profile not in (
@@ -122,9 +121,7 @@ class _BenchmarkAtlasViewer(AtlasViewer):
 
     def use_empty_benchmark_viewport(self) -> None:
         """Replace the displayed benchmark viewport with a figure containing no visuals."""
-        self._benchmark_empty_figure = self.dvz.dvz_figure(
-            self.scene, self.width, self.height, 0
-        )
+        self._benchmark_empty_figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
         if not self._benchmark_empty_figure:
             raise RuntimeError('empty benchmark figure creation failed')
         panel = self.dvz.dvz_panel_full(self._benchmark_empty_figure)
@@ -215,7 +212,9 @@ def _gpu_diagnostics() -> dict:
         ('vulkan_inventory', ['vulkaninfo', '--summary']),
     ):
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=15, check=False
+            )
             report[name] = {
                 'returncode': result.returncode,
                 'stdout': result.stdout.strip(),
@@ -279,6 +278,9 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
     measuring = [False]
     original_emphasis = viewer._update_surface_emphasis
     original_set_data = dvz.dvz_visual_set_data
+    original_state_update = dvz.dvz_item_state_buffer_update
+    state_update_seconds = []
+    state_word_count = [0]
     emphasis_profile = cProfile.Profile() if args.profile_emphasis else None
 
     def profile_emphasis():
@@ -297,8 +299,17 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
             color_setter_seconds.append(perf_counter() - start)
         return result
 
+    def profile_state_update(bank, slots, words):
+        start = perf_counter()
+        result = original_state_update(bank, slots, words)
+        if measuring[0]:
+            state_update_seconds.append(perf_counter() - start)
+            state_word_count[0] += len(words)
+        return result
+
     viewer._update_surface_emphasis = profile_emphasis
     dvz.dvz_visual_set_data = profile_set_data
+    dvz.dvz_item_state_buffer_update = profile_state_update
     callback_index = [0]
     query_results = {'queued': 0, 'resolved': 0, 'hits': 0}
     pointer_results = {'emitted': 0, 'hover_hit_frames': 0, 'hover_changes': 0}
@@ -309,7 +320,7 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
         0,
     )
 
-    def on_frame(_view, _user_data) -> None:  # noqa: PLR0912
+    def on_frame(_view, _user_data) -> None:  # noqa: PLR0912, PLR0915
         index = callback_index[0]
         callback_index[0] += 1
         started = perf_counter()
@@ -461,8 +472,6 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
         if callback_errors:
             raise RuntimeError(callback_errors[0])
 
-        import datoviz._ctypes as native
-
         root = Path(__file__).resolve().parents[1]
         native_library = Path(native.dvz._name).resolve()
         record = {
@@ -481,7 +490,7 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'mutation_upload_bytes_per_frame': (
                     mesh.positions.nbytes
                     if args.scenario == 'explode_animated'
-                    else len(mesh.positions) * 4
+                    else None
                     if args.scenario in ('hover_emphasis_update', 'selection_update')
                     else 0
                 ),
@@ -522,6 +531,10 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'surface_emphasis': _distribution(emphasis_seconds),
                 'surface_color_setter': _distribution(color_setter_seconds),
                 'surface_color_setter_calls': len(color_setter_seconds),
+                'surface_state_setter': _distribution(state_update_seconds),
+                'surface_state_setter_calls': len(state_update_seconds),
+                'surface_state_words_requested': state_word_count[0],
+                'surface_state_payload_bytes_requested': state_word_count[0] * 4,
                 'surface_emphasis_profile': _emphasis_profile(emphasis_profile),
             },
             'memory': {
@@ -530,8 +543,12 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
             'queries': query_results if args.scenario == 'face_query' else None,
             'pointer': (
                 pointer_results
-                if args.scenario in (
-                    'pointer_hover', 'pointer_hover_burst', 'gui_pointer_hover', 'gui_pointer_drag'
+                if args.scenario
+                in (
+                    'pointer_hover',
+                    'pointer_hover_burst',
+                    'gui_pointer_hover',
+                    'gui_pointer_drag',
                 )
                 else None
             ),
@@ -542,6 +559,7 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
             viewer.close()
         finally:
             dvz.dvz_visual_set_data = original_set_data
+            dvz.dvz_item_state_buffer_update = original_state_update
     return 0
 
 
@@ -661,7 +679,14 @@ def _scenario_summary(runs: Sequence[dict]) -> dict[str, float | int]:
     ]
     if query_counts:
         summary['query_count_median'] = int(np.median(query_counts))
-    for field in ('query', 'query_count', 'query_backend', 'query_download', 'query_decode', 'frames'):
+    for field in (
+        'query',
+        'query_count',
+        'query_backend',
+        'query_download',
+        'query_decode',
+        'frames',
+    ):
         values = [
             float(timing[field])
             for run in runs
@@ -761,7 +786,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument('--height', type=int, default=720)
     parser.add_argument('--json', type=Path)
     parser.add_argument(
-        '--profile-emphasis', action='store_true',
+        '--profile-emphasis',
+        action='store_true',
         help='record Python emphasis function costs (adds profiling overhead)',
     )
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)

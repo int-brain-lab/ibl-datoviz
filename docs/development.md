@@ -20,6 +20,11 @@ baseline validation use `just doctor --strict`, `just test --strict`, and `just 
 
 ## Optional i3 window placement
 
+While the reviewer is using this computer, run automated GUI checks on an isolated
+display, for example `xvfb-run -a just test --strict` on Linux. Run browser checks
+headlessly. Window placement rules alone do not prevent windows appearing on the
+working desktop. Keep GPU diagnostics bounded because they still share the GPU.
+
 On X11/i3, a Datoviz build supporting `DVZ_WINDOW_INSTANCE` lets window rules distinguish
 manual launches from automation. Interactive `just review` uses instance `datoviz`;
 `just test`, bounded `just review --frames N` runs, and benchmarks use `datoviz-automated`.
@@ -92,14 +97,16 @@ the measured workload explicit.
 After `just setup`, use the remembered Datoviz checkout and runtime without exporting paths into your shell:
 
 ```bash
-uv run --frozen tools/review.py benchmark -- \
+xvfb-run -a uv run --frozen tools/review.py benchmark -- \
   --scenarios gui_idle gui_pointer_hover gui_pointer_drag hover_emphasis_update \
   --repeats 3 --warmup 30 --frames 120 \
   --width 900 --height 720 --json build/hover-900.json
 ```
 
-Repeat with `--width 1800 --height 1440` and a distinct report name. Preserve the same asset, source commits, native library SHA256, frame count and warmup when comparing drivers or GPUs. These runs open automated windows; ordinary launches retain their manual window identity.
+Repeat with `--width 1800 --height 1440` and a distinct report name. Preserve the same asset, source commits, native library SHA256, frame count and warmup when comparing drivers or GPUs. The Xvfb command isolates automated windows from the working desktop.
 
 The report records NVIDIA driver diagnostics, the Vulkan device inventory, Vulkan driver-selection environment, native query phases, and Python emphasis/color-setter distributions. Inventory describes available devices, not the device selected by a running Datoviz view. On a Linux host with multiple drivers, choose the intended ICD explicitly for a controlled comparison using `VK_DRIVER_FILES=/path/to/driver_icd.json` (or `VK_ICD_FILENAMES` with older loaders), and verify `vulkaninfo --summary` lists only the intended GPU before running. Confirm `nvidia-smi` succeeds before collecting NVIDIA results. Driver mismatch output is retained in the report instead of being silently treated as missing hardware.
 
-For deeper Python attribution, add `--profile-emphasis` to a separate diagnostic run. It records function call counts, self time and cumulative time for measured emphasis updates, including ontology expansion, mask construction and color upload. Profiling adds overhead: compare ordinary timings with profiling disabled, and do not sum nested cumulative times. Tree relationships and the unique-ID vertex index are prepared once per model/mapping; report cold startup separately from warmed steady-state timings.
+The report also records sparse interaction-state setter calls, changed-word counts and requested payload bytes (four bytes per word). These are API payload measurements; native emitted-upload checks establish GPU transfer size. After warmup, hover and selection should upload no dense vertex colors and cause no static query-geometry refreshes.
+
+For deeper Python attribution, add `--profile-emphasis` to a separate diagnostic run. It records function call counts, self time and cumulative time for measured emphasis updates, including ontology expansion and presentation-state updates. Profiling adds overhead: compare ordinary timings with profiling disabled, and do not sum nested cumulative times. Tree relationships and presentation-to-region mappings are cached; report cold startup separately from warmed steady-state timings.

@@ -150,9 +150,9 @@ or replace the scientific annotation with a mesh.
 
 RGB overrides retain source alpha; RGBA overrides replace authored region alpha,
 scaled by global surface opacity. Regional opacity multiplies authored alpha.
-Hover/selection cannot raise alpha above authored palette or regional overrides;
-the existing global-opacity selection emphasis remains available. Native alpha
-mode respects effective palette/scalar alpha, not only global opacity. An active
+Hover and selection preserve authored alpha scaled by global opacity. Selection
+dims context independently; this decoration does not remove picking coverage.
+Native alpha mode respects effective palette/scalar alpha, not only global opacity. An active
 bounded volume retains its documented source-over composition; the volume-free
 route can use mesh WBOIT directly.
 
