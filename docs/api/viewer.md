@@ -13,6 +13,14 @@ overrides and shows both hemispheres without moving the camera. The navigator's
 slice panels, and `set_volume_opacity(0)` hides the volume without changing layout.
 See the [two review apps](../review-apps.md) for concrete compositions.
 
+## Region browser
+
+The Allen/Beryl/Cosmos browser follows the [shared IBL selector contract](https://github.com/int-brain-lab/ibl-anatomy/blob/81bd7d79044e4dc3a528abe50a0296381143f03e/docs/REGION_SELECTOR_CONTRACT.md). Click a branch to fold or unfold it; click a mapping-member leaf to select it. Clicking a selected leaf removes it. Ctrl/Cmd toggles individual leaves, Multiple selection keeps other selections, and Shift-click adds visible selectable siblings between the anchor and target. Arrow keys navigate the tree; Enter or Space activates the focused row.
+
+Search matches names and acronyms, retains ancestor paths and matching subtrees, and temporarily restores anatomical order. Clearing search restores ordinary folding and the requested value order. Value ordering is available when regional data provide finite browser values. Native browser annotations use the canonical left rows and exact signed regional identities; right-only values do not fill missing left values or imply bilateral aggregation. Right-side surface and table values remain available independently. Programmatic selections and selections from surfaces or tables preserve browser focus and folding; selecting a parent through `set_selected_region_ids()` still highlights its mapped descendants.
+
+A mapping change clears committed selection and transient hover while retaining query, ordinary folding and requested order. Tree, region table, probe table and surface updates preserve the documented source precedence and signed hemisphere identities. Selection does not move the linked navigator's cursor. Generic Datoviz tree rendering is controlled by an internal adapter; callers continue using the existing viewer API.
+
 ## Linked atlas navigator
 
 ::: ibl_datoviz.linked_atlas.LinkedAtlasNavigator

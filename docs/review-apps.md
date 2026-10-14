@@ -13,6 +13,12 @@ keeps its visualization structure throughout the review: presets change layer
 visibility and settings within existing views. Normal edits preserve the camera;
 only the explicit reset button restores the starting camera.
 
+## Region browsing in both apps
+
+Check branch folding and leaf selection separately. Search for a parent acronym, open a retained descendant branch, then clear search and verify that ordinary folding returns. Select multiple leaves with Ctrl/Cmd and the Multiple selection checkbox; use Shift-click for visible siblings. Use the arrow keys and Enter/Space without moving focus back to the search box. A search with no matches should leave an empty browser and remain editable.
+
+When regional values are supplied, switch between anatomical and value order. Search temporarily uses anatomical order and clearing it restores the requested ordering. Verify that surface/table selections preserve the browser's focus and folding, and that mapping changes clear selection. Hiding a selected surface region still preserves committed selection.
+
 ## App 1: 3D scientific viewer
 
 The workspace contains one 3D viewport, a control/ontology sidebar and a persistent

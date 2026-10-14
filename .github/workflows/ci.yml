@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: int-brain-lab/ibl-anatomy
-          ref: 0bd6a63c7c46d4ef0fdd710934e059135b342d7b
+          ref: 81bd7d79044e4dc3a528abe50a0296381143f03e
           path: ibl-anatomy-checkout
 
       - name: Place atlas fixtures beside the repository

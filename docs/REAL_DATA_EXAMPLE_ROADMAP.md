@@ -19,6 +19,10 @@ The earlier one-capability-per-example inventory remains useful for isolated reg
 diagnostics; live acceptance should use the two integrated workspaces and their layer
 toggles to isolate features.
 
+## October 14 region-browser convergence
+
+Both fixed-layout apps now use the shared IBL region-selector behavior derived from the refined web browser. Follow the [region-browsing checklist](review-apps.md#region-browsing-in-both-apps), especially parent versus leaf activation, search/folding restoration, modifier ranges, keyboard focus and external selection. The anatomy contract and offline conformance bundle protect shared behavior; native rendering and platform review remain separate. See the [handoff](NEXT_STEPS.md#shared-ibl-region-selector--october-14-2026) for pinned revisions, failure recovery and validation evidence. Browser value annotations use exact canonical-left signed identities and never substitute right-side values.
+
 ## Product decision
 
 `ibl-datoviz` has validated a substantial native rendering stack, but it is not yet mature enough
