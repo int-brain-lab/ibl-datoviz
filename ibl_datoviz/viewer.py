@@ -112,6 +112,7 @@ class AtlasViewer:
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
         self._surface_style = SurfaceStyle(mesh)
+        self._surface_visible = True
         self._surface_face_mask = np.ones(len(mesh.face_presentation_ids), dtype=bool)
         self._uploaded_face_mask = self._surface_face_mask.copy()
         self._uploaded_face_mapping = mapping
@@ -374,7 +375,7 @@ class AtlasViewer:
         """Filter canonical triangle indices and matching signed face keys together."""
         previous = self._uploaded_face_mask
         old_mapping = self._uploaded_face_mapping
-        was_visible = bool(np.any(self._surface_face_mask))
+        was_visible = self._surface_visible and bool(np.any(self._surface_face_mask))
         try:
             if np.any(mask):
                 if not np.array_equal(mask, previous):
@@ -394,7 +395,9 @@ class AtlasViewer:
                     'visible surface keys',
                 )
             self._check(
-                self.dvz.dvz_visual_set_visible(self.mesh, bool(np.any(mask))),
+                self.dvz.dvz_visual_set_visible(
+                    self.mesh, self._surface_visible and bool(np.any(mask))
+                ),
                 'surface visibility',
             )
         except Exception as error:
@@ -438,6 +441,8 @@ class AtlasViewer:
             '_region_color_scheme',
             '_region_opacity',
             '_surface_style',
+            '_surface_visible',
+            'surface_opacity',
             '_surface_face_mask',
             '_uploaded_face_mask',
             '_uploaded_face_mapping',
@@ -502,7 +507,9 @@ class AtlasViewer:
                 'surface transaction alpha rollback',
             )
             self._check(
-                self.dvz.dvz_visual_set_visible(self.mesh, bool(np.any(self._surface_face_mask))),
+                self.dvz.dvz_visual_set_visible(
+                    self.mesh, self._surface_visible and bool(np.any(self._surface_face_mask))
+                ),
                 'surface transaction visibility rollback',
             )
             if self.probe_data is not None and self._probe_upload is not None:
@@ -520,9 +527,11 @@ class AtlasViewer:
                 'surface transaction rollback failed; viewer closed'
             ) from rollback_error
 
-    def _commit_surface_style(self, candidate):
+    def _commit_surface_style(self, candidate, *, opacity=None):
         snapshot = self._surface_transaction_snapshot()
         self._surface_style = candidate
+        if opacity is not None:
+            self.surface_opacity = opacity
         try:
             mask = self._visible_surface_faces(self.mapping)
             colors = self._display_surface_colors()
@@ -545,6 +554,38 @@ class AtlasViewer:
         candidate = self._surface_style.copy()
         candidate.set_region(self.mapping, region_id, hemisphere=hemisphere, visible=visible)
         self._commit_surface_style(candidate)
+
+    def set_surface_visible(self, visible):
+        """Toggle the whole surface while retaining region and hemisphere styles."""
+        self._require_open()
+        if not isinstance(visible, (bool, np.bool_)):
+            raise ValueError('surface visibility must be boolean')
+        snapshot = self._surface_transaction_snapshot()
+        try:
+            self._check(
+                self.dvz.dvz_visual_set_visible(
+                    self.mesh, bool(visible) and bool(np.any(self._surface_face_mask))
+                ),
+                'surface visibility',
+            )
+            self._surface_visible = bool(visible)
+            if not visible:
+                self._clear_surface_hover()
+        except Exception:
+            self._restore_surface_transaction(snapshot)
+            raise
+
+    def set_surface_opacity(self, opacity):
+        """Update surface opacity without changing geometry, camera or selection."""
+        self._require_open()
+        if not np.isfinite(opacity) or not 0 <= opacity <= 1:
+            raise ValueError('surface opacity must be finite and between zero and one')
+        self._commit_surface_style(self._surface_style.copy(), opacity=float(opacity))
+
+    def reset_surface_style(self):
+        """Reset all region overrides and show both hemispheres, retaining the camera."""
+        self._require_open()
+        self._commit_surface_style(SurfaceStyle(self.mesh_data))
 
     def show_region(self, region_id, *, hemisphere=None):
         """Restore mapped-region faces without changing color or opacity."""
@@ -1326,11 +1367,14 @@ class AtlasViewer:
                         self.dvz.dvz_gui_tree_expand_all(self.region_tree),
                         'atlas ontology expansion',
                     )
-            scroll_tree = self.region_table is None and self.probe_table is None
+            tree_height = getattr(self, '_tree_height', None)
+            scroll_tree = tree_height is not None or (
+                self.region_table is None and self.probe_table is None
+            )
             tree_visible = True
             if scroll_tree:
                 tree_visible = self.dvz.dvz_gui_begin_child(
-                    gui, b'Atlas region hierarchy', 0.0, 0.0, 0
+                    gui, b'Atlas region hierarchy', 0.0, tree_height or 0.0, 0
                 )
             events = ()
             if tree_visible:
@@ -1340,26 +1384,7 @@ class AtlasViewer:
             tree_changed = any(
                 event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED for event in events
             )
-            table_changed = False
-            region_table_changed = False
-            if self.region_table is not None:
-                self.dvz.dvz_gui_separator_text(gui, b'Region values')
-                _, region_events, _region_dropped = self.dvz.dvz_gui_table_draw(
-                    gui, self.region_table
-                )
-                region_table_changed = any(
-                    event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED
-                    for event in region_events
-                )
-            if self.probe_table is not None:
-                self.dvz.dvz_gui_separator_text(gui, b'Probe sites')
-                _, table_events, _table_dropped = self.dvz.dvz_gui_table_draw(
-                    gui, self.probe_table
-                )
-                table_changed = any(
-                    event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED
-                    for event in table_events
-                )
+            region_table_changed, table_changed = self._draw_data_tables_gui(gui)
             self._sync_selection_highlight(
                 tree_changed=tree_changed,
                 table_changed=table_changed,
@@ -1380,6 +1405,23 @@ class AtlasViewer:
 
     def _draw_extra_gui(self, _gui) -> None:
         """Draw optional controls supplied by specialized viewers."""
+
+    def _draw_data_tables_gui(self, gui):
+        """Draw data tables and return region/probe selection changes."""
+        changes = []
+        for title, table in (
+            (b'Region values', self.region_table),
+            (b'Probe sites', self.probe_table),
+        ):
+            changed = False
+            if table is not None:
+                self.dvz.dvz_gui_separator_text(gui, title)
+                _, events, _dropped = self.dvz.dvz_gui_table_draw(gui, table)
+                changed = any(
+                    event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED for event in events
+                )
+            changes.append(changed)
+        return tuple(changes)
 
     def _set_tree_selection(self, region_ids: Sequence[int]) -> None:
         if self.region_tree is None or self.tree_model is None:

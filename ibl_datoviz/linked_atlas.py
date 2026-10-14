@@ -1258,19 +1258,15 @@ class LinkedAtlasNavigator(AtlasViewer):
         if self.dvz.dvz_gui_checkbox(
             gui, b'Anatomy slice layer', ctypes.byref(self._anatomy_visible_control)
         ):
-            self.anatomy_visible = bool(self._anatomy_visible_control.value)
-            self._refresh_slices()
+            self.set_slice_layers(anatomy=bool(self._anatomy_visible_control.value))
         if self.dvz.dvz_gui_checkbox(
             gui, b'Annotation slice layer', ctypes.byref(self._annotation_visible_control)
         ):
-            self.annotation_visible = bool(self._annotation_visible_control.value)
-            self._refresh_slices()
+            self.set_slice_layers(annotations=bool(self._annotation_visible_control.value))
         if self.dvz.dvz_gui_checkbox(
             gui, b'Region boundaries', ctypes.byref(self._boundaries_visible_control)
         ):
-            self.boundaries_visible = bool(self._boundaries_visible_control.value)
-            for axis in self._boundary_visuals:
-                self._refresh_boundaries(axis)
+            self.set_slice_layers(boundaries=bool(self._boundaries_visible_control.value))
         if self.dvz.dvz_gui_slider_float(
             gui,
             b'Boundary opacity',
@@ -1288,12 +1284,78 @@ class LinkedAtlasNavigator(AtlasViewer):
             0.0,
             1.0,
         ):
-            self.volume_opacity = float(self._volume_opacity_control.value)
+            self.set_volume_opacity(float(self._volume_opacity_control.value))
+
+    def set_slice_layers(self, *, anatomy=None, annotations=None, boundaries=None):
+        """Change slice layers in the existing panels without moving the cursor."""
+        self._require_open()
+        updates = {}
+        for name, value in (
+            ('anatomy', anatomy),
+            ('annotation', annotations),
+            ('boundaries', boundaries),
+        ):
+            if value is not None:
+                if not isinstance(value, (bool, np.bool_)):
+                    raise ValueError('slice layer visibility must be boolean')
+                updates[name] = bool(value)
+        previous = {name: getattr(self, f'{name}_visible') for name in updates}
+        try:
+            for name, value in updates.items():
+                setattr(self, f'{name}_visible', value)
+                getattr(self, f'_{name}_visible_control').value = value
+            if any(
+                previous[name] != updates[name]
+                for name in ('anatomy', 'annotation')
+                if name in updates
+            ):
+                self._refresh_slices()
+            elif 'boundaries' in updates and previous['boundaries'] != updates['boundaries']:
+                for axis in self._boundary_visuals:
+                    self._refresh_boundaries(axis)
+        except Exception as error:
+            for name, value in previous.items():
+                setattr(self, f'{name}_visible', value)
+                getattr(self, f'_{name}_visible_control').value = value
+            try:
+                self._refresh_slices()
+            except Exception:
+                self.close()
+                raise RuntimeError('slice layer rollback failed; navigator closed') from error
+            raise
+
+    def set_volume_opacity(self, opacity):
+        """Change volume opacity in the existing 3D panel, including zero to hide."""
+        self._require_open()
+        if not np.isfinite(opacity) or not 0 <= opacity <= 1:
+            raise ValueError('volume opacity must be finite and between zero and one')
+        if not self.volume:
+            if opacity:
+                raise ValueError('volume rendering is disabled')
+            return
+        previous, mode = self.volume_opacity, self._surface_alpha_mode
+        try:
             self._check(
-                self.dvz.dvz_volume_set_opacity(self.volume, self.volume_opacity),
-                'volume opacity update',
+                self.dvz.dvz_volume_set_opacity(self.volume, float(opacity)), 'volume opacity'
             )
+            self.volume_opacity = float(opacity)
+            self._volume_opacity_control.value = float(opacity)
             self._update_surface_alpha_mode()
+        except Exception as error:
+            self.volume_opacity = previous
+            self._volume_opacity_control.value = previous
+            try:
+                self._check(
+                    self.dvz.dvz_volume_set_opacity(self.volume, previous), 'volume rollback'
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_alpha_mode(self.mesh, mode), 'surface alpha rollback'
+                )
+                self._surface_alpha_mode = mode
+            except Exception:
+                self.close()
+                raise RuntimeError('volume opacity rollback failed; navigator closed') from error
+            raise
 
     def _draw_extra_gui(self, gui) -> None:
         if self._slice_loader is not None:
