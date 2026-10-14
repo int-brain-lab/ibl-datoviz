@@ -15,6 +15,7 @@ in dated implementation handoffs.
 | Slow hover in both views | Hovering tree rows and the 3D brain is very slow. Transparency was suggested as a possible cause. | Open. Removing per-frame catalog deepcopy did not resolve the reported slowdown. Profiling identifies a large picking-cache rebuild cost in 3D; see below. |
 | Hide scientific data | Hide the scientific-data area for the current review. | Changed in `e5f0e0f`: hidden by default; **Show scientific data** restores the retained table. |
 | Clean hemisphere boundary | Turning off one hemisphere exposes spiky triangles at the interhemispheric boundary. Web v2's reviewed splitting and explode behavior should be reused. | Open. Shared binary geometry already matches; native whole-face hiding differs from web's per-fragment boundary classification. Match the web behavior before accepting hemisphere visibility. |
+| GPU highlight state | Highlight should use a small shader-state update, with geometry retained on the GPU, rather than uploading vertex colors or triangles on hover. | Selected architectural target: retained category IDs and a small category style/state table. Existing mesh item state applies to instances, so regional state needs a bounded generic extension. |
 | Opt-in hover | After completing the benchmark, disable hover by default and retain 3D click selection. Keep hover available and improve its efficiency. | Changed: both review apps disable tree/brain hover feedback and native hover queries by default. Click selection remains enabled. `--hover` restores the feature; library callers can use `enable_hover=False`. Engine efficiency remains open. |
 | Reserved region browser | Brain-region browsing must occupy a dedicated, always-visible part of the left GUI. Reaching it must not require scrolling the surrounding sidebar; the tree itself needs its own scrollbar. | Open. Reserve browser space independently of scene controls and selection details. Check at scale 1.5 and the reviewer's window size, including long and multiple selections. |
 
@@ -92,8 +93,18 @@ uploads reduces it to 23 ms with the same alternating transitions. The initial
 context-branch sweeps produced no hover transitions and are not used as evidence
 for selectable-row performance. Both actual hover paths reproduce the problem.
 
-The priority engine fix is to separate geometry/identity cache invalidation from
-appearance and alpha changes. RGB-only hover should retain static query geometry;
+The selected target is GPU-native regional styling: upload category IDs once,
+retain a small category style/state table, and update the hovered/selected entries.
+Ordinary leaf hover changes old/new category state rather than dense vertex colors.
+Parent selection can update descendant category rows; it remains proportional to
+region count rather than vertex count. Stock mesh item-state currently addresses
+whole-mesh instances, and primitive WBOIT disables that path; it does not already
+provide the required per-region lookup. Extend a generic categorical state path
+with opaque/WBOIT and query coverage parity, without embedding Allen semantics in
+Datoviz.
+
+Separately, fix geometry/identity cache invalidation so appearance and alpha changes
+cannot rebuild unrelated geometry. RGB-only hover should retain static query geometry;
 visibility, alpha/cutoff, geometry, topology, mapping identity and transform changes
 must still invalidate the inputs they affect. Repeat the same real-app sweeps after
 any correction rather than accepting color-copy microbenchmarks as end-to-end proof.
