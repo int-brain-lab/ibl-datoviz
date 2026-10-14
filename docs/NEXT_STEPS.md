@@ -9,6 +9,77 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## RC4 compatibility investigation — October 14 2026
+
+Recommendation: start the package migration on `feature/datoviz-v04` against
+Datoviz's integrated `rc4/scientific-3d` branch. RC3 publication is not a
+development prerequisite. Existing package behavior is compatible with the
+candidate; exposing its new scientific rendering capabilities is a separate
+implementation batch.
+
+The investigated package revision is `dd862d59044842e8b7efe3e745d88aedc2b12ba9`.
+The engine candidate is `3de114eabbf2205fb0ce9623c9443f25d27d0c34`, with existing
+native library SHA256
+`10d3aae8821300b0c09f5be656ae95022d8a2d9c850c810934f7491bdb983d02`.
+The investigation paired that worktree's facade with its library without changing
+the saved review configuration, dependency pins, engine source or build.
+
+On Linux/Python 3.10.17, **404 tests pass, zero skips**, including native component
+rendering and explicitly configured D070 and registered real assets. An independent
+run using the engine's committed Python package, extracted into ignored build
+storage, also passes **404 tests, zero skips** with the same library. All nine
+existing real-data examples complete three-frame native desktop startup. Controls,
+multiple insertions and volume-free navigation also produce inspected offscreen
+captures. These establish current-workflow compatibility, not acceptance of newly
+enabled point/plane techniques or scientific/live design approval.
+
+The existing stationary-pointer harness passes three repetitions: zero redundant
+queries over 120 unchanged frames, with one fresh query after geometry and camera
+changes. A focused extension at a fixed pointer verifies signed Allen key `-434`,
+hide/restore, zero-opacity/restore, both-hemispheres-empty/restore, and Beryl key
+`-879` followed by Allen restoration. Committed selection survives visibility
+and opacity changes; mapping changes retain the documented selection-reset policy.
+The existing injected gesture harness passes hover suppression/recovery and
+selection preservation, with UI startup at scales 1.0 and 1.5. These are bounded
+scripted native checks. No matched performance improvement, explicitly enabled
+Vulkan validation-layer run, Python 3.13 native run, macOS/Windows rendering,
+browser parity or distributable-artifact certification is claimed.
+
+Evidence, scripts, source/library hashes and receipt are ignored
+`build/rc4-investigation/`; test logs are `tests.log` and
+`committed-bindings-tests.log`, example evidence is `review.log`, and native
+interaction evidence is `stationary-hover.log`, `retained-query.log` and
+`gestures.log`. The saved checkout remains at `858bdf261`; `just doctor --strict`
+still rejects its mismatch with pin `62101912d`, as expected. Investigation runs
+used explicit candidate runtime selection rather than bypassing the strict check.
+
+Next implementation steps, in order:
+
+1. Finalize and commit the upstream generated bindings before choosing the new
+   immutable baseline. The RC4 worktree's sole tracked modification adds
+   `dvz_visual_alpha_cutoff` and `dvz_visual_set_alpha_cutoff`; the native library
+   exports them but the investigated commit's Python bindings omit them. Existing
+   workflows do not need these additions; masked-plane support does.
+2. Advance the Datoviz pin and lock to the resulting immutable commit, configure
+   its matching source/library, and run strict doctor, full tests and bounded
+   review startup. Validate clean installation and CI's pinned fixture path.
+3. Add point WBOIT in `ibl_datoviz/points.py`, with accurate capabilities and
+   native mixed mesh/point/sphere/path order, zero-alpha and retained-update checks.
+   Keep current defaults, array ownership and component shutdown contracts.
+4. Add an explicit physical-depth path in `ibl_datoviz/sampled_plane.py` while
+   preserving the existing blended-overlay default. Physical planes require a
+   textured mesh, normals, indices, the `texture` field slot and field sampling;
+   changing image flags cannot deliver this behavior. Add WBOIT and MASK/cutoff
+   with transactional field/geometry replacement, failure cleanup, depth holes,
+   cutoff equality, effective-alpha and reversed-order native checks.
+5. Promote focused native query coverage into maintained regression tests and
+   review the mixed scientific scene over real data. Distinguish site item IDs
+   from region IDs; sampled/MASK mesh queries and style/depth-cued point queries
+   remain engine exclusions. Preserve the optional volume and 2D slice routes.
+
+Release artifacts, physical platform proof, complete registered-section coverage
+and live interaction/scientific acceptance remain separate gates.
+
 ## Reproducible review follow-up — October 13 2026
 
 Implemented on `feature/datoviz-v04`: runnable real-data region/hemisphere,
