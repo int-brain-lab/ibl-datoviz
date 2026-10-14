@@ -69,25 +69,29 @@ it also enables that real-asset test. The optional registered-asset test remains
 `IBL_REGISTERED_ASSET_SET_ROOT` is set. GPU/runtime skips are reported by pytest; they are not proof
 of native validation.
 
-The review command opens the six focused examples in order: surface, mapping, picking, probe
-geometry, firing rate, and slice scrolling. Close each window to continue. To revisit one or check
-bounded startup:
+The review command opens app 1, a fixed 3D scientific workspace with a persistent
+data area. App 2 keeps three anatomical slices and a 3D view. Presets and layer
+toggles update existing views; they do not rebuild or rearrange the visualization.
+See the [review guide](review-apps.md) for the two short review checklists.
 
 ```bash
-just review picking
+just review 1
+just review 2
 just review all --frames 3
-just review picking --ui-scale 1.5  # larger controls on a high-DPI display
+just review 1 --ui-scale 1.5
+just review 1 --preset mixed --offscreen build/mixed.png
 just doctor
 just test -q tests/test_probe_replacement.py
 ```
 
-The restored workflows are available separately as `just review controls`,
-`just review insertions` and `just review volume-free`. The insertion example
+Older focused examples remain available individually, including `just review picking`,
+`just review controls`, `just review insertions` and `just review volume-free`. The insertion example
 requires explicitly prepared W39 trajectories; see the
 [real-data example roadmap](REAL_DATA_EXAMPLE_ROADMAP.md). Use
 `just review volume-free --offscreen build/volume-free.png` to capture one
-example with the configured native environment. `review all` retains the original
-six-example sequence.
+example with the configured native environment. `review all` opens app 1 then app 2;
+close the first window to advance. Missing optional W39 trajectories disable app 1's
+multiple-insertion preset without replacing them with synthetic data.
 
 Local setup, doctor, tests, and review use your configured Datoviz checkout. Each command reports
 its revision and the installed pin; a difference produces a warning and continues. A Markdown-only

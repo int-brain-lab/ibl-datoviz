@@ -1,6 +1,23 @@
 # Real-data interactive example roadmap
 
-Status: implementation plan for the `0.2.0.dev0` Datoviz v0.4 branch.
+Status: two fixed-layout review apps on the `0.2.0.dev0` Datoviz v0.4 branch;
+earlier focused-example planning and evidence are retained below.
+
+## Current review workflow — October 14 2026
+
+`just review 1` opens the 3D scientific workspace with a persistent control/ontology
+sidebar and data area. `just review 2` opens the linked AP/ML/DV plus 3D workspace.
+Presets change layer visibility/settings in the existing views; normal edits preserve
+camera and cursor, while explicit reset restores the starting state. Bare `just review`
+opens app 1, and `just review all` runs 1 then 2. Older named examples remain individual
+diagnostics. This replaces the original six-launch default sequence.
+
+The [review guide](review-apps.md) defines the two in-app review checklists, scientific
+encodings, optional W39 preparation and native rendering limits. Reviewer preference
+is now fewer applications with more interactions and stable visualization structure.
+The earlier one-capability-per-example inventory remains useful for isolated regression
+diagnostics; live acceptance should use the two integrated workspaces and their layer
+toggles to isolate features.
 
 ## Product decision
 
@@ -9,10 +26,10 @@ to present a showcase image as a product-level hero. Keep the README and documen
 page text-first until the interaction model, visual encodings, public API, and packaging contract
 have been reviewed through live examples.
 
-Examples are the next product-discovery tool. Build small interactive programs over real, pinned
-IBL data, with each example demonstrating one capability. They should let a reviewer isolate one
-interaction or visual encoding and give direct actionable feedback. Do not use a visually dense
-integration example to stand in for evidence about its individual parts.
+The review apps are the next product-discovery tool. Use real, pinned IBL data and
+fixed views with layer controls and presets so the reviewer can isolate interactions
+or visual encodings without relaunching. A dense scene must still allow its individual
+parts to be hidden or inspected independently.
 
 The regional BWM surface example remains a development checkpoint, not a whole-brain scientific
 figure. Do not promote it as a hero. Revisit it only after its scientific question, sampled versus
@@ -46,7 +63,7 @@ reproduces its ignored derivative in `build/w39-insertions/` from an explicitly 
 hash-pinned W39 `channels.pqt`; the builder records source and decoded-array hashes.
 
 1. Validate the landed correctness fixes and staged refactors against the current pinned Datoviz baseline; see [the audit handoff](NEXT_STEPS.md) for evidence and remaining release gates.
-2. Review the implemented first batch of focused real-data examples interactively.
+2. Review both fixed-layout real-data apps interactively using their scenario checklists.
 3. Iterate on controls, feedback, visual encodings, and scientific descriptions.
 4. Add the linked and higher-resolution examples once their component interactions are accepted.
 5. Preserve the tested public Python API while reviewing the workflows.
@@ -203,7 +220,7 @@ native volume visual or 3D sampled field.
 
 Do not restore a hero image until all of the following are true:
 
-- at least the first example batch has been reviewed interactively;
+- both fixed-layout review apps have been reviewed interactively;
 - visual encodings include legends or direct explanation where needed;
 - no-data and contextual anatomy semantics are unambiguous;
 - lifecycle and validation blockers are closed;

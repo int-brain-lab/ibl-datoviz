@@ -5,6 +5,14 @@ context managers or call `close()` explicitly. Closing is idempotent; rendering 
 close raises `RuntimeError`. Positions are atlas-world micrometres, visual widths are pixels, and
 colors are three or four integer channels in `[0, 255]`.
 
+Retained-layer controls keep the existing views: `set_surface_visible()` hides the
+whole surface independently of region/hemisphere overrides, `set_surface_opacity()`
+updates global opacity transactionally, and `reset_surface_style()` clears regional
+overrides and shows both hemispheres without moving the camera. The navigator's
+`set_slice_layers(anatomy=..., annotations=..., boundaries=...)` changes existing
+slice panels, and `set_volume_opacity(0)` hides the volume without changing layout.
+See the [two review apps](../review-apps.md) for concrete compositions.
+
 ## Linked atlas navigator
 
 ::: ibl_datoviz.linked_atlas.LinkedAtlasNavigator
@@ -17,6 +25,8 @@ colors are three or four integer channels in `[0, 255]`.
         - from_slice_source
         - from_registered_slices
         - set_cursor
+        - set_slice_layers
+        - set_volume_opacity
         - set_cursor_from_slice_data
         - set_mapping
         - set_probe

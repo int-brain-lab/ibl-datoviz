@@ -34,11 +34,16 @@ git diff --check
 ```
 
 For real-data review, use `just setup /path/to/datoviz` instead of `setup-tests`, then
-`just review` (close each window to advance) or `just review picking`. Available examples are
-`surface`, `mapping`, `picking`, `probe`, `firing-rate`, and `slices`. Restored workflows
-are available separately as `controls`, `insertions` (requires explicit W39 preparation),
-and `volume-free`; see `docs/REAL_DATA_EXAMPLE_ROADMAP.md`. `review all` keeps the
-original six-example sequence. `--offscreen PNG` captures one named example.
+`just review 1` for the fixed 3D scientific workspace or `just review 2` for the
+fixed four-panel linked navigator. Bare `just review` opens app 1; `review all`
+opens 1 then 2 (close each window to advance). Presets change layers/settings,
+not app/scene/view/panel structure. Older named examples remain available individually:
+`surface`, `mapping`, `picking`, `probe`, `firing-rate`, `slices`, `controls`,
+`insertions` and `volume-free`. Multiple-insertion review requires explicit W39
+preparation; missing optional assets disable that preset without substitution.
+See `docs/review-apps.md` and `docs/REAL_DATA_EXAMPLE_ROADMAP.md`.
+`--offscreen PNG` captures one app or named example; `--preset` selects an initial
+state for one numbered app.
 A bounded startup check is
 `just review all --frames 3`; on headless Linux use `xvfb-run -a just review all --frames 3`.
 Startup checks do not establish interaction quality. Actual macOS rendering requires Mac evidence.

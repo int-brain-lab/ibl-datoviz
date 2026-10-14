@@ -1,8 +1,8 @@
 # ibl-datoviz
 
-Independent signed-region/hemisphere controls, multiple identified insertion
-trajectories and a volume-free linked navigator are available in the current
-development branch. See the [viewer API](docs/api/viewer.md),
+Two fixed-layout review apps collect the current interactions: a 3D scientific
+viewer and a four-panel linked atlas navigator. See the [review guide](docs/review-apps.md),
+[viewer API](docs/api/viewer.md),
 [insertion components](docs/api/insertions.md) and
 [volume-free navigation](docs/api/volume-free.md) for ownership and rendering limits.
 
@@ -44,15 +44,18 @@ Then run tests or open the interactive examples:
 
 ```bash
 just test
-just review picking
-just review
+just review 1
+just review 2
 ```
 
 Local commands warn and continue if the Datoviz revision differs from the pin. Use `just doctor --strict`,
 `just test --strict`, or `just review all --strict` to require the tested baseline.
 
-`just review` opens six examples in sequence; close a window to continue. Choose `surface`,
-`mapping`, `picking`, `probe`, `firing-rate`, or `slices` to open one. `just doctor` checks which
+`just review` opens app 1. `just review all` opens app 1 followed by app 2; close the
+first window to advance. Presets and layer controls operate within each app's fixed
+views. Older named examples (`surface`, `mapping`, `picking`, `probe`, `firing-rate`,
+`slices`, `controls`, `insertions`, `volume-free`) remain available individually.
+`just doctor` checks which
 Datoviz Python module and native library the workflow will load. See the [contributor guide](docs/getting-started.md)
 for setup details, troubleshooting, and direct `uv` commands. Agents should read
 [AGENTS.md](AGENTS.md) before changing the repository.

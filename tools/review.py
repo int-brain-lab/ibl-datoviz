@@ -25,6 +25,8 @@ ASSETS = REPOSITORY / 'build' / 'atlas-d070'
 VOLUME = REPOSITORY / 'build' / 'allen-ccf-2017-50um'
 ANATOMY = CACHE / 'anatomy'
 EXAMPLES = {
+    '1': ('scientific_scene_review.py', (ASSETS, VOLUME)),
+    '2': ('linked_atlas_review.py', (ASSETS, VOLUME)),
     'surface': ('real_atlas_surface.py', (ASSETS,)),
     'mapping': ('atlas_mapping_switch.py', (ASSETS,)),
     'picking': ('atlas_region_picking.py', (ASSETS,)),
@@ -35,7 +37,7 @@ EXAMPLES = {
     'insertions': ('bwm_multiple_insertions.py', (ASSETS,)),
     'volume-free': ('atlas_volume_free_navigator.py', (ASSETS / 'mesh-pack', VOLUME)),
 }
-DEFAULT_EXAMPLES = ('surface', 'mapping', 'picking', 'probe', 'firing-rate', 'slices')
+DEFAULT_EXAMPLES = ('1', '2')
 
 
 def run(command, **kwargs):
@@ -323,17 +325,23 @@ def run_examples(args, prefix, environment):
         raise ValueError('Review data is missing; rerun setup without --tests-only')
     offscreen = getattr(args, 'offscreen', None)
     if offscreen is not None and args.example == 'all':
-        raise ValueError('--offscreen requires one named example')
+        raise ValueError('--offscreen requires one named example or numbered app')
     names = DEFAULT_EXAMPLES if args.example == 'all' else (args.example,)
     for name in names:
         script, arguments = EXAMPLES[name]
         print(f'Opening {name}; close its window to continue.', flush=True)
+        preset = getattr(args, 'preset', None)
+        if preset is not None and name not in DEFAULT_EXAMPLES:
+            raise ValueError('--preset is available for review apps 1 and 2')
+        if preset is not None and args.example == 'all':
+            raise ValueError('--preset requires one numbered app')
         run(
             [
                 *prefix,
                 sys.executable,
                 REPOSITORY / 'examples' / script,
                 *arguments,
+                *(['--preset', preset] if preset is not None else []),
                 '--frames',
                 args.frames,
                 '--ui-scale',
@@ -362,8 +370,9 @@ def main():
     tests.add_argument('pytest_args', nargs=argparse.REMAINDER)
     benchmark = commands.add_parser('benchmark', help='benchmark D070 with the configured runtime')
     benchmark.add_argument('benchmark_args', nargs=argparse.REMAINDER)
-    review = commands.add_parser('run', help='open a focused example, or all six in review order')
-    review.add_argument('example', nargs='?', default='all', choices=['all', *EXAMPLES])
+    review = commands.add_parser('run', help='open review app 1 or 2, or a standalone example')
+    review.add_argument('example', nargs='?', default='1', choices=['all', *EXAMPLES])
+    review.add_argument('--preset', help='initial preset for one numbered review app')
     review.add_argument('--offscreen', type=Path, metavar='PNG', help='capture one named example')
     review.add_argument(
         '--frames', type=int, default=0, help='zero runs until each window is closed'

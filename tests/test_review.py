@@ -158,12 +158,12 @@ def test_run_all_uses_separate_processes_and_stops_on_failure(tmp_path, monkeypa
 
     monkeypatch.setattr(review, 'run', run)
     monkeypatch.setattr(
-        review.sys, 'argv', ['review.py', 'run', '--frames', '3', '--ui-scale', '1.5']
+        review.sys, 'argv', ['review.py', 'run', 'all', '--frames', '3', '--ui-scale', '1.5']
     )
     assert review.main() == 1
     assert len(commands) == 2
-    assert Path(commands[0][1]).name == 'real_atlas_surface.py'
-    assert Path(commands[1][1]).name == 'atlas_mapping_switch.py'
+    assert Path(commands[0][1]).name == 'scientific_scene_review.py'
+    assert Path(commands[1][1]).name == 'linked_atlas_review.py'
     assert commands[0][-4:] == ['--frames', 3, '--ui-scale', 1.5]
 
 
@@ -269,3 +269,56 @@ def test_benchmark_uses_remembered_assets_and_preserves_arguments(tmp_path, monk
         *arguments,
     ]
     assert environment['DVZ_WINDOW_INSTANCE'] == 'datoviz-automated'
+
+
+@pytest.mark.parametrize(
+    'choice,script', [('1', 'scientific_scene_review.py'), ('2', 'linked_atlas_review.py')]
+)
+def test_numbered_apps_dispatch_one_fixed_layout(tmp_path, monkeypatch, choice, script):
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    commands = []
+    monkeypatch.setattr(review, 'run', lambda command, **_kwargs: commands.append(command))
+    args = SimpleNamespace(example=choice, frames=3, ui_scale=1.5, offscreen=None, preset=None)
+    review.run_examples(args, [], {})
+    assert len(commands) == 1 and Path(commands[0][1]).name == script
+    assert commands[0][-4:] == ['--frames', 3, '--ui-scale', 1.5]
+
+
+def test_default_review_opens_only_app_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    monkeypatch.setattr(review, 'configured_checkout', lambda: tmp_path)
+    monkeypatch.setattr(review, 'doctor', lambda *_args, **_kwargs: ([], {}))
+    commands = []
+    monkeypatch.setattr(review, 'run', lambda command, **_kwargs: commands.append(command))
+    monkeypatch.setattr(review.sys, 'argv', ['review.py', 'run'])
+    assert review.main() == 0
+    assert len(commands) == 1 and Path(commands[0][1]).name == 'scientific_scene_review.py'
+
+
+def test_numbered_preset_and_spaced_capture_path_forward_without_shell(tmp_path, monkeypatch):
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    commands = []
+    monkeypatch.setattr(review, 'run', lambda command, **_kwargs: commands.append(command))
+    output = tmp_path / 'mixed scene.png'
+    args = SimpleNamespace(example='1', preset='mixed', frames=0, ui_scale=1.0, offscreen=output)
+    review.run_examples(args, [], {})
+    assert commands[0][4:6] == ['--preset', 'mixed']
+    assert commands[0][-2:] == ['--offscreen', output]
+
+
+@pytest.mark.parametrize('choice', ['all', 'surface'])
+def test_preset_requires_one_numbered_app(tmp_path, monkeypatch, choice):
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    monkeypatch.setattr(review, 'run', lambda *_args, **_kwargs: pytest.fail('unexpected launch'))
+    with pytest.raises(ValueError, match='preset'):
+        review.run_examples(
+            SimpleNamespace(
+                example=choice, preset='mixed', frames=0, ui_scale=1.0, offscreen=None
+            ),
+            [],
+            {},
+        )
