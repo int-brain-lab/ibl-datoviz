@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import ctypes
 import math
 
@@ -70,7 +69,7 @@ class RegionSelectorGui:
 
     def candidate(self):
         """Copy mutable state before collecting a frame's intents."""
-        return copy.deepcopy(self.model)
+        return self.model.copy()
 
     @staticmethod
     def sync_selection(model, region_ids, *, preserve_anchor=False):

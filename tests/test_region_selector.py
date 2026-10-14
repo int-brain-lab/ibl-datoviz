@@ -103,3 +103,22 @@ def test_omitted_grey_wrapper_does_not_erase_semantic_range_parents():
     selector.set_selected(['a'])
     selector.activate('b', shift=True)
     assert selector.selected == ['a', 'b']
+
+
+def test_frame_copy_isolates_mutable_state_and_shares_frozen_catalog():
+    model = RegionSelector(
+        [SelectorRegion('a', None, -1, 'A', 'Parent'), SelectorRegion('b', 'a', -2, 'B', 'Leaf')],
+        {'selected': ['b'], 'values': {'b': 1.0}},
+    )
+    before = model.snapshot()
+    candidate = model.copy()
+    candidate.collapsed.add('a')
+    candidate.search_collapsed.add('a')
+    candidate.selected.clear()
+    candidate.values['b'] = 2.0
+    candidate.focus = 'a'
+    assert model.snapshot() == before
+    assert model.values == {'b': 1.0}
+    assert model.search_collapsed == set()
+    assert candidate.regions is model.regions
+    assert candidate.hierarchy is model.hierarchy

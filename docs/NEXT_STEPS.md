@@ -9,6 +9,29 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## App 1 manual-review corrections — October 14 2026
+
+App 1 now starts with an opaque atlas (surface opacity 1.0 instead of the inherited
+probe-context 0.16). The scientific-data window starts hidden; **Show scientific
+data** restores the retained table without changing its data or lifetime. Selection
+details occupy a fixed-height scrolling area, so leaf selection and longer names
+cannot move the browser below them. The shared fix applies to both viewers.
+
+Each frame now copies only mutable selector state, sharing frozen catalog records
+and read-only hierarchy indices. Empty-query visibility skips the search-context
+scan. Transactional candidate isolation and failure recovery remain intact. On
+875 real Allen rows, the local copy microbenchmark fell from 6.261 ms for deepcopy
+to about 0.001 ms for the state copy. Bounded hover recoloring measured medians of
+0.852 ms opaque and 0.671 ms at opacity 0.16; these CPU timings do not establish GPU
+or live interaction performance.
+
+Validation: 548 tests pass, zero skips, on the strict matching native runtime with
+Vulkan validation enabled. Lint and whitespace checks pass. Xvfb captures at scale
+1.5 confirm hidden data, opaque unselected surface, and an unchanged browser heading
+position before/after selection. Evidence stays in ignored
+`build/manual-review-fixes/`. No windows were opened on the physical desktop.
+Restart app 1 to load the corrections; live responsiveness review remains open.
+
 ## Shared IBL region selector — October 14 2026
 
 The native Allen/Beryl/Cosmos browser now follows the refined web selector behavior. `ibl-anatomy` owns the reusable [v1 contract](https://github.com/int-brain-lab/ibl-anatomy/blob/81bd7d79044e4dc3a528abe50a0296381143f03e/docs/REGION_SELECTOR_CONTRACT.md), schema and reviewed synthetic scenarios. Both consumers carry identical, hash-checked offline bundles with immutable source locks: 12 scenarios and 51 transitions. Update the contract first, review expected outcomes independently, synchronize both mirrors through its explicit-source sync/check command, then update both implementations and run their conformance and platform tests. Do not regenerate expectations from a port to make it pass.

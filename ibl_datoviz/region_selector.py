@@ -6,6 +6,7 @@ row keys and signed selection translation belong to the GUI adapter.
 
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass
 from typing import Literal
@@ -97,6 +98,15 @@ class RegionSelector:
         self._build_hierarchy()
         self._reset_search_folding()
         self._repair_focus()
+
+    def copy(self):
+        """Fork mutable interaction state while sharing the read-only catalog."""
+        candidate = copy.copy(self)
+        candidate.collapsed = self.collapsed.copy()
+        candidate.search_collapsed = self.search_collapsed.copy()
+        candidate.selected = self.selected.copy()
+        candidate.values = self.values.copy()
+        return candidate
 
     def _build_hierarchy(self):
         self.by_id = {region.id: region for region in self.regions}
@@ -221,7 +231,7 @@ class RegionSelector:
 
     def visible_rows(self):
         """Return projected rows remaining after query and ancestor folding."""
-        _, retained, _ = self._context()
+        retained = self._context()[1] if self.query else ()
         visible = []
         for row in self.projected_rows():
             if self.query and row.region.id not in retained:

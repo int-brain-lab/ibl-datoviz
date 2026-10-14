@@ -85,6 +85,7 @@ class ScientificSceneReview(AtlasViewer):
 
     def __init__(self, mesh, **kwargs):
         self.review_controls = None
+        self._show_scientific_data = ctypes.c_bool(False)
         self.review_points = self.review_plane = None
         self._review_error = ''
         self._tree_height = 260.0
@@ -348,6 +349,9 @@ class ScientificSceneReview(AtlasViewer):
     def _draw_extra_gui(self, gui):
         if self.review_controls is None:
             return
+        self.dvz.dvz_gui_checkbox(
+            gui, b'Show scientific data', ctypes.byref(self._show_scientific_data)
+        )
         self.dvz.dvz_gui_separator_text(gui, b'Scientific scene')
         labels = tuple(PRESET_LABELS[PRESETS.index(name)] for name in self._available_presets)
         if self._combo(gui, 'Preset', self._preset_control, labels) and not self._action(
@@ -445,7 +449,7 @@ class ScientificSceneReview(AtlasViewer):
                 self._action(self.style_insertion, insertion_id, width=width.value)
 
     def _draw_data_tables_gui(self, gui):
-        if self.review_controls is None:
+        if self.review_controls is None or not self._show_scientific_data.value:
             return False, False
         self.dvz.dvz_gui_dock_window_once(
             gui, b'Scientific data', self.dvz.DVZ_GUI_DOCK_SLOT_BOTTOM, 280.0 * self.ui_scale
@@ -533,7 +537,7 @@ def main():
         mapping=args.mapping,
         width=args.width,
         height=args.height,
-        surface_opacity=0.16,
+        surface_opacity=1.0,
         camera_angles=(1.0, 0.75, -0.25),
         ui_scale=args.ui_scale,
         enable_interaction=True,

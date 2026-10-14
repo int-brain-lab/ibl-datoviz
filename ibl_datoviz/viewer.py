@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import ctypes
 import textwrap
 from contextlib import suppress
@@ -1329,7 +1328,7 @@ class AtlasViewer:
             ),
         )
         model = (
-            copy.deepcopy(self._selector_model)
+            self._selector_model.copy()
             if self._selector_model is not None and self._selector_mapping == self.mapping
             else selector_from_tree(self.tree_model, self.tree_root_acronym, self._selector_model)
         )
@@ -1390,21 +1389,30 @@ class AtlasViewer:
             self._draw_extra_gui(gui)
             clear_selection_requested = False
             self.dvz.dvz_gui_separator_text(gui, b'Selection')
-            if self._selected_region_ids:
-                for region_id in self._selected_region_ids[:6]:
-                    label = (
-                        self.tree_model.describe(region_id) if self.tree_model else str(region_id)
-                    )
-                    for part in label.split(' — '):
-                        for line in textwrap.wrap(part, width=32):
-                            self.dvz.dvz_gui_text(gui, line.encode())
-                if len(self._selected_region_ids) > 6:
-                    remaining = len(self._selected_region_ids) - 6
-                    self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
-                if self.dvz.dvz_gui_button(gui, b'Clear selection'):
-                    clear_selection_requested = True
-            else:
-                self.dvz.dvz_gui_text(gui, b'Click a region to select it')
+            selection_visible = self.dvz.dvz_gui_begin_child(
+                gui, b'Atlas selection summary', 0.0, 105.0 * self.ui_scale, 0
+            )
+            try:
+                if selection_visible:
+                    if self._selected_region_ids:
+                        for region_id in self._selected_region_ids[:6]:
+                            label = (
+                                self.tree_model.describe(region_id)
+                                if self.tree_model
+                                else str(region_id)
+                            )
+                            for part in label.split(' — '):
+                                for line in textwrap.wrap(part, width=32):
+                                    self.dvz.dvz_gui_text(gui, line.encode())
+                        if len(self._selected_region_ids) > 6:
+                            remaining = len(self._selected_region_ids) - 6
+                            self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
+                        if self.dvz.dvz_gui_button(gui, b'Clear selection'):
+                            clear_selection_requested = True
+                    else:
+                        self.dvz.dvz_gui_text(gui, b'Click a region to select it')
+            finally:
+                self.dvz.dvz_gui_end_child(gui)
             self.dvz.dvz_gui_separator_text(gui, b'Browse regions')
             self.dvz.dvz_gui_text(gui, b'Search by name or acronym')
             candidate = self._selector_gui.candidate()

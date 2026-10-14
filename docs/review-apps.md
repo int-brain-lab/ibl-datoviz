@@ -21,8 +21,9 @@ When regional values are supplied, switch between anatomical and value order. Se
 
 ## App 1: 3D scientific viewer
 
-The workspace contains one 3D viewport, a control/ontology sidebar and a persistent
-scientific-data area. Its presets are **Atlas surface**, **Single BWM probe**,
+The workspace contains one 3D viewport and a control/ontology sidebar. The atlas
+starts opaque. The retained scientific-data area starts hidden for the current
+review; enable **Show scientific data** to restore it. Its presets are **Atlas surface**, **Single BWM probe**,
 **Multiple W39 insertions** and **Points + plane**. Orbit with left-drag and zoom
 with the wheel. Use the common mapping selector for Allen, Beryl and Cosmos.
 
