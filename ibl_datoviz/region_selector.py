@@ -298,16 +298,16 @@ class RegionSelector:
         if not row.region.mapping_member:
             return None
         if shift and not keyboard:
-            anchor = self.row_by_id.get(self.anchor)
-            parent = row.region.parent_id
-            if anchor is None or parent is None or anchor.region.parent_id != parent:
+            anchor = self.by_id.get(self.anchor)
+            parent = self.by_id[region_id].parent_id
+            if anchor is None or parent is None or anchor.parent_id != parent:
                 return None
             siblings = [
                 item.region.id
                 for item in self.visible_rows()
                 if not item.branch
                 and item.region.mapping_member
-                and item.region.parent_id == parent
+                and self.by_id[item.region.id].parent_id == parent
             ]
             if self.anchor not in siblings or region_id not in siblings:
                 return None

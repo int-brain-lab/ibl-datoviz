@@ -85,3 +85,21 @@ def test_branch_member_activation_only_folds_and_host_selection_does_not_reveal(
     selector.set_selected(['leaf'])
     assert selector.snapshot()['visible'] == ['p']
     assert selector.focus == 'p'
+
+
+def test_omitted_grey_wrapper_does_not_erase_semantic_range_parents():
+    selector = RegionSelector(
+        [
+            SelectorRegion('grey', None, -8, 'grey', 'Grey'),
+            SelectorRegion('a', 'grey', -10, 'A', 'First'),
+            SelectorRegion('b', 'grey', -11, 'B', 'Second'),
+        ]
+    )
+    assert [row.depth for row in selector.visible_rows()] == [0, 0]
+    selector.activate('a')
+    selector.activate('b', shift=True)
+    assert selector.selected == ['a', 'b']
+    selector.apply({'op': 'order', 'value': 'value-desc'})
+    selector.set_selected(['a'])
+    selector.activate('b', shift=True)
+    assert selector.selected == ['a', 'b']
