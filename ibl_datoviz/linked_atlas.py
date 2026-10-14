@@ -1124,6 +1124,10 @@ class LinkedAtlasNavigator(AtlasViewer):
                 row = mapped_region(self.slice_source, source_index, self.mapping)
                 label = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
         region_ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
+        if cursor is None:
+            model = getattr(self, '_selector_model', None)
+            region = model.by_id.get(model.hover) if model is not None else None
+            region_ids = (region.atlas_id,) if region is not None else ()
         position = (x, y) if cursor is not None else None
         changed = (
             axis != self._hovered_slice_axis
@@ -1184,6 +1188,12 @@ class LinkedAtlasNavigator(AtlasViewer):
         super()._apply_selected_region_ids(region_ids, **kwargs)
         if hasattr(self, '_slice_fields'):
             self._refresh_slices()
+
+    def _restore_selection_feedback(self):
+        """Replace rejected slice revisions and restore every transient hover layer."""
+        super()._restore_selection_feedback()
+        self._refresh_slices()
+        self._refresh_hover_overlays()
 
     def _set_hovered_region_ids(self, region_ids) -> bool:
         """Brighten transient hover across 3-D and lightweight slice overlays."""

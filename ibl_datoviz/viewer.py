@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import ctypes
 import textwrap
 from contextlib import suppress
@@ -24,6 +25,7 @@ from .gui_data import create_probe_table, create_region_table, create_region_tre
 from .insertions import InsertionCollectionVisual
 from .ontology import AtlasTreeModel
 from .presentation import region_presentation, scalar_colors
+from .region_selector_gui import RegionSelectorGui, selector_from_tree, signed_selection
 from .selection import (
     mesh_ids_from_keys,
     probe_selected_ids,
@@ -142,6 +144,8 @@ class AtlasViewer:
         self.region_tree, self.region_table = None, None
         self.probe_table = None
         self._gui_widgets = {}
+        self._selector_model = self._selector_gui = None
+        self._selector_mapping = None
         self.gui = None
         self.probe_sites = None
         self._probe_sites_pending = None
@@ -436,6 +440,8 @@ class AtlasViewer:
             'mapping',
             'palette',
             'tree_model',
+            '_selector_model',
+            '_selector_mapping',
             'region_data',
             '_region_value_range',
             '_region_color_scheme',
@@ -521,6 +527,12 @@ class AtlasViewer:
                 )
             for widget in widgets:
                 getattr(self, f'_replace_{widget}')()
+            if self._selector_gui is not None and self.region_tree is not None:
+                self._selector_gui.model = self._selector_model
+                self._selector_gui.value_name = (
+                    self.region_data.value_name if self.region_data is not None else 'Value'
+                )
+                self._selector_gui.upload(self._selector_model)
         except Exception as rollback_error:
             self.close()
             raise RuntimeError(
@@ -807,6 +819,13 @@ class AtlasViewer:
             if self.gui is not None:
                 widgets.append('region_table')
                 self._replace_region_table()
+            if self._selector_gui is not None:
+                candidate = self._selector_gui.candidate()
+                candidate.values = self._selector_values(candidate)
+                candidate._repair_focus()
+                self._selector_gui.value_name = data.value_name
+                self._selector_gui.commit(candidate)
+                self._selector_model = candidate
         except Exception:
             if not self._closed:
                 self._restore_surface_transaction(snapshot, widgets)
@@ -1168,7 +1187,12 @@ class AtlasViewer:
 
     def _sync_viewport_hover(self, hovered: bool) -> None:
         """Synchronize transient hover from a plain 3-D viewport."""
-        self._set_hovered_region_ids(self._mesh_hovered_region_ids() if hovered else ())
+        if hovered:
+            self._set_hovered_region_ids(self._mesh_hovered_region_ids())
+        else:
+            model = self._selector_model
+            region = model.by_id.get(model.hover) if model is not None else None
+            self._set_hovered_region_ids((region.atlas_id,) if region else ())
 
     def _mesh_selected_region_ids(self) -> tuple[int, ...]:
         if self.interaction is None:
@@ -1297,10 +1321,45 @@ class AtlasViewer:
         self._retain_gui_widget(
             'region_tree',
             create_region_tree(
-                self.dvz, self.tree_model, self.tree_root_acronym, self._tree_filter.value
+                self.dvz,
+                self.tree_model,
+                self.tree_root_acronym,
+                self._tree_filter.value,
+                controlled=True,
             ),
         )
-        self._set_tree_selection(self._selected_region_ids)
+        model = (
+            copy.deepcopy(self._selector_model)
+            if self._selector_model is not None and self._selector_mapping == self.mapping
+            else selector_from_tree(self.tree_model, self.tree_root_acronym, self._selector_model)
+        )
+        RegionSelectorGui.sync_selection(model, self._selected_region_ids)
+        model.values = self._selector_values(model)
+        try:
+            self._selector_gui = RegionSelectorGui(
+                self._gui_widgets['region_tree'],
+                model,
+                value_name=self.region_data.value_name
+                if self.region_data is not None
+                else 'Value',
+            )
+        except Exception:
+            self._close_gui_widget('region_tree', 'tree')
+            raise
+        self._selector_model, self._selector_mapping = model, self.mapping
+
+    def _selector_values(self, model):
+        values = {}
+        presentation = self._mapped_region_values()
+        # Use the existing signed weighted-mean presentation. Prefer the canonical
+        # left value; a right-only value still annotates the logical browser row.
+        available = {abs(region.atlas_id): region.id for region in model.regions}
+        for region_id, value in sorted(
+            zip(presentation.region_ids, presentation.values, strict=True), reverse=True
+        ):
+            if abs(int(region_id)) in available:
+                values[available[abs(int(region_id))]] = float(value)
+        return values
 
     def _gui_callback(self, gui, _view, _user_data) -> None:  # noqa: PLR0912, PLR0915
         self.dvz.dvz_gui_dock_window_once(
@@ -1331,6 +1390,7 @@ class AtlasViewer:
                 ):
                     self.set_explode(self._explode_control.value)
             self._draw_extra_gui(gui)
+            clear_selection_requested = False
             self.dvz.dvz_gui_separator_text(gui, b'Selection')
             if self._selected_region_ids:
                 for region_id in self._selected_region_ids[:6]:
@@ -1344,29 +1404,19 @@ class AtlasViewer:
                     remaining = len(self._selected_region_ids) - 6
                     self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
                 if self.dvz.dvz_gui_button(gui, b'Clear selection'):
-                    self.clear_selection()
+                    clear_selection_requested = True
             else:
                 self.dvz.dvz_gui_text(gui, b'Click a region to select it')
             self.dvz.dvz_gui_separator_text(gui, b'Browse regions')
             self.dvz.dvz_gui_text(gui, b'Search by name or acronym')
-            if self.dvz.dvz_gui_input_text(
-                gui, b'##ibl_atlas_filter', self._tree_filter, len(self._tree_filter)
-            ):
-                self._check(
-                    self.dvz.dvz_gui_tree_set_filter(self.region_tree, self._tree_filter.value),
-                    'atlas ontology filter',
-                )
-            if self.dvz.dvz_gui_collapsing_header(gui, b'Hierarchy controls', 0):
-                if self.dvz.dvz_gui_button(gui, b'Collapse all'):
-                    self.dvz.dvz_gui_tree_collapse_all(self.region_tree)
-                self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
-                if self.dvz.dvz_gui_button(gui, b'Expand 3 levels'):
-                    self.dvz.dvz_gui_tree_expand_to_depth(self.region_tree, 3)
-                if self.dvz.dvz_gui_button(gui, b'Expand all'):
-                    self._check(
-                        self.dvz.dvz_gui_tree_expand_all(self.region_tree),
-                        'atlas ontology expansion',
-                    )
+            candidate = self._selector_gui.candidate()
+            if clear_selection_requested:
+                candidate.set_selected(())
+            candidate.values = self._selector_values(candidate)
+            self._selector_gui.value_name = (
+                self.region_data.value_name if self.region_data is not None else 'Value'
+            )
+            self._selector_gui.controls(gui, candidate, self._tree_filter)
             tree_height = getattr(self, '_tree_height', None)
             scroll_tree = tree_height is not None or (
                 self.region_table is None and self.probe_table is None
@@ -1376,20 +1426,37 @@ class AtlasViewer:
                 tree_visible = self.dvz.dvz_gui_begin_child(
                     gui, b'Atlas region hierarchy', 0.0, tree_height or 0.0, 0
                 )
-            events = ()
-            if tree_visible:
-                _, events, _dropped = self.dvz.dvz_gui_tree_draw(gui, self.region_tree)
-            if scroll_tree:
-                self.dvz.dvz_gui_end_child(gui)
-            tree_changed = any(
-                event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED for event in events
-            )
-            region_table_changed, table_changed = self._draw_data_tables_gui(gui)
-            self._sync_selection_highlight(
-                tree_changed=tree_changed,
-                table_changed=table_changed,
-                region_table_changed=region_table_changed,
-            )
+            try:
+                self._selector_gui.upload(candidate)
+                events = ()
+                if tree_visible:
+                    result, events, dropped = self.dvz.dvz_gui_tree_draw(gui, self.region_tree)
+                    self._check(result, 'region selector draw')
+                    if dropped:
+                        raise RuntimeError('region selector input batch dropped')
+                self._selector_gui.intents(candidate, events)
+                region_table_changed, table_changed = self._draw_data_tables_gui(gui)
+                self._sync_selection_highlight(
+                    tree_changed=candidate.selected != self._selector_model.selected,
+                    table_changed=table_changed,
+                    region_table_changed=region_table_changed,
+                    candidate=candidate,
+                )
+            except Exception:
+                try:
+                    self._selector_gui.upload(self._selector_model)
+                    self._set_probe_table_selection(self._selected_region_ids)
+                    self._set_region_table_selection(self._selected_region_ids)
+                    self._tree_filter.value = self._selector_model.query.encode()
+                except Exception as rollback_error:
+                    self.close()
+                    raise RuntimeError(
+                        'region selector rollback failed; viewer closed'
+                    ) from rollback_error
+                raise
+            finally:
+                if scroll_tree:
+                    self.dvz.dvz_gui_end_child(gui)
         self.dvz.dvz_gui_end(gui)
         if self.viewport is not None:
             self.dvz.dvz_gui_viewport_window(self.viewport, b'Atlas views', None, 0)
@@ -1416,7 +1483,10 @@ class AtlasViewer:
             changed = False
             if table is not None:
                 self.dvz.dvz_gui_separator_text(gui, title)
-                _, events, _dropped = self.dvz.dvz_gui_table_draw(gui, table)
+                result, events, dropped = self.dvz.dvz_gui_table_draw(gui, table)
+                self._check(result, 'data table draw')
+                if dropped:
+                    raise RuntimeError('data table input batch dropped')
                 changed = any(
                     event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED for event in events
                 )
@@ -1425,6 +1495,20 @@ class AtlasViewer:
 
     def _set_tree_selection(self, region_ids: Sequence[int]) -> None:
         if self.region_tree is None or self.tree_model is None:
+            return
+        if self._selector_gui is not None:
+            candidate = self._selector_gui.candidate()
+            self._selector_gui.sync_selection(candidate, region_ids)
+            try:
+                self._selector_gui.commit(candidate)
+            except Exception:
+                # commit already attempts native rollback; a second failure closes.
+                try:
+                    self._selector_gui.upload(self._selector_model)
+                except Exception:
+                    self.close()
+                raise
+            self._selector_model = candidate
             return
         keys = tree_selection_keys(region_ids, self._gui_widgets['region_tree'].rows.region_ids)
         self._gui_widgets['region_tree'].set_selection(keys, 'atlas ontology selection sync')
@@ -1437,6 +1521,13 @@ class AtlasViewer:
         update_table: bool,
         clear_mesh: bool,
     ) -> None:
+        if update_tree:
+            self._set_tree_selection(region_ids)
+        if update_table:
+            self._set_probe_table_selection(region_ids)
+            self._set_region_table_selection(region_ids)
+        self._selected_region_ids = region_ids
+        self._update_surface_emphasis()
         if clear_mesh and self.interaction is not None:
             self._check(
                 self.dvz.dvz_selection_clear(
@@ -1445,13 +1536,6 @@ class AtlasViewer:
                 'surface selection clear',
             )
             self._last_mesh_region_ids = ()
-        if update_tree:
-            self._set_tree_selection(region_ids)
-        if update_table:
-            self._set_probe_table_selection(region_ids)
-            self._set_region_table_selection(region_ids)
-        self._selected_region_ids = region_ids
-        self._update_surface_emphasis()
 
     def _update_surface_emphasis(self) -> None:
         """Fade non-selected regions and brighten hover without affecting unrelated regions."""
@@ -1576,6 +1660,7 @@ class AtlasViewer:
         tree_changed: bool = False,
         table_changed: bool = False,
         region_table_changed: bool = False,
+        candidate=None,
     ) -> None:
         decision = selection_decision(
             region_table_changed=region_table_changed,
@@ -1588,8 +1673,11 @@ class AtlasViewer:
                 mesh_changed=mesh_region_ids != self._last_mesh_region_ids
             )
             if decision is None:
+                if candidate is not None:
+                    self._commit_selector_frame(candidate, self._selected_region_ids, None)
                 return
-            self._last_mesh_region_ids = mesh_region_ids
+            if candidate is None:
+                self._last_mesh_region_ids = mesh_region_ids
             region_ids = mesh_region_ids
         else:
             readers = {
@@ -1597,7 +1685,14 @@ class AtlasViewer:
                 'probe_table': self._probe_table_selected_region_ids,
                 'tree': self._tree_selected_region_ids,
             }
-            region_ids = readers[decision.source]()
+            region_ids = (
+                signed_selection(candidate, self._selected_region_ids)
+                if candidate is not None and decision.source == 'tree'
+                else readers[decision.source]()
+            )
+        if candidate is not None:
+            self._commit_selector_frame(candidate, region_ids, decision)
+            return
         self._apply_selected_region_ids(
             region_ids,
             update_tree=decision.update_tree,
@@ -1608,6 +1703,65 @@ class AtlasViewer:
             self._set_probe_table_selection(self._selected_region_ids)
         if decision.sync_region_table:
             self._set_region_table_selection(self._selected_region_ids)
+
+    def _commit_selector_frame(self, candidate, region_ids, decision):
+        """Commit navigation and the winning host selection as one recoverable batch."""
+        previous = self._selector_model
+        selected, hovered = self._selected_region_ids, self._hovered_region_ids
+        last_mesh = self._last_mesh_region_ids
+        if decision is not None and decision.source != 'tree':
+            candidate.selected = previous.selected.copy()
+            candidate.anchor = previous.anchor
+        self._selector_gui.sync_selection(candidate, region_ids, preserve_anchor=True)
+        try:
+            self._selector_gui.commit(candidate)
+            self._selector_model = candidate
+            if decision is not None:
+                self._apply_selected_region_ids(
+                    region_ids,
+                    update_tree=False,
+                    update_table=decision.update_tables,
+                    clear_mesh=False,
+                )
+                if decision.sync_probe_table:
+                    self._set_probe_table_selection(region_ids)
+                if decision.sync_region_table:
+                    self._set_region_table_selection(region_ids)
+            if candidate.hover is not None or candidate.hover != previous.hover:
+                region = candidate.by_id.get(candidate.hover)
+                self._set_hovered_region_ids((region.atlas_id,) if region else ())
+            if decision is not None:
+                if decision.clear_mesh and self.interaction is not None:
+                    self._check(
+                        self.dvz.dvz_selection_clear(
+                            self.dvz.dvz_item_interaction_selection(self.interaction)
+                        ),
+                        'surface selection clear',
+                    )
+                    self._last_mesh_region_ids = ()
+                elif decision.source == 'mesh':
+                    self._last_mesh_region_ids = tuple(region_ids)
+        except Exception:
+            self._selector_gui.model = self._selector_model = previous
+            self._selected_region_ids, self._hovered_region_ids = selected, hovered
+            self._last_mesh_region_ids = last_mesh
+            try:
+                self._selector_gui.upload(previous)
+                self._set_probe_table_selection(selected)
+                self._set_region_table_selection(selected)
+                self._restore_selection_feedback()
+            except Exception as rollback_error:
+                self.close()
+                raise RuntimeError(
+                    'region selector frame rollback failed; viewer closed'
+                ) from rollback_error
+            raise
+
+    def _restore_selection_feedback(self):
+        """Force restored physical selection and hover back into presentation."""
+        # A failed setter can mutate native pixels before reporting failure.
+        self._last_surface_emphasis = None
+        self._update_surface_emphasis()
 
     def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0912, PLR0915
         if self.app is not None:

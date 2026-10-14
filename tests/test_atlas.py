@@ -30,8 +30,35 @@ class FakeSelectionItem(ctypes.Structure):
     _fields_ = [('link_key', ctypes.c_uint64)]
 
 
+class FakeTreeTextSpan(ctypes.Structure):
+    _fields_ = [('start', ctypes.c_uint32), ('length', ctypes.c_uint32)]
+
+
+class FakeTreeAnnotation(ctypes.Structure):
+    _fields_ = [
+        ('flags', ctypes.c_uint32),
+        ('row_key', ctypes.c_uint64),
+        ('value_text', ctypes.c_char_p),
+        ('tooltip', ctypes.c_char_p),
+        ('label_span_count', ctypes.c_uint32),
+        ('label_spans', ctypes.POINTER(FakeTreeTextSpan)),
+        ('secondary_span_count', ctypes.c_uint32),
+        ('secondary_spans', ctypes.POINTER(FakeTreeTextSpan)),
+    ]
+
+
 class FakeDatoviz:
     DvzSelectionItem = FakeSelectionItem
+    DvzGuiTreeTextSpan = FakeTreeTextSpan
+    DVZ_GUI_DATA_WIDGET_FLAGS_CONTROLLED = 4
+    DVZ_GUI_TREE_ANNOTATION_FLAGS_MISSING = 1
+    DVZ_GUI_DATA_EVENT_ROW_CLICKED = 6
+    DVZ_GUI_DATA_EVENT_DISCLOSURE_CLICKED = 7
+    DVZ_GUI_DATA_EVENT_KEY_PRESSED = 8
+    DVZ_GUI_DATA_EVENT_HOVER_CHANGED = 9
+    DVZ_GUI_DATA_EVENT_FOCUS_CHANGED = 10
+    DVZ_KEY_UP, DVZ_KEY_DOWN, DVZ_KEY_LEFT, DVZ_KEY_RIGHT = 265, 264, 263, 262
+    DVZ_KEY_HOME, DVZ_KEY_END, DVZ_KEY_ENTER, DVZ_KEY_SPACE = 268, 269, 257, 32
     DVZ_QUERY_CAPABILITY_FACE = 4
     DVZ_SCENE_TARGET_FACE = 4
     DVZ_GUI_DATA_EVENT_SELECTION_CHANGED = 1
@@ -171,6 +198,52 @@ class FakeDatoviz:
 
     def dvz_gui_tree(self, *_args):
         return self._handle('region_tree')
+
+    @staticmethod
+    def dvz_gui_tree_annotation():
+        return FakeTreeAnnotation()
+
+    def dvz_gui_tree_set_projection(self, _tree, keys, depths, branches, selectable):
+        self.calls.append(
+            (
+                'tree_projection',
+                *(np.array(data, copy=True) for data in (keys, depths, branches, selectable)),
+            )
+        )
+        return 0
+
+    def dvz_gui_tree_set_expanded(self, _tree, keys):
+        self.calls.append(('tree_expanded', tuple(int(key) for key in keys)))
+        return 0
+
+    def dvz_gui_tree_set_focus(self, _tree, key):
+        self.calls.append(('tree_focus', int(key)))
+        return 0
+
+    def dvz_gui_tree_set_annotations(self, _tree, annotations):
+        self.calls.append(
+            (
+                'tree_annotations',
+                tuple(
+                    {
+                        'row_key': row.row_key,
+                        'value': row.value_text,
+                        'tooltip': row.tooltip,
+                        'flags': row.flags,
+                        'label': [
+                            (row.label_spans[i].start, row.label_spans[i].length)
+                            for i in range(row.label_span_count)
+                        ],
+                        'secondary': [
+                            (row.secondary_spans[i].start, row.secondary_spans[i].length)
+                            for i in range(row.secondary_span_count)
+                        ],
+                    }
+                    for row in annotations
+                ),
+            )
+        )
+        return 0
 
     def dvz_gui_tree_set_rows(self, _tree, keys, parents, labels, names, flags):
         self.calls.append(

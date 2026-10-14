@@ -37,11 +37,12 @@ class TreeRows:
 class GuiWidget:
     """Own one table or tree handle, destroying it at most once."""
 
-    def __init__(self, dvz, kind, rows):
+    def __init__(self, dvz, kind, rows, *, controlled=False):
         self.dvz = dvz
         self.kind = kind
         self.rows = rows
         self.handle = None
+        self.controlled = controlled
 
     @staticmethod
     def check(result, action):
@@ -64,7 +65,7 @@ class GuiWidget:
         self.check(
             getattr(self.dvz, f'dvz_gui_{self.kind}_set_selection')(self.handle, keys), action
         )
-        if self.kind == 'tree' and len(keys) == 1:
+        if self.kind == 'tree' and not self.controlled and len(keys) == 1:
             self.check(
                 self.dvz.dvz_gui_tree_reveal(self.handle, int(keys[0])),
                 'atlas ontology selection reveal',
@@ -226,7 +227,7 @@ def create_region_table(dvz, data, region_ids, values, weights, labels, colors):
     return owner
 
 
-def create_region_tree(dvz, model, root_acronym, filter_text):
+def create_region_tree(dvz, model, root_acronym, filter_text, *, controlled=False):
     """Prepare rows and upload a new independently owned widget."""
     row_indices = model.subtree_row_indices(root_acronym)
     old_to_new = {int(old): new for new, old in enumerate(row_indices)}
@@ -242,12 +243,16 @@ def create_region_tree(dvz, model, root_acronym, filter_text):
     labels = tuple(model.acronyms[index] for index in row_indices)
     names = tuple(model.names[index] for index in row_indices)
     owner = GuiWidget(
-        dvz, 'tree', TreeRows(model.keys[row_indices], model.region_ids[row_indices], parents)
+        dvz,
+        'tree',
+        TreeRows(model.keys[row_indices], model.region_ids[row_indices], parents),
+        controlled=controlled,
     )
     try:
         owner.handle = dvz.dvz_gui_tree(
             b'ibl_atlas_ontology',
-            dvz.DVZ_GUI_DATA_WIDGET_FLAGS_MULTI_SELECT,
+            dvz.DVZ_GUI_DATA_WIDGET_FLAGS_MULTI_SELECT
+            | (dvz.DVZ_GUI_DATA_WIDGET_FLAGS_CONTROLLED if controlled else 0),
         )
         if not owner.handle:
             owner.handle = None
@@ -267,7 +272,7 @@ def create_region_tree(dvz, model, root_acronym, filter_text):
             dvz.dvz_gui_tree_set_swatches(owner.handle, model.colors[row_indices]),
             'atlas ontology colors',
         )
-        if filter_text:
+        if filter_text and not controlled:
             owner.check(
                 dvz.dvz_gui_tree_set_filter(owner.handle, filter_text),
                 'atlas ontology filter restore',
@@ -288,10 +293,11 @@ def create_region_tree(dvz, model, root_acronym, filter_text):
                 dvz.dvz_gui_tree_set_styles(owner.handle, styles),
                 'atlas ontology hierarchy styles',
             )
-        owner.check(
-            dvz.dvz_gui_tree_expand_to_depth(owner.handle, 3),
-            'atlas ontology expansion',
-        )
+        if not controlled:
+            owner.check(
+                dvz.dvz_gui_tree_expand_to_depth(owner.handle, 3),
+                'atlas ontology expansion',
+            )
     except BaseException:
         owner.close()
         raise
