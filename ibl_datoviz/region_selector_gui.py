@@ -223,6 +223,8 @@ class RegionSelectorGui:
         )
         text = f'{count} regions / {len(candidate.selected)} selected'
         dvz.dvz_gui_text(gui, text.encode())
+        if candidate.values:
+            dvz.dvz_gui_text(gui, f'{self.value_name} (left hemisphere)'.encode())
         if dvz.dvz_gui_button(gui, b'Collapse all'):
             candidate.set_all_expanded(False)
         dvz.dvz_gui_same_line(gui, 0.0, 8.0)

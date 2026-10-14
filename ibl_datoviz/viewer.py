@@ -1351,14 +1351,12 @@ class AtlasViewer:
     def _selector_values(self, model):
         values = {}
         presentation = self._mapped_region_values()
-        # Use the existing signed weighted-mean presentation. Prefer the canonical
-        # left value; a right-only value still annotates the logical browser row.
-        available = {abs(region.atlas_id): region.id for region in model.regions}
-        for region_id, value in sorted(
-            zip(presentation.region_ids, presentation.values, strict=True), reverse=True
-        ):
-            if abs(int(region_id)) in available:
-                values[available[abs(int(region_id))]] = float(value)
+        # Values are authored per signed region, as in the web reference. Never
+        # substitute the other hemisphere for an absent canonical-left value.
+        available = {region.atlas_id: region.id for region in model.regions}
+        for region_id, value in zip(presentation.region_ids, presentation.values, strict=True):
+            if int(region_id) in available:
+                values[available[int(region_id)]] = float(value)
         return values
 
     def _gui_callback(self, gui, _view, _user_data) -> None:  # noqa: PLR0912, PLR0915

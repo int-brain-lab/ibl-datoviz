@@ -131,6 +131,27 @@ def test_stable_inventory_no_idle_uploads_and_zero_match_does_not_request_focus(
     assert sum(call[0] == 'tree_rows' for call in fake.calls) == 1
 
 
+@pytest.mark.parametrize(
+    ('ids', 'values', 'left'),
+    [
+        ([101], [9.0], None),
+        ([101, -101], [9.0, 2.0], 2.0),
+        ([101, -101], [9.0, float('nan')], float('nan')),
+        ([101, -101], [9.0, 0.0], 0.0),
+    ],
+)
+def test_browser_values_keep_exact_signed_hemisphere(viewer, ids, values, left):
+    viewer, _fake = viewer
+    viewer._mapped_region_values = lambda: SimpleNamespace(region_ids=ids, values=values)
+    supplied = viewer._selector_values(viewer._selector_model)
+    if left is None:
+        assert supplied == {}
+    elif np.isnan(left):
+        assert np.isnan(supplied['-101'])
+    else:
+        assert supplied == {'-101': left}
+
+
 def test_controls_search_fold_and_rank_cycle_restore_requested_order(viewer):
     viewer, fake = viewer
     viewer._selector_model.values = {'-101': 2.0, '-102': 1.0}
