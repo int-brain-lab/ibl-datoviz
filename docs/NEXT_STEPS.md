@@ -31,7 +31,7 @@ transactional cleanup and the borrowed-scene lifetime contract. In-place upload
 failure now restores prior pixels even if a failing native upload partially
 mutated them. See [component contracts](api/components.md).
 
-Validation on Linux/Python 3.10.17: **460 tests pass, zero skips**, including
+Validation on Linux/Python 3.10.17: **461 tests pass, zero skips**, including
 explicitly configured D070 and registered real assets, native offscreen component
 checks and a maintained signed face-query regression covering hide/opacity,
 empty/restore and mapping changes. Native mixed point/plane/mesh captures prove
@@ -65,6 +65,15 @@ rendering evidence, not scientific or live interaction acceptance.
 Other evidence is ignored `build/rc4-investigation/`: `upgrade-tests.log`,
 `scientific-native-validation.log`, `query-regression.log`, `upgrade-startup.log`,
 `upgrade-docs.log`, `upgrade-lint.log` and `mixed-real.log`.
+
+The first pushed revision passed both CI matrices' unit, wheel-installation and
+documentation checks, then exposed stale anatomy imports in the gallery helper:
+it implicitly prepended an adjacent fixture checkout's `src` directory. The helper
+now uses locked installed anatomy unless the caller explicitly supplies a source
+override, with a subprocess regression against a poisoned sibling checkout.
+CI's fixture checkout also matches the locked anatomy revision. The local native
+synthetic gallery smoke passes (`gallery-smoke.log`); hosted CI retains its explicit
+native-runtime-unavailable skip policy.
 
 Next gates are live review of the new mixed scientific workflow, native Python
 3.13 and physical macOS/Windows evidence, CI for the pushed package revision, and

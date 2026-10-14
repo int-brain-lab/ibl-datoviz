@@ -54,9 +54,6 @@ def _resolved_command(
 def _environment(repository: Path) -> dict[str, str]:
     environment = os.environ.copy()
     paths = [str(repository)]
-    adjacent_assets = repository.parent / 'ibl-anatomy' / 'src'
-    if adjacent_assets.is_dir():
-        paths.append(str(adjacent_assets))
     existing = environment.get('PYTHONPATH')
     if existing:
         paths.append(existing)
