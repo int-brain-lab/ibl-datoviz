@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/int-brain-lab/ibl-anatomy",
+  "commit": "81bd7d79044e4dc3a528abe50a0296381143f03e",
+  "path": "src/ibl_anatomy/region_selector_contract/v1",
+  "sha256": {
+    "manifest.json": "71ec8577495aedf8b3650b15f116f80e8c17e974d3db284eca86825d3797bc06",
+    "schema.json": "47c9452083d3b16092cc5a016fd709f9ad6a1db40f7fd66b19b41b0cdb5f8fed",
+    "traces.json": "080bd91a21d398f84e853d61548a39a78a4eb452e9592a551cbf93ff68ad07b5"
+  }
+}
