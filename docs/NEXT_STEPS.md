@@ -9,6 +9,72 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## RC4 source migration — October 14 2026
+
+The package now pins Datoviz to `c761eb2404f0ae0d39ec25a7ef96472b11d9ad6e`
+on `rc4/scientific-3d`. That upstream commit refreshes the generated alpha-cutoff
+bindings; `just ctypes` and `just ctypes-check` pass, including 17 adaptation tests
+and 207 ABI records. The source revision and lock agree, with no other dependency
+changes. Anatomy remains at `0bd6a63c7c46d4ef0fdd710934e059135b342d7b`.
+Datoviz still carries `0.4.0rc2` distribution metadata; this is an immutable RC4
+development baseline, not a released RC4 artifact. Both repositories keep their
+`main` branches unchanged.
+
+`PointCollectionVisual` now accepts explicit `alpha_mode="wboit"` and reports
+order-independent composition. `SampledPlaneVisual` adds opt-in
+`depth_policy="physical"` with opaque, blended, WBOIT and mask modes. Physical
+planes use unlit textured meshes, owned normals/indices and sampled fields;
+mask `alpha_cutoff` defaults to 0.5 with inclusive equality and zero-alpha
+discard. The existing blended image-overlay default and linked 2D slice routes
+are preserved. Construction, replacement, texture resizing and close retain
+transactional cleanup and the borrowed-scene lifetime contract. In-place upload
+failure now restores prior pixels even if a failing native upload partially
+mutated them. See [component contracts](api/components.md).
+
+Validation on Linux/Python 3.10.17: **460 tests pass, zero skips**, including
+explicitly configured D070 and registered real assets, native offscreen component
+checks and a maintained signed face-query regression covering hide/opacity,
+empty/restore and mapping changes. Native mixed point/plane/mesh captures prove
+reversed-order agreement within two channel levels, opaque depth occlusion,
+texture holes, cutoff equality/endpoints, effective zero alpha, retained updates
+and caller-scene survival. Vulkan validation-layer activation is confirmed by
+loader diagnostics; focused and full-suite logs contain no validation errors.
+All nine existing real-data examples complete three-frame desktop startup with
+validation enabled. Lint, changed-file formatting, strict MkDocs and whitespace
+checks pass.
+
+Clean wheel installation checks with locked dependencies pass on Python 3.10.17
+and 3.13.3 using isolated imports, owned CPU payloads and offline packaged anatomy
+locks. Receipts are ignored `build/rc4-upgrade-install/receipt{310,313}.json`.
+Native evidence uses the existing engine library SHA256
+`10d3aae8821300b0c09f5be656ae95022d8a2d9c850c810934f7491bdb983d02`;
+no engine rebuild, anatomy mutation or canonical-media publication was performed.
+The local review configuration now selects the matching RC4 source/library and
+`just doctor --strict` passes.
+
+A diagnostic mixed scene combines verified D070 surfaces, all pinned BWM
+recording-site coordinates as uniformly colored WBOIT points, endpoint sphere/path
+context and an affine-positioned AP slice from the real Allen 50 um pack. Reversed
+point/plane attachment order agrees within two channel levels; closing the components
+restores the baseline exactly. A physical masked anatomical plane also renders
+and restores correctly. Captures were inspected. Inputs, explicit display
+encodings, grid/corner coordinates and hashes are recorded in ignored
+`build/rc4-investigation/mixed-real-receipt.json`; these diagnostics are scripted
+rendering evidence, not scientific or live interaction acceptance.
+
+Other evidence is ignored `build/rc4-investigation/`: `upgrade-tests.log`,
+`scientific-native-validation.log`, `query-regression.log`, `upgrade-startup.log`,
+`upgrade-docs.log`, `upgrade-lint.log` and `mixed-real.log`.
+
+Next gates are live review of the new mixed scientific workflow, native Python
+3.13 and physical macOS/Windows evidence, CI for the pushed package revision, and
+eventual distributable dependency certification. Complete registered-section
+coverage remains an anatomy gate. Sampled/MASK mesh queries, styled/depth-cued
+point queries and transparent sphere/path composition remain explicit engine
+exclusions; arbitrary point/site identities do not automatically become atlas
+region identities. Optional volume workflows remain supported with their prior
+composition limitations.
+
 ## RC4 compatibility investigation — October 14 2026
 
 Recommendation: start the package migration on `feature/datoviz-v04` against
@@ -53,7 +119,7 @@ interaction evidence is `stationary-hover.log`, `retained-query.log` and
 still rejects its mismatch with pin `62101912d`, as expected. Investigation runs
 used explicit candidate runtime selection rather than bypassing the strict check.
 
-Next implementation steps, in order:
+Original implementation sequence (see the completed migration and remaining gates above):
 
 1. Finalize and commit the upstream generated bindings before choosing the new
    immutable baseline. The RC4 worktree's sole tracked modification adds

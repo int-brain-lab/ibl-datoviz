@@ -62,6 +62,18 @@ display.replace(plane)
 display.close()
 ```
 
+Use an explicit physical plane when its position should participate in the 3D
+scene's depth and transparency:
+
+```python
+display = SampledPlaneVisual(
+    dvz, scene, panel, plane,
+    transform=atlas_mesh.normalize_points,
+    depth_policy="physical",
+    alpha_mode="wboit",
+)
+```
+
 Plane corners are a finite rectangle of shape `(4, 3)`, ordered top-left,
 bottom-left, top-right, bottom-right. RGBA pixels have non-empty shape
 `(height, width, 4)`; row zero appears at the top edge. `sampling` is `nearest`
@@ -79,7 +91,7 @@ payload, restored with `replace()` first. Failed replacements restore the previo
 geometry, pixels, field binding, sampling, and visibility. A failed rollback closes
 the component and raises an error without destroying the caller's scene.
 
-## Current native rendering limits
+## Native rendering modes
 
 The configured native pairing supports the following component behavior. The
 `capabilities` record exposes supported alpha modes and effective depth behavior;
@@ -89,27 +101,51 @@ it describes this adapter, rather than certifying every native backend.
 | --- | --- | --- | --- |
 | Points, `opaque`, depth enabled | Yes | Yes | Opaque pass |
 | Points, `blended`, depth enabled | Yes | No | Source-over, draw-order dependent |
+| Points, `wboit`, depth enabled | Yes | No | Shared weighted order-independent transparency |
 | Points, depth disabled | No | No | Selected alpha mode |
 | Sampled plane, `blended` + `overlay` | No | No | Source-over overlay |
+| Sampled plane, `opaque` + `physical` | Yes | Yes | Opaque textured mesh |
+| Sampled plane, `blended` + `physical` | Yes | No | Source-over, draw-order dependent |
+| Sampled plane, `wboit` + `physical` | Yes | No | Shared weighted order-independent transparency |
+| Sampled plane, `mask` + `physical` | Yes | Yes | Alpha cutout with physical texture holes |
 
-Points reject WBOIT, depth peeling, and alpha mask before creating native resources.
-Sampled planes accept only blended overlay rendering. Requesting WBOIT, alpha mask,
-or true 3D depth fails explicitly. The image shader has unconditional depth comparison
-and disables depth writes even when its vertices are XYZ data coordinates. Texture
-alpha controls overlay blending; it does not establish a depth-correct cutout plane.
-Intersections with meshes therefore remain an overlay preview, and do not satisfy
-the required native scientific 3D plane profile. A future conformant native route
-requires separate acceptance; these adapters never silently substitute blended
-rendering for a requested unsupported technique.
+Points accept `opaque`, `blended` and `wboit`; alpha mask and depth peeling are
+rejected before creating native resources. Select `wboit` explicitly on every
+transparent point, physical plane and mesh that should share that composition.
+Opaque recording-site spheres and insertion paths continue to provide depth
+context. Transparent sphere/path rendering is outside these component contracts.
+
+Sampled planes retain `depth_policy="overlay"`, `alpha_mode="blended"` as their
+defaults. This image route ignores 3D depth, even for XYZ corners. It rejects
+other alpha modes. The opt-in `physical` route uses an unlit textured mesh with
+normals, indices and a sampled texture. Its transformed corners must remain
+non-degenerate and planar. Existing 2D slice overlays keep their image behavior.
+
+For `depth_policy="physical", alpha_mode="mask"`, `alpha_cutoff` defaults to
+`0.5` and must be finite and in `[0, 1]`. Fragments below the effective-alpha
+cutoff are discarded; equality survives. Effective zero alpha is always
+discarded, including at cutoff zero, so texture holes write neither color nor
+depth. Effective alpha includes texture, vertex and material alpha; the adapter
+initializes white vertex colors and an unlit material with opacity one. Nearest
+sampling preserves discrete cutout boundaries, while linear sampling interpolates
+texture alpha. A mask is a binary coverage policy, not translucent blending.
+
+`capabilities.order_independent` is true for WBOIT configurations, and
+`capabilities.sampled_plane_3d` is true for physical planes. These modes target
+the immutable RC4 development source in the locked environment; released wheel
+metadata alone does not establish support. Native sampled/MASK mesh queries and
+styled/depth-cued point queries remain engine exclusions. The adapters do not
+automatically enable picking or map arbitrary point IDs to atlas regions.
 
 ## Ownership and shutdown
 
 Adapters borrow `dvz`, a live scene, and its panel. They create only their visual
-and, for planes, sampled field. They create no app, figure, camera, controller, GUI,
+and, for planes, sampled field plus a physical-plane index buffer when needed.
+They create no app, figure, camera, controller, GUI,
 callbacks, worker, or frame loop. Call mutations on the scene's permitted mutation
 thread and request frames through the caller's existing loop.
 
-`close()` is idempotent, destroys the component visual and its owned sampled field,
+`close()` is idempotent, destroys the component visual, owned sampled field and index buffer,
 clears retained buffers, and rejects subsequent mutations. Native visual destruction
 resets its scene-owned slot, so its existing attachment no longer draws. Explicitly
 close all adapters **before** destroying the caller's scene: calling `close()` on

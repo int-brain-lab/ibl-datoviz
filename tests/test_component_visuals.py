@@ -299,13 +299,20 @@ def test_partial_plane_constructor_releases_visual_and_field(failure):
     assert not native.visuals and not native.fields
 
 
-@pytest.mark.parametrize('mode', ['wboit', 'mask', 'depth_peel'])
+@pytest.mark.parametrize('mode', ['mask', 'depth_peel'])
 def test_unsupported_alpha_rejected_before_creating_native_resources(mode):
     native = Native()
     with pytest.raises(ValueError):
         PointCollectionVisual(native, 'scene', 'panel', points(), alpha_mode=mode)
     with pytest.raises(ValueError):
         SampledPlaneVisual(native, 'scene', 'panel', plane(), alpha_mode=mode)
+    assert not native.visuals and not native.fields
+
+
+def test_overlay_wboit_rejected_before_creating_native_resources():
+    native = Native()
+    with pytest.raises(ValueError):
+        SampledPlaneVisual(native, 'scene', 'panel', plane(), alpha_mode='wboit')
     assert not native.visuals and not native.fields
 
 

@@ -1,4 +1,4 @@
-"""Owned sampled rectangles and honest native image-overlay adapters."""
+"""Owned sampled rectangles with overlay and physical textured-mesh adapters."""
 
 import ctypes
 from dataclasses import dataclass
@@ -8,6 +8,9 @@ import numpy as np
 from .component import ComponentCapabilities, ComponentVisual, owned, rgba_array
 
 UV = owned([[0, 0], [0, 1], [1, 0], [1, 1]], np.float32)
+_INDICES = owned([0, 2, 1, 2, 3, 1], np.uint32)
+_COLORS = owned(np.full((4, 4), 255), np.uint8)
+_PHYSICAL_ALPHA_MODES = ('opaque', 'blended', 'wboit', 'mask')
 
 
 @dataclass(frozen=True)
@@ -54,10 +57,12 @@ class SampledPlane:
 
 
 class SampledPlaneVisual(ComponentVisual):
-    """Attach a data-positioned image overlay to a borrowed native panel.
+    """Attach a sampled rectangle to a borrowed native panel.
 
-    The current image shader has no 3D depth test/write or WBOIT route. Selecting
-    overlay is an explicit rendering limitation, including for XYZ geometry.
+    The default blended image overlay ignores 3D depth. Explicit physical depth
+    uses an unlit textured mesh: opaque/masked fragments write depth, while
+    blended/WBOIT fragments test depth without writing it. Mask cutoff uses the
+    sampled effective alpha; nearest sampling preserves discrete label pixels.
     """
 
     def __init__(
@@ -70,20 +75,38 @@ class SampledPlaneVisual(ComponentVisual):
         transform=None,
         alpha_mode='blended',
         depth_policy='overlay',
+        alpha_cutoff=0.5,
     ):
-        if alpha_mode != 'blended':
+        if depth_policy not in ('overlay', 'physical'):
+            raise ValueError('sampled-plane 3D depth policy must be overlay or physical')
+        if depth_policy == 'overlay' and alpha_mode != 'blended':
             raise ValueError(
                 'sampled planes support blended overlay alpha only; WBOIT/mask unavailable'
             )
-        if depth_policy != 'overlay':
-            raise ValueError(
-                'sampled-plane 3D depth is unavailable; select explicit overlay policy'
-            )
+        if depth_policy == 'physical' and alpha_mode not in _PHYSICAL_ALPHA_MODES:
+            raise ValueError('physical plane alpha must be opaque, blended, wboit, or mask')
+        if alpha_mode == 'mask':
+            try:
+                alpha_cutoff = float(alpha_cutoff)
+            except (TypeError, ValueError) as error:
+                raise ValueError('alpha cutoff must be finite and in [0, 1]') from error
+            if not np.isfinite(alpha_cutoff) or not 0 <= alpha_cutoff <= 1:
+                raise ValueError('alpha cutoff must be finite and in [0, 1]')
         super().__init__(dvz, scene, panel, transform)
         self.alpha_mode, self.depth_policy = alpha_mode, depth_policy
-        self.capabilities = ComponentCapabilities(('blended',), False, False)
+        self.alpha_cutoff = alpha_cutoff
+        physical = depth_policy == 'physical'
+        self.capabilities = ComponentCapabilities(
+            _PHYSICAL_ALPHA_MODES if physical else ('blended',),
+            physical,
+            physical and alpha_mode in ('opaque', 'mask'),
+            order_independent=physical and alpha_mode == 'wboit',
+            sampled_plane_3d=physical,
+        )
         self.field = None
+        self._index_buffer = None
         self._display_corners = None
+        self._display_geometry = None
         try:
             self.replace(data)
         except Exception:
@@ -91,16 +114,80 @@ class SampledPlaneVisual(ComponentVisual):
             raise
 
     def _sampling(self, data):
+        if self.depth_policy == 'physical':
+            sampling = self.dvz.dvz_field_sampling_desc()
+            mode = getattr(self.dvz, f'DVZ_FIELD_FILTER_{data.sampling.upper()}')
+            sampling.min_filter = sampling.mag_filter = mode
+            self._check(
+                self.dvz.dvz_visual_set_field_sampling(
+                    self.visual, b'texture', ctypes.byref(sampling)
+                ),
+                'plane sampling',
+            )
+            return
         mode = getattr(self.dvz, f'DVZ_IMAGE_SAMPLING_{data.sampling.upper()}')
         self._check(self.dvz.dvz_image_set_sampling(self.visual, mode), 'plane sampling')
 
     def _create_visual(self):
+        if self.depth_policy == 'physical':
+            self.visual = self._required(self.dvz.dvz_mesh(self.scene, 0), 'plane mesh')
+            desc = self.dvz.dvz_scene_buffer_desc()
+            desc.usage = self.dvz.DVZ_SCENE_BUFFER_USAGE_INDEX
+            desc.stride = _INDICES.itemsize
+            self._index_buffer = self._required(
+                self.dvz.dvz_scene_buffer(self.scene, ctypes.byref(desc)), 'plane index buffer'
+            )
+            self._check(
+                self.dvz.dvz_scene_buffer_set_data(self._index_buffer, _INDICES), 'plane indices'
+            )
+            self._check(
+                self.dvz.dvz_visual_set_buffer(self.visual, b'index', self._index_buffer),
+                'plane index binding',
+            )
+            material = self.dvz.dvz_material_desc()
+            material.model = self.dvz.DVZ_MATERIAL_MODEL_UNLIT
+            material.alpha_mode = getattr(self.dvz, f'DVZ_ALPHA_{self.alpha_mode.upper()}')
+            material.opacity = 1.0
+            self._check(
+                self.dvz.dvz_visual_set_material(self.visual, ctypes.byref(material)),
+                'plane material',
+            )
+            self._check(
+                self.dvz.dvz_visual_set_depth_test(self.visual, True), 'plane physical depth'
+            )
+            if self.alpha_mode == 'mask':
+                self._check(
+                    self.dvz.dvz_visual_set_alpha_cutoff(self.visual, self.alpha_cutoff),
+                    'plane alpha cutoff',
+                )
+            return
         self.visual = self._required(self.dvz.dvz_image(self.scene, 0), 'image visual')
         self._check(
             self.dvz.dvz_visual_set_alpha_mode(self.visual, self.dvz.DVZ_ALPHA_BLENDED),
             'plane alpha',
         )
         self._check(self.dvz.dvz_visual_set_depth_test(self.visual, False), 'plane overlay')
+
+    def _geometry(self, corners):
+        geometry = {'position': corners, 'texcoords': UV}
+        if self.depth_policy == 'physical':
+            points = corners.astype(np.float64)
+            normal = np.cross(points[2] - points[0], points[1] - points[0])
+            length = np.linalg.norm(normal)
+            other = np.cross(points[3] - points[2], points[1] - points[2])
+            extent = np.max(np.linalg.norm(points - points[0], axis=1))
+            if (
+                length == 0
+                or np.dot(normal, other) <= 0
+                or abs(np.dot(points[3] - points[0], normal)) > extent * length * 1e-5
+            ):
+                raise ValueError('display transform must preserve a non-degenerate planar plane')
+            geometry['normal'] = owned(np.tile(normal / length, (4, 1)), np.float32)
+            geometry['color'] = _COLORS
+        return geometry
+
+    def _field_slot(self):
+        return b'texture' if self.depth_policy == 'physical' else b'field'
 
     def _create_field(self, pixels):
         # Obtain the handle before upload so a native upload failure can release
@@ -115,17 +202,19 @@ class SampledPlaneVisual(ComponentVisual):
             self.dvz.dvz_sampled_field(self.scene, ctypes.byref(desc)), 'plane field'
         )
         try:
-            view = self.dvz.dvz_field_data_view()
-            view.data = ctypes.c_void_p(pixels.ctypes.data)
-            view.bytes_per_row, view.rows_per_image = pixels.strides[0], 0
-            self._check(
-                self.dvz.dvz_sampled_field_set_data(field, ctypes.byref(view)),
-                'plane field upload',
-            )
+            self._upload_field(field, pixels)
         except Exception:
             self.dvz.dvz_sampled_field_destroy(field)
             raise
         return field
+
+    def _upload_field(self, field, pixels):
+        view = self.dvz.dvz_field_data_view()
+        view.data = ctypes.c_void_p(pixels.ctypes.data)
+        view.bytes_per_row, view.rows_per_image = pixels.strides[0], 0
+        self._check(
+            self.dvz.dvz_sampled_field_set_data(field, ctypes.byref(view)), 'plane field upload'
+        )
 
     def _update_field(self, field, pixels):
         # Facade returns the field handle, raising on failed native status.
@@ -133,17 +222,18 @@ class SampledPlaneVisual(ComponentVisual):
             self.dvz.dvz_sampled_field_update_from_array(field, pixels), 'plane pixel update'
         )
 
-    def _restore(self, previous, corners, field, new_field, pixels_updated, visible):
+    def _restore(self, previous, geometry, field, new_field, pixels_updated, visible):
         self._check(
-            self.dvz.dvz_visual_set_data_many(self.visual, {'position': corners, 'texcoords': UV}),
+            self.dvz.dvz_visual_set_data_many(self.visual, geometry),
             'plane geometry rollback',
         )
         if new_field:
             self._check(
-                self.dvz.dvz_visual_set_field(self.visual, b'field', field), 'plane field rollback'
+                self.dvz.dvz_visual_set_field(self.visual, self._field_slot(), field),
+                'plane field rollback',
             )
         if pixels_updated:
-            self._update_field(field, previous.rgba)
+            self._upload_field(field, previous.rgba)
         self._sampling(previous)
         self._check(
             self.dvz.dvz_visual_set_visible(self.visual, visible), 'plane visibility rollback'
@@ -154,6 +244,9 @@ class SampledPlaneVisual(ComponentVisual):
             if self.visual:
                 self.dvz.dvz_visual_destroy(self.visual)
             self.visual = None
+            if self._index_buffer:
+                self.dvz.dvz_scene_buffer_destroy(self._index_buffer)
+            self._index_buffer = None
             return
         try:
             self._restore(*snapshot)
@@ -178,8 +271,9 @@ class SampledPlaneVisual(ComponentVisual):
             self.data = None
             return
         corners = self._positions(data.corners_um)
+        geometry = self._geometry(corners)
         previous = getattr(self, '_uploaded_data', None)
-        old_corners, old_field = self._display_corners, self.field
+        old_geometry, old_field = self._display_geometry, self.field
         created = not self.visual
         new_field = None
         pixels_updated = False
@@ -189,20 +283,20 @@ class SampledPlaneVisual(ComponentVisual):
             if created:
                 self._create_visual()
             self._check(
-                self.dvz.dvz_visual_set_data_many(
-                    self.visual, {'position': corners, 'texcoords': UV}
-                ),
+                self.dvz.dvz_visual_set_data_many(self.visual, geometry),
                 'plane geometry',
             )
             if previous is None or previous.rgba.shape != data.rgba.shape:
                 new_field = self._create_field(data.rgba)
                 self._check(
-                    self.dvz.dvz_visual_set_field(self.visual, b'field', new_field),
+                    self.dvz.dvz_visual_set_field(self.visual, self._field_slot(), new_field),
                     'plane field bind',
                 )
             elif not np.array_equal(previous.rgba, data.rgba):
-                self._update_field(old_field, data.rgba)
+                # A failed upload may have mutated native pixels before reporting
+                # failure; include it in the rollback snapshot before calling.
                 pixels_updated = True
+                self._update_field(old_field, data.rgba)
             self._sampling(data)
             self._check(
                 self.dvz.dvz_visual_set_visible(self.visual, self._visible), 'plane visibility'
@@ -215,7 +309,7 @@ class SampledPlaneVisual(ComponentVisual):
         except Exception as error:
             self._recover(
                 created,
-                (previous, old_corners, old_field, new_field, pixels_updated, prior_visible),
+                (previous, old_geometry, old_field, new_field, pixels_updated, prior_visible),
                 error,
             )
             raise
@@ -228,6 +322,7 @@ class SampledPlaneVisual(ComponentVisual):
                 self.dvz.dvz_sampled_field_destroy(old_field)
         self.data = self._uploaded_data = data
         self._display_corners = corners
+        self._display_geometry = geometry
 
     def update_pixels(self, rgba):
         """Replace pixels, including changed texture dimensions."""
@@ -252,7 +347,9 @@ class SampledPlaneVisual(ComponentVisual):
         if self._closed:
             return
         super().close()
+        if self._index_buffer:
+            self.dvz.dvz_scene_buffer_destroy(self._index_buffer)
         if self.field:
             self.dvz.dvz_sampled_field_destroy(self.field)
-        self.field = self._display_corners = None
+        self.field = self._index_buffer = self._display_corners = self._display_geometry = None
         self._uploaded_data = None

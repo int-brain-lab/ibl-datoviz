@@ -68,6 +68,8 @@ for setup details, troubleshooting, and direct `uv` commands. Agents should read
 - Mapping-aware slice boundaries and optional registered 10 um slices over a bounded 50 um 3-D
   volume.
 - Native offscreen rendering and reproducible gallery and benchmark commands.
+- Arbitrary point collections with WBOIT and opt-in physical sampled planes with
+  depth, WBOIT and alpha cutout; see [component contracts](docs/api/components.md).
 
 ## Python use and additional examples
 

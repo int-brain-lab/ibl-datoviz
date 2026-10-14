@@ -88,14 +88,17 @@ class PointCollectionVisual(ComponentVisual):
     def __init__(
         self, dvz, scene, panel, data, *, transform=None, alpha_mode='blended', depth_test=True
     ):
-        if alpha_mode not in ('opaque', 'blended'):
+        if alpha_mode not in ('opaque', 'blended', 'wboit'):
             raise ValueError(
-                'points support opaque or blended alpha; WBOIT/mask/peeling unavailable'
+                'points support opaque, blended, or wboit alpha; mask/peeling unavailable'
             )
         super().__init__(dvz, scene, panel, transform)
         self.alpha_mode, self.depth_test = alpha_mode, bool(depth_test)
         self.capabilities = ComponentCapabilities(
-            ('opaque', 'blended'), self.depth_test, self.depth_test and alpha_mode == 'opaque'
+            ('opaque', 'blended', 'wboit'),
+            self.depth_test,
+            self.depth_test and alpha_mode == 'opaque',
+            order_independent=alpha_mode == 'wboit',
         )
         self._display_positions = None
         try:
