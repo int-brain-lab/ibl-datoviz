@@ -91,6 +91,7 @@ class AtlasViewer:
         sidebar_width: float = 400.0,
         tree_root_acronym: str = 'grey',
         enable_interaction: bool = True,
+        enable_hover: bool = True,
         datoviz: ModuleType | None = None,
     ) -> None:
         if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
@@ -132,6 +133,7 @@ class AtlasViewer:
         self.sidebar_width = float(sidebar_width)
         self.tree_root_acronym = tree_root_acronym
         self.enable_interaction = bool(enable_interaction)
+        self.enable_hover = bool(enable_hover)
         self._closed = False
         self.scene = None
         self.app, self.view, self.arcball, self.arcball_controller = None, None, None, None
@@ -187,6 +189,8 @@ class AtlasViewer:
             if self.enable_interaction:
                 interaction_desc = self.dvz.dvz_item_interaction_desc()
                 interaction_desc.target = self.dvz.DVZ_SCENE_TARGET_FACE
+                interaction_desc.hover_enabled = self.enable_hover
+                interaction_desc.selection_enabled = True
                 self.interaction = self.dvz.dvz_item_interaction(
                     self.panel, ctypes.byref(interaction_desc)
                 )
@@ -1154,7 +1158,7 @@ class AtlasViewer:
         if getattr(self, '_viewport_input', None) is not None and self._viewport_input.suspended:
             self._clear_surface_hover()
             return ()
-        if self.interaction is None:
+        if self.interaction is None or not self.enable_hover:
             return ()
         hover = self.dvz.dvz_item_interaction_hover(self.interaction)
         if not hover:
@@ -1177,6 +1181,8 @@ class AtlasViewer:
 
     def _set_hovered_region_ids(self, region_ids: Sequence[int]) -> bool:
         """Set transient hover emphasis without changing committed selection."""
+        if not self.enable_hover:
+            region_ids = ()
         hovered = tuple(dict.fromkeys(int(region_id) for region_id in region_ids if region_id))
         if hovered == self._hovered_region_ids:
             return False

@@ -11,6 +11,15 @@ See `AGENTS.md` for the working-branch policy.
 
 ## App 1 manual-review corrections — October 14 2026
 
+Ongoing user observations, unresolved hover performance, hemisphere-boundary
+parity and reserved browser layout are tracked in [the review log](REVIEW_FEEDBACK.md).
+Both review apps now default to click selection without tree/brain hover emphasis
+or native hover queries. `--hover` explicitly restores the feature. Library callers
+can set `enable_hover=False`; their existing default remains unchanged. Native
+profiling reproduces 91–101 ms brain-hover and 151 ms leaf-hover frames, dominated
+by query geometry invalidation after recoloring. Separating static geometry from
+query appearance invalidation remains an engine performance task.
+
 App 1 now starts with an opaque atlas (surface opacity 1.0 instead of the inherited
 probe-context 0.16). The scientific-data window starts hidden; **Show scientific
 data** restores the retained table without changing its data or lifetime. Selection

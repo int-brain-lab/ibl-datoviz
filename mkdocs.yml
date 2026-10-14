@@ -51,6 +51,7 @@ nav:
   - Overview: index.md
   - Getting started: getting-started.md
   - Review apps: review-apps.md
+  - Review feedback: REVIEW_FEEDBACK.md
   - Gallery: gallery/index.md
   - API:
       - api/index.md

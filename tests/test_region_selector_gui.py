@@ -528,3 +528,16 @@ def test_linked_feedback_rollback_failure_closes_owner(linked_feedback, monkeypa
         navigator._commit_selector_frame(candidate, (), None)
     assert navigator._closed
     assert navigator._slice_loader is None
+
+
+def test_disabled_tree_hover_retains_click_selection(viewer):
+    viewer, fake = viewer
+    viewer.enable_hover = False
+    before = len(fake.calls)
+    fake.events = [event(fake, 'HOVER_CHANGED', -101, detail=1)]
+    viewer._gui_callback(None, None, None)
+    assert viewer._hovered_region_ids == ()
+    assert not any(call[:3] == ('data', 'mesh', 'color') for call in fake.calls[before:])
+    fake.events = [event(fake, 'ROW_CLICKED', -101)]
+    viewer._gui_callback(None, None, None)
+    assert viewer.selected_region_ids() == (-101,)

@@ -60,6 +60,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
         kwargs.setdefault('surface_opacity', 0.24)
         kwargs['render_volume'] = True
         kwargs['volume_opacity'] = 0.0
+        kwargs.setdefault('enable_hover', False)
         super().__init__(*args, **kwargs)
         try:
             self.review_controls = ReviewControls(self)
@@ -343,6 +344,11 @@ def main() -> int:
     parser.add_argument('volume_root', type=Path, help='verified Allen 50 um volume pack')
     parser.add_argument('--preset', choices=PRESETS, default='anatomy')
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
+    parser.add_argument(
+        '--hover',
+        action='store_true',
+        help='enable tree and brain hover feedback, including 3D queries',
+    )
     add_review_arguments(parser)
     args = parser.parse_args()
     assets = verify_materialized_asset_set(bundled_asset_set(), args.asset_root)
@@ -355,6 +361,7 @@ def main() -> int:
         width=args.width,
         height=args.height,
         ui_scale=args.ui_scale,
+        enable_hover=args.hover,
         enable_interaction=True,
     ) as viewer:
         finish_review(viewer, args, 'D070 linked atlas review')

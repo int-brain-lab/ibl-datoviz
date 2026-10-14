@@ -89,6 +89,7 @@ class ScientificSceneReview(AtlasViewer):
         self.review_points = self.review_plane = None
         self._review_error = ''
         self._tree_height = 260.0
+        kwargs.setdefault('enable_hover', False)
         super().__init__(mesh, **kwargs)
 
     def configure_review(self, sites, plane, paths=(), *, unavailable_note=''):
@@ -523,6 +524,11 @@ def main():
     parser.add_argument('--preset', choices=PRESETS, default='atlas')
     parser.add_argument('--axis', choices=('ap', 'ml', 'dv'), default='ap')
     parser.add_argument('--index', type=int)
+    parser.add_argument(
+        '--hover',
+        action='store_true',
+        help='enable tree and brain hover feedback, including 3D queries',
+    )
     add_review_arguments(parser)
     args = parser.parse_args()
     sites, _provenance = _load_fixture(args.fixture)
@@ -540,6 +546,7 @@ def main():
         surface_opacity=1.0,
         camera_angles=(1.0, 0.75, -0.25),
         ui_scale=args.ui_scale,
+        enable_hover=args.hover,
         enable_interaction=True,
     ) as viewer:
         viewer.configure_review(sites, plane, paths, unavailable_note=note)

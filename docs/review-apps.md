@@ -15,6 +15,13 @@ only the explicit reset button restores the starting camera.
 
 ## Region browsing in both apps
 
+Hover feedback starts disabled in both the tree and the 3D brain. Click a leaf
+or a brain region to select it. To explicitly enable hover while investigating
+performance, launch with `just review 1 --ui-scale 1.5 --hover` (or app `2`).
+The library constructor also accepts `enable_hover=False` without disabling
+click selection; its existing default remains enabled for compatibility.
+
+
 Check branch folding and leaf selection separately. Search for a parent acronym, open a retained descendant branch, then clear search and verify that ordinary folding returns. Select multiple leaves with Ctrl/Cmd and the Multiple selection checkbox; use Shift-click for visible siblings. Use the arrow keys and Enter/Space without moving focus back to the search box. A search with no matches should leave an empty browser and remain editable.
 
 When regional values are supplied, switch between anatomical and value order. Search temporarily uses anatomical order and clearing it restores the requested ordering. Verify that surface/table selections preserve the browser's focus and folding, and that mapping changes clear selection. Hiding a selected surface region still preserves committed selection.
@@ -102,6 +109,9 @@ Review these scenarios within the same window:
    Reset and check the initial layers, cursor and camera.
 
 ## Capture and report feedback
+
+Record observations and their acceptance status in the
+[manual review feedback log](REVIEW_FEEDBACK.md).
 
 ```bash
 just review all --strict --frames 3

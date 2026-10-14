@@ -1127,3 +1127,25 @@ def test_viewer_constructs_from_verified_assets():
         assert viewer.mesh_data.reference_space == assets.regions.reference_space_id
     with pytest.raises(TypeError, match='verified region catalog'):
         AtlasViewer.from_assets(assets, datoviz=fake, catalog=assets.regions)
+
+
+def test_hover_can_be_disabled_without_disabling_click_selection(mesh):
+    fake = FakeDatoviz()
+    descriptor = None
+    original = fake.dvz_item_interaction
+
+    def interaction(panel, desc):
+        nonlocal descriptor
+        descriptor = desc._obj
+        return original(panel, desc)
+
+    fake.dvz_item_interaction = interaction
+    with AtlasViewer(mesh, datoviz=fake, enable_hover=False) as viewer:
+        assert descriptor.hover_enabled is False
+        assert descriptor.selection_enabled is True
+        fake.mesh_hover = encode_region_key(-315)
+        assert viewer._mesh_hovered_region_ids() == ()
+        assert not viewer._set_hovered_region_ids((-315,))
+        assert viewer._hovered_region_ids == ()
+        fake.mesh_selection = [encode_region_key(-315)]
+        assert viewer._mesh_selected_region_ids() == (-315,)

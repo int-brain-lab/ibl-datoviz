@@ -369,6 +369,7 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
             'height': 1000,
             'ui_scale': 1.5,
             'enable_interaction': True,
+            'enable_hover': False,
         },
     )
     assert calls[3] == ('finish', 3, None, 'D070 linked atlas review')
