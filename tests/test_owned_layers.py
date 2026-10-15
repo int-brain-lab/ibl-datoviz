@@ -307,7 +307,7 @@ def test_native_endpoint_gap_candidate_style_rebuilds_and_baseline_rejection(nat
         assert route.endpoint_gaps_px == (0, 0)
         return
     route.set_endpoint_gaps_px(4, 6)
-    assert old.closed
+    assert old._closed
     route.set_width_px(5)
     route.set_color('#ff0000')
     route.set_visible(False)

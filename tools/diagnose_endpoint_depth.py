@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import numpy as np
@@ -76,6 +77,8 @@ def assert_gap_pixels(case):
         raise AssertionError(f'{case["name"]}: no marker reference pixels')
     if case['white_path_pixels_inside_point'] != 0:
         raise AssertionError(f'{case["name"]}: white path crosses a marker interior')
+    if case['white_path_pixels_after_nearer_mesh'] != 0:
+        raise AssertionError(f'{case["name"]}: path appears through nearer opaque mesh')
     if case['pink_pixels_after_nearer_mesh'] != 0:
         raise AssertionError(f'{case["name"]}: marker appears through nearer opaque mesh')
     if case['cyan_pixels_after_nearer_mesh'] != case['point_interior_pixels']:
@@ -250,6 +253,9 @@ def capture_case(  # noqa: PLR0915
             ),
             'point_interior_pixels': int(mask.sum()),
             'white_path_pixels_inside_point': int(np.count_nonzero(mask & white)),
+            'white_path_pixels_after_nearer_mesh': int(
+                np.count_nonzero(np.min(occluded[..., :3], axis=2) > 230)
+            ),
             'pink_pixels_after_nearer_mesh': int(np.count_nonzero(mask & pink_occluded)),
             'cyan_pixels_after_nearer_mesh': int(np.count_nonzero(mask & cyan_occluded)),
         }
@@ -386,7 +392,13 @@ def main():  # noqa: PLR0912, PLR0915
     import datoviz._ctypes as native  # noqa: PLC0415
 
     revision = git_revision(Path(dvz.__file__).resolve().parent.parent)
-    pin = source_pin('datoviz')
+    if candidate:
+        metadata = tomllib.loads(
+            (Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text()
+        )
+        pin = metadata['tool']['uv']['sources']['datoviz']['rev']
+    else:
+        pin = source_pin('datoviz')
     expected = expected if candidate else pin
     if revision != expected:
         raise RuntimeError(f'Imported native source is {revision}; expected {expected}')
