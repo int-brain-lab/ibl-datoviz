@@ -1770,14 +1770,18 @@ class AtlasViewer:
         """Keep frequent 3-D presentation actions beside the atlas."""
         self.dvz.dvz_gui_set_next_item_width(gui, 160.0)
         if self.dvz.dvz_gui_slider_float(
-            gui, b'Explode', ctypes.byref(self._explode_control), 0.0, 1.0
+            gui,
+            b'Explode selected region' if self.anatomy_presentation == 'major' else b'Explode',
+            ctypes.byref(self._explode_control),
+            0.0,
+            1.0,
         ):
             self.set_explode(self._explode_control.value)
         self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
         if self.dvz.dvz_gui_button(gui, b'Reset view') and self.arcball is not None:
             self._check(self.dvz.dvz_arcball_reset(self.arcball), 'camera reset')
             self.set_camera_angles(self.camera_angles)
-        if self.selection_presentation != 'legacy':
+        if self.anatomy_presentation == 'detailed' and self.selection_presentation != 'legacy':
             modes = ('focus', 'isolate', 'all')
             current = ctypes.c_int(modes.index(self.selection_presentation))
             labels = (ctypes.c_char_p * 3)(b'Focus selection', b'Isolate selection', b'Show all')
