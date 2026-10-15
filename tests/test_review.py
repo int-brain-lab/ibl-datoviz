@@ -357,3 +357,36 @@ def test_annotations_use_context_without_requiring_slice_volumes(
     assert '--ui-scale' in command and command[command.index('--ui-scale') + 1] == 1.5
     assert command[-2:] == ['--offscreen', output]
     assert environment['DVZ_WINDOW_INSTANCE'] == instance
+
+
+def test_workspace_launch_requires_volume_and_forwards_explicit_context_and_output(
+    tmp_path, monkeypatch
+):
+    assets = tmp_path / 'atlas assets'
+    volume = tmp_path / 'volume assets'
+    assets.mkdir()
+    monkeypatch.setattr(review, 'ASSETS', assets)
+    monkeypatch.setattr(review, 'VOLUME', volume)
+    monkeypatch.setitem(
+        review.EXAMPLES, 'workspace',
+        ('scientific_workspace.py', (assets, '--volume-pack', volume)),
+    )
+    args = SimpleNamespace(
+        example='workspace',
+        frames=3,
+        ui_scale=1.5,
+        offscreen=tmp_path / 'workspace output.png',
+        preset=None,
+    )
+    commands = []
+    monkeypatch.setattr(review, 'run', lambda command, **_: commands.append(command))
+    with pytest.raises(ValueError, match='Review data is missing'):
+        review.run_examples(args, [], {})
+    assert not commands
+    volume.mkdir()
+    review.run_examples(args, [], {})
+    command = commands[0]
+    assert command[command.index('--volume-pack') + 1] == review.VOLUME
+    assert command[command.index('--context-root') + 1] == review.CONTEXT
+    assert command[-2:] == ['--offscreen', args.offscreen]
+    assert command[command.index('--ui-scale') + 1] == 1.5

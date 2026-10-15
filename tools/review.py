@@ -30,6 +30,7 @@ EXAMPLES = {
     '1': ('scientific_scene_review.py', (ASSETS, VOLUME)),
     '2': ('linked_atlas_review.py', (ASSETS, VOLUME)),
     'annotations': ('scientific_annotations.py', (ASSETS,)),
+    'workspace': ('scientific_workspace.py', (ASSETS, '--volume-pack', VOLUME)),
     'surface': ('real_atlas_surface.py', (ASSETS,)),
     'mapping': ('atlas_mapping_switch.py', (ASSETS,)),
     'picking': ('atlas_region_picking.py', (ASSETS,)),
@@ -360,7 +361,10 @@ def run_examples(args, prefix, environment):
                 REPOSITORY / 'examples' / script,
                 *arguments,
                 *(['--preset', preset] if preset is not None else []),
-                *(['--context-root', CONTEXT] if name in ('1', 'annotations') else []),
+                *(
+                    ['--context-root', CONTEXT]
+                    if name in ('1', 'annotations', 'workspace') else []
+                ),
                 '--frames',
                 args.frames,
                 '--ui-scale',

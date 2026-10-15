@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Compose explicit local data in one linked scientific workspace.
+
+No discovery, downloads, signal reads or scientific aggregation occur here.
+Without a release, points are illustrative annotations within verified mesh bounds.
+Regional values, when requested, must be supplied as an explicit prepared JSON payload.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+import numpy as np
+
+from examples.ibl_recordings import _receipt, _source
+from examples.scientific_common import add_arguments, finish, prepare_viewer
+from ibl_anatomy import open_volume_pack
+from ibl_datoviz import AtlasViewer, Paths, Points, RegionValues, WorldFrame
+from ibl_datoviz.ibl import prepare_bwm_recording
+
+
+def _illustrative_annotations(app):
+    """Prepare local annotations without representing them as measured data."""
+    xyz = app.mesh_data.positions_um
+    minimum, maximum = xyz.min(axis=0), xyz.max(axis=0)
+    targets = minimum + np.array([[0.42, 0.45, 0.50], [0.58, 0.55, 0.45]]) * (maximum - minimum)
+    provenance = {'kind': 'illustrative annotations; not measured observations'}
+    landmarks = app.add_points(
+        Points((0, 'target-b'), targets, app.frame, provenance),
+        name='Illustrative targets',
+    )
+    landmarks.set_size_px(12)
+    route = app.add_paths(
+        Paths(('route',), (targets,), app.frame, provenance), name='Optional route'
+    )
+    route.set_visible(False)
+    app.tables.show(landmarks)
+
+
+def main():
+    """Prepare data before opening the GUI and retain one viewer/controller model."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    add_arguments(parser)
+    parser.add_argument('--volume-pack', type=Path, required=True)
+    parser.add_argument('--release', type=Path)
+    parser.add_argument('--pid', action='append', default=[])
+    parser.add_argument('--frame-evidence', type=Path)
+    parser.add_argument('--region-values', type=Path, help='prepared RegionValues JSON')
+    parser.add_argument('--plane', action='append', choices=('ap', 'ml', 'dv'), default=[])
+    args = parser.parse_args()
+    if bool(args.release) != bool(args.pid):
+        parser.error('--release and one or more distinct --pid values must be supplied together')
+    if len(set(args.pid)) != len(args.pid):
+        parser.error('duplicate insertion IDs are not supported')
+    if args.frame_evidence is not None and args.release is None:
+        parser.error('--frame-evidence requires --release')
+    options = prepare_viewer(args)
+    volumes = open_volume_pack(args.volume_pack).load_volumes()
+    options.update(layout='linked', volumes=volumes, render_volume=False)
+    frame = None
+    if args.frame_evidence is not None:
+        frame = WorldFrame(**json.loads(args.frame_evidence.read_text()))
+        frame.require_verified()
+    recordings = []
+    if args.release is not None:
+        args.workspace = None
+        source = _source(args)
+        recordings = [
+            prepare_bwm_recording(source.insertion(pid), frame=frame) for pid in args.pid
+        ]
+    regional = None
+    if args.region_values is not None:
+        document = json.loads(args.region_values.read_text())
+        document['frame'] = WorldFrame(**document['frame'])
+        regional = RegionValues(**document)
+        options['anatomy'] = 'detailed'
+    report = {'recordings': [_receipt(recording) for recording in recordings]}
+    with AtlasViewer(**options) as app:
+        if recordings:
+            for recording in recordings:
+                handle = app.add_recording(
+                    recording, name=recording.insertion_id, show=('channels', 'clusters')
+                )
+                app.tables.show(handle.clusters)
+        else:
+            _illustrative_annotations(app)
+        if regional is not None:
+            quantity = app.add_region_values(regional, mapping_reduction='weighted_mean')
+            quantity.color_by('value', cmap='sequential')
+            report['regional_quantity'] = {
+                'name': quantity.name,
+                'units': quantity.payload.units,
+                'mapping_reduction': 'weighted_mean',
+                'source_rows': len(quantity.payload.values),
+            }
+        for axis in args.plane:
+            app.slices.show_plane(axis, in_3d=True)
+        report.update(
+            layout=app.layout,
+            cursor_voxel_apmldv=list(app.slices.position.index),
+            cursor_world_mlapdv_um=list(app.slices.position.world_um),
+            plane_axes=list(app._slice_planes.visible_axes),
+            observation_picking_unavailable=app.picking.unavailable_reason,
+            signal_reads='not_requested',
+        )
+        finish(app, args, report, 'Linked scientific workspace')
+
+
+if __name__ == '__main__':
+    main()
