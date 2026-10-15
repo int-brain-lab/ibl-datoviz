@@ -1,5 +1,6 @@
 """Controlled widget inputs, frame precedence and copied native ownership."""
 
+import ctypes
 from types import MappingProxyType, MethodType, SimpleNamespace
 
 import numpy as np
@@ -17,6 +18,13 @@ from tests.test_volume_free_navigator import VOLUME, CpuNavigator
 
 
 class InputDatoviz(FakeDatoviz):
+    class DvzRect(ctypes.Structure):
+        _fields_ = [('height', ctypes.c_float)]
+
+    def dvz_gui_current_window_rect(self, _gui, rect):
+        rect._obj.height = 1200.0
+        return True
+
     DVZ_GUI_DOCK_SLOT_LEFT = 0
 
     def __init__(self):

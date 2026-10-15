@@ -88,7 +88,6 @@ class ScientificSceneReview(AtlasViewer):
         self._show_scientific_data = ctypes.c_bool(False)
         self.review_points = self.review_plane = None
         self._review_error = ''
-        self._tree_height = 260.0
         kwargs.setdefault('enable_hover', False)
         super().__init__(mesh, **kwargs)
 

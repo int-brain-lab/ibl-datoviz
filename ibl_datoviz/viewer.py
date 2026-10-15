@@ -1368,101 +1368,15 @@ class AtlasViewer:
             self.dvz.dvz_gui_dock_window_once(
                 gui, b'Atlas views', self.dvz.DVZ_GUI_DOCK_SLOT_CENTER, 0.0
             )
-        if self.dvz.dvz_gui_begin(gui, b'Allen mouse brain atlas', None, 0):
-            self.dvz.dvz_gui_text(gui, b'CCF 2017 anatomy')
-            self.dvz.dvz_gui_text(gui, b'Atlas mapping')
-            if self.dvz.dvz_gui_combo(
-                gui,
-                b'##ibl_atlas_mapping',
-                ctypes.byref(self._mapping_control),
-                self._mapping_items,
-                len(self._mapping_items),
-            ):
-                self.set_mapping(self.mesh_data.mapping_names[self._mapping_control.value])
-            if self.dvz.dvz_gui_collapsing_header(gui, b'Appearance', 0):
-                self.dvz.dvz_gui_text(gui, b'Region separation')
-                if self.dvz.dvz_gui_slider_float(
-                    gui, b'##ibl_atlas_explode', ctypes.byref(self._explode_control), 0.0, 1.0
-                ):
-                    self.set_explode(self._explode_control.value)
-            self._draw_extra_gui(gui)
-            clear_selection_requested = False
-            self.dvz.dvz_gui_separator_text(gui, b'Selection')
-            selection_visible = self.dvz.dvz_gui_begin_child(
-                gui, b'Atlas selection summary', 0.0, 105.0 * self.ui_scale, 0
-            )
-            try:
-                if selection_visible:
-                    if self._selected_region_ids:
-                        for region_id in self._selected_region_ids[:6]:
-                            label = (
-                                self.tree_model.describe(region_id)
-                                if self.tree_model
-                                else str(region_id)
-                            )
-                            for part in label.split(' — '):
-                                for line in textwrap.wrap(part, width=32):
-                                    self.dvz.dvz_gui_text(gui, line.encode())
-                        if len(self._selected_region_ids) > 6:
-                            remaining = len(self._selected_region_ids) - 6
-                            self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
-                        if self.dvz.dvz_gui_button(gui, b'Clear selection'):
-                            clear_selection_requested = True
-                    else:
-                        self.dvz.dvz_gui_text(gui, b'Click a region to select it')
-            finally:
-                self.dvz.dvz_gui_end_child(gui)
-            self.dvz.dvz_gui_separator_text(gui, b'Browse regions')
-            self.dvz.dvz_gui_text(gui, b'Search by name or acronym')
-            candidate = self._selector_gui.candidate()
-            if clear_selection_requested:
-                candidate.set_selected(())
-            candidate.values = self._selector_values(candidate)
-            self._selector_gui.value_name = (
-                self.region_data.value_name if self.region_data is not None else 'Value'
-            )
-            self._selector_gui.controls(gui, candidate, self._tree_filter)
-            tree_height = getattr(self, '_tree_height', None)
-            scroll_tree = tree_height is not None or (
-                self.region_table is None and self.probe_table is None
-            )
-            tree_visible = True
-            if scroll_tree:
-                tree_visible = self.dvz.dvz_gui_begin_child(
-                    gui, b'Atlas region hierarchy', 0.0, tree_height or 0.0, 0
-                )
-            try:
-                self._selector_gui.upload(candidate)
-                events = ()
-                if tree_visible:
-                    result, events, dropped = self.dvz.dvz_gui_tree_draw(gui, self.region_tree)
-                    self._check(result, 'region selector draw')
-                    if dropped:
-                        raise RuntimeError('region selector input batch dropped')
-                self._selector_gui.intents(candidate, events)
-                region_table_changed, table_changed = self._draw_data_tables_gui(gui)
-                self._sync_selection_highlight(
-                    tree_changed=candidate.selected != self._selector_model.selected,
-                    table_changed=table_changed,
-                    region_table_changed=region_table_changed,
-                    candidate=candidate,
-                )
-            except Exception:
-                try:
-                    self._selector_gui.upload(self._selector_model)
-                    self._set_probe_table_selection(self._selected_region_ids)
-                    self._set_region_table_selection(self._selected_region_ids)
-                    self._tree_filter.value = self._selector_model.query.encode()
-                except Exception as rollback_error:
-                    self.close()
-                    raise RuntimeError(
-                        'region selector rollback failed; viewer closed'
-                    ) from rollback_error
-                raise
-            finally:
-                if scroll_tree:
-                    self.dvz.dvz_gui_end_child(gui)
-        self.dvz.dvz_gui_end(gui)
+        # Dear ImGui NoScrollbar | NoScrollWithMouse: child panes own scrolling.
+        visible = self.dvz.dvz_gui_begin(
+            gui, b'Allen mouse brain atlas', None, (1 << 3) | (1 << 4)
+        )
+        try:
+            if visible:
+                self._draw_sidebar_gui(gui)
+        finally:
+            self.dvz.dvz_gui_end(gui)
         if self.viewport is not None:
             self.dvz.dvz_gui_viewport_window(self.viewport, b'Atlas views', None, 0)
             hovered = ctypes.c_bool()
@@ -1474,6 +1388,131 @@ class AtlasViewer:
                 self._sync_viewport_hover(bool(hovered.value))
             if hovered.value and getattr(self, '_hovered_region_label', None):
                 self.dvz.dvz_gui_tooltip(gui, self._hovered_region_label.encode())
+
+    def _draw_sidebar_gui(self, gui) -> None:
+        """Keep controls, selection and browser in independently bounded areas."""
+        # Keep scene controls independently scrollable. The browser below
+        # always retains its share of the sidebar, even with all controls open.
+        rect = self.dvz.DvzRect()
+        height = self.height
+        if self.dvz.dvz_gui_current_window_rect(gui, ctypes.byref(rect)):
+            height = rect.height
+        # Reserve search/selector controls and several tree rows before sharing
+        # the remaining space between scene controls and selection details.
+        remaining = max(1.0, height - 370.0 * self.ui_scale)
+        summary_height = min(105.0 * self.ui_scale, max(20.0 * self.ui_scale, remaining * 0.3))
+        controls_height = min(
+            220.0 * self.ui_scale,
+            max(40.0 * self.ui_scale, remaining - summary_height - 25.0 * self.ui_scale),
+        )
+        controls_visible = self.dvz.dvz_gui_begin_child(
+            gui, b'Atlas scene controls', 0.0, controls_height, 0
+        )
+        region_table_changed = table_changed = False
+        try:
+            if controls_visible:
+                self._draw_sidebar_controls_gui(gui)
+                region_table_changed, table_changed = self._draw_data_tables_gui(gui)
+        except Exception:
+            self._restore_sidebar_feedback()
+            raise
+        finally:
+            self.dvz.dvz_gui_end_child(gui)
+        clear_selection_requested = self._draw_selection_summary_gui(gui, summary_height)
+        self.dvz.dvz_gui_separator_text(gui, b'Browse regions')
+        self.dvz.dvz_gui_text(gui, b'Search by name or acronym')
+        candidate = self._selector_gui.candidate()
+        if clear_selection_requested:
+            candidate.set_selected(())
+        candidate.values = self._selector_values(candidate)
+        self._selector_gui.value_name = (
+            self.region_data.value_name if self.region_data is not None else 'Value'
+        )
+        self._selector_gui.controls(gui, candidate, self._tree_filter)
+        tree_visible = self.dvz.dvz_gui_begin_child(gui, b'Atlas region hierarchy', 0.0, 0.0, 0)
+        try:
+            self._selector_gui.upload(candidate)
+            events = ()
+            if tree_visible:
+                result, events, dropped = self.dvz.dvz_gui_tree_draw(gui, self.region_tree)
+                self._check(result, 'region selector draw')
+                if dropped:
+                    raise RuntimeError('region selector input batch dropped')
+            self._selector_gui.intents(candidate, events)
+            self._sync_selection_highlight(
+                tree_changed=candidate.selected != self._selector_model.selected,
+                table_changed=table_changed,
+                region_table_changed=region_table_changed,
+                candidate=candidate,
+            )
+        except Exception:
+            self._restore_sidebar_feedback()
+            raise
+        finally:
+            self.dvz.dvz_gui_end_child(gui)
+
+    def _draw_selection_summary_gui(self, gui, height):
+        """Keep selection details bounded so long selections cannot move the tree."""
+        clear_selection_requested = False
+        self.dvz.dvz_gui_separator_text(gui, b'Selection')
+        selection_visible = self.dvz.dvz_gui_begin_child(
+            gui, b'Atlas selection summary', 0.0, height, 0
+        )
+        try:
+            if selection_visible:
+                if self._selected_region_ids:
+                    for region_id in self._selected_region_ids[:6]:
+                        label = (
+                            self.tree_model.describe(region_id)
+                            if self.tree_model
+                            else str(region_id)
+                        )
+                        for part in label.split(' — '):
+                            for line in textwrap.wrap(part, width=32):
+                                self.dvz.dvz_gui_text(gui, line.encode())
+                    if len(self._selected_region_ids) > 6:
+                        remaining = len(self._selected_region_ids) - 6
+                        self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
+                    if self.dvz.dvz_gui_button(gui, b'Clear selection'):
+                        clear_selection_requested = True
+                else:
+                    self.dvz.dvz_gui_text(gui, b'Click a region to select it')
+        finally:
+            self.dvz.dvz_gui_end_child(gui)
+        return clear_selection_requested
+
+    def _restore_sidebar_feedback(self):
+        """Restore retained widgets after a partially failing frame update."""
+        try:
+            self._selector_gui.upload(self._selector_model)
+            self._set_probe_table_selection(self._selected_region_ids)
+            self._set_region_table_selection(self._selected_region_ids)
+            self._tree_filter.value = self._selector_model.query.encode()
+        except Exception as rollback_error:
+            self.close()
+            raise RuntimeError(
+                'region selector rollback failed; viewer closed'
+            ) from rollback_error
+
+    def _draw_sidebar_controls_gui(self, gui) -> None:
+        """Draw controls inside the bounded scene pane above the region browser."""
+        self.dvz.dvz_gui_text(gui, b'CCF 2017 anatomy')
+        self.dvz.dvz_gui_text(gui, b'Atlas mapping')
+        if self.dvz.dvz_gui_combo(
+            gui,
+            b'##ibl_atlas_mapping',
+            ctypes.byref(self._mapping_control),
+            self._mapping_items,
+            len(self._mapping_items),
+        ):
+            self.set_mapping(self.mesh_data.mapping_names[self._mapping_control.value])
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Appearance', 0):
+            self.dvz.dvz_gui_text(gui, b'Region separation')
+            if self.dvz.dvz_gui_slider_float(
+                gui, b'##ibl_atlas_explode', ctypes.byref(self._explode_control), 0.0, 1.0
+            ):
+                self.set_explode(self._explode_control.value)
+        self._draw_extra_gui(gui)
 
     def _draw_extra_gui(self, _gui) -> None:
         """Draw optional controls supplied by specialized viewers."""

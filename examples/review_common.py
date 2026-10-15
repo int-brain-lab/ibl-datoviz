@@ -99,7 +99,6 @@ class ReviewControls:
         self._region_opacity = ctypes.c_float(1)
         self._region_visible = ctypes.c_bool(True)
         self._region_color = (ctypes.c_float * 4)(1, 1, 1, 1)
-        viewer._tree_height = 240.0 * viewer.ui_scale
 
     def reset(self):
         """Explicitly reset appearance and camera; ordinary layer edits never do so."""
