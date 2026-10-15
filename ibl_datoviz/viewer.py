@@ -418,7 +418,7 @@ class AtlasViewer:
         np.minimum.at(presentation_alpha, self._surface_mesh.presentation_ids, alpha)
         mask &= presentation_alpha[self._surface_mesh.face_presentation_ids] > 0
         if self.anatomy_presentation == 'major':
-            selected = self._signed_focus_ids()
+            selected = self._major_fine_overlay_ids()
             mask &= np.isin(self._surface_mesh.face_mapping_ids(mapping), selected)
         elif include_selection and self._selection_focus_active():
             mask &= np.isin(self._surface_mesh.face_mapping_ids(mapping), self._signed_focus_ids())
@@ -626,10 +626,13 @@ class AtlasViewer:
             for s in surfaces
         ):
             raise ValueError('context surfaces must share the atlas reference space')
+        snapshot = self._surface_transaction_snapshot()
         candidate = AnatomicalContext(self, surfaces)
         previous = self._anatomical_context
         try:
-            candidate.update()
+            self._anatomical_context = candidate
+            self._selection_face_state = None
+            self._update_surface_emphasis()
             if previous is not None:
                 for entry in previous.entries:
                     self._check(
@@ -637,15 +640,13 @@ class AtlasViewer:
                         'previous anatomy context hide',
                     )
         except Exception:
+            self._anatomical_context = previous
             candidate.close()
             if previous is not None:
-                try:
-                    previous.update(force=True)
-                except Exception as error:
-                    self.close()
-                    raise RuntimeError('context rollback failed; viewer closed') from error
+                previous._presentation = None
+            if not self._closed:
+                self._restore_surface_transaction(snapshot)
             raise
-        self._anatomical_context = candidate
         if previous is not None:
             previous.close()
 
@@ -679,6 +680,21 @@ class AtlasViewer:
     def _update_anatomical_context(self):
         if self._anatomical_context is not None:
             self._anatomical_context.update()
+
+    def _major_fine_overlay_ids(self):
+        """Expand explicit fine selections, leaving drawn coarse parents as accents."""
+        context = self._anatomical_context
+        coarse_ids = (
+            {surface.source_allen_id for surface in context.surfaces}
+            if context is not None
+            else set()
+        )
+        fine_selection = tuple(
+            region_id
+            for region_id in self._selected_region_ids
+            if abs(region_id) not in coarse_ids
+        )
+        return self._signed_focus_ids(fine_selection)
 
     def _selection_focus_active(self):
         return self.selection_presentation in ('focus', 'isolate') and bool(

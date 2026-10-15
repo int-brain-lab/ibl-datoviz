@@ -46,6 +46,8 @@ class AtlasContextSurface:
             raise ValueError('context surface requires a positive source Allen identity')
         # Shared reference surfaces declare ML/AP/DV world coordinates. Signed
         # presentation conventions match the dense atlas: negative is left.
+        boundary = atlas._presentation_boundary
+        zero_side = boundary.on_plane_side if boundary is not None else 'right'
         count = len(envelope.positions)
         mesh = AtlasMesh(
             positions_um=envelope.positions_um,
@@ -63,7 +65,7 @@ class AtlasContextSurface:
             reference_space=envelope.reference_space,
             display_scale=atlas.display_scale,
             _presentation_boundary=_MeshPresentationBoundary(
-                'original-world-ml', 0, 0.0, 'left', ((0, 0, 1),)
+                'original-world-ml', 0, 0.0, zero_side, ((0, 0, 1),)
             ),
         )
         geometry = SurfaceGeometry.from_mesh(mesh)
