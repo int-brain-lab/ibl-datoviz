@@ -13,6 +13,89 @@ The approved sequence stops here until scientific visual acceptance; API naming,
 multiple-recording layer handles, alignment comparisons and new scalar/voxel
 workflows remain later phases.
 
+## Shared data and IBL controller feasibility — October 15 2026
+
+The user authorized a bounded cross-repository integration investigation alongside
+the ongoing viewer work. This does not establish visual acceptance of the current
+apps or approval of the provisional API names below.
+
+Keep the dependency direction: reusable data access and IBL source adapters feed
+both the agent and an IBL application controller; the controller prepares layers
+for `ibl-datoviz`, which retains native presentation/resource ownership. The agent
+can author applications through those same public interfaces. Existing compressed
+releases remain shared inputs; no second data copy, codec or catalog is needed.
+
+The initial read-only probe exercised existing local catalogs through
+`ibl_ai_agent.access`. One source-validated BWM 1.1.0 insertion returned 133,083
+spikes with original cluster IDs 21 and 36 under an explicit passed-validation,
+100 µs timing requirement. Its stimulus-event read succeeded through a recorded
+common-clock mapping, whose synchronization precision remains unquantified. A
+warning-only registration was correctly rejected. A source-validated HC-3 package
+returned 89,148 events with original codes 0–8 and a declared 25 µs timing bound;
+source codes retain their original meaning and are not an implicitly selected
+neural population. These are engineering checks, not new scientific analyses.
+
+The immediate gap is metadata access: the BWM release declares channel and unit
+tables, but its current public workspace reads do not expose channel coordinates
+or cluster-to-channel associations. The Datoviz fixture's insertion is not in the
+inspected BWM catalogs; do not join its geometry to a different registered PID.
+Add source-scoped metadata access in the data layer before presenting a live
+recording geometry integration. Validate the IDs, coordinate units/reference
+space, missingness and file hashes at that boundary. A failed signal gate must
+never cause a fallback to direct file reads.
+
+Evidence and the executable probe live under ignored `build/agent-data-spike/`.
+Observed local BWM and HC-3 spike opens took approximately 0.1 s and 0.01 s;
+cache state was uncontrolled and the BWM insertion has only two units. These
+measurements do not establish full-recording interactive performance.
+
+### API sketches for review, not implemented APIs
+
+These scripts show the proposed separation and convenience level. Names,
+imports and the recording-layer facade remain provisional. The source adapter
+would use the shared data library rather than implement its own reader.
+
+One recording:
+
+```python
+from ibl_ai_agent.access import open_workspace
+from ibl_datoviz.ibl import BwmSource, IBLWorkbench
+
+source = BwmSource.from_workspace(open_workspace(workspace_root))
+recording = source.insertion(pid)
+with IBLWorkbench.from_asset_set(atlas_root, source=source) as app:
+    app.add_recording(recording, name="Recording", layers=("channels",))
+    app.show()
+```
+
+Several recordings, each with independent layers:
+
+```python
+with IBLWorkbench.from_asset_set(atlas_root, source=source) as app:
+    first = app.add_recording(source.insertion(pid_a), name="First",
+                              layers=("channels", "clusters"))
+    second = app.add_recording(source.insertion(pid_b), name="Second",
+                               layers=("channels",))
+    first.clusters.set_visible(False)
+    second.channels.set_visible(True)
+    app.show()
+```
+
+`IBLWorkbench` denotes the proposed controller/presenter facade, not another
+renderer. Its GUI and Python methods must use one authoritative state. Exact
+observation identities include source/version, recording and original object ID;
+they stay separate from region selection, spatial cursor and scientific filters.
+Requested unavailable geometry fails explicitly. Cluster geometry must retain
+its source meaning as an estimate, rather than a claim of exact neuron positions.
+All workbench-owned layers/workers/subscriptions close before scene destruction.
+
+Next review the sketches and the current visual gate. Then implement a narrow
+source metadata reader, a one-recording adapter/example, exact-object linking,
+and multi-recording layer ownership in focused commits. Keep native work on
+`feature/datoviz-v04`; choose any necessary `ibl-ai-agent-next` branch explicitly
+before editing it. Physical data-package extraction and the app-authoring skill
+follow the demonstrated two-client boundary.
+
 ## Proposed scientific workflow reset — October 15 2026
 
 This proposal was approved through the first visual gate; later phases await visual acceptance. The original audit made no implementation changes. It draws on the native source, Datoviz's RC4 capabilities and release lanes, the web application's data/presentation semantics, and scientific workflows documented in `ibl-ai-agent`.

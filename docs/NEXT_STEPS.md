@@ -30,6 +30,21 @@ before refreshing the normal development environment, or explicitly select
 Python 3.11+ with `uv --python` on commands that accept it. The shared `.venv`
 was not modified by this change.
 
+## Shared-data integration checkpoint — October 15 2026
+
+The authorized read-only spike exercised validated BWM and portable HC-3 reads
+through `ibl-ai-agent-next` without copying datasets or changing its catalogs.
+Source IDs, fidelity and provenance survive; the warning-only BWM read is
+correctly refused. The next prerequisite for a live anatomy integration is public
+BWM channel/unit metadata access, including coordinates and scoped identities.
+Do not substitute the existing fixture's geometry for another registered PID.
+
+The [roadmap](REAL_DATA_EXAMPLE_ROADMAP.md) records the concrete findings and two
+provisional API scripts for review before broad viewer/controller changes.
+Executable probe and JSON evidence are ignored under `build/agent-data-spike/`.
+No agent-repository source, viewer implementation or scientific dataset changed
+in this investigation. Keep the other agent's visual corrections separate.
+
 ## Zoom-aware panning correction — October 15 2026
 
 The reviewer reports excessive right-drag translation when zoomed in. Datoviz
