@@ -5,7 +5,10 @@
 The user validates the interactive annotation workflow. The supplied close-up
 shows a small depth/overlap issue where the path reaches a pink point marker;
 resolve that remaining rendering detail without changing scientific geometry or
-making markers visible through nearer anatomy. Linked tables and native exact
+making markers visible through nearer anatomy. A native source audit traces the
+likely interaction to pixel-point center depth versus path-cap interpolation;
+creation order alone cannot resolve it. A native regression and deliberate depth
+policy are needed; the pinned engine remains unchanged. Linked tables and native exact
 observation picking remain the next stage, with their own acceptance evidence.
 
 

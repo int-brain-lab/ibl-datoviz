@@ -14,7 +14,14 @@ See `AGENTS.md` for the working-branch policy.
 The user interactively reviewed `just review annotations` and accepts the
 workflow. One small rendering issue remains: the path stroke intersects the
 pixel-point marker at their shared endpoint. Track this as a narrow overlap/depth
-correction; preserve scientific positions and normal 3D occlusion. This acceptance
+correction; preserve scientific positions and normal 3D occlusion. A high-reasoning
+GPT-6.1 Sol source audit found a native depth-policy limitation: pixel-point disks
+retain their center depth while screen-extruded path caps interpolate segment
+depth. Draw order alone cannot fix fragments that fail depth comparison, and the
+pinned public API has no ordinary per-visual depth-bias control. No package-only
+fix or engine/pin change has been made. Next prepare an isolated native endpoint
+regression (both slopes, attachment orders and camera angles, with a nearer opaque
+occluder) before choosing a native correction. This acceptance
 is for generic annotation interaction, not the separate BWM geometry/alignment or
 native exact-picking gates.
 
