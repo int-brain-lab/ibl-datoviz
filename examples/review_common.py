@@ -13,15 +13,15 @@ from ibl_datoviz.navigator import SLICE_DISPLAY_AXES, AtlasSliceComposer
 from ibl_datoviz.surface_style import RegionStyle
 
 # Named review orientation; visual acceptance is recorded with the review artifacts.
-RECORDING_CAMERA = (-0.12, 0.18, 2.50)
+RECORDING_CAMERA = (-1.15, -0.20, 2.50)
 
 
 def add_review_arguments(parser):
     """Add consistent review options without changing native discovery."""
     parser.add_argument('--frames', type=int, default=0, help='zero runs until closed')
     parser.add_argument('--ui-scale', type=float, default=1.0)
-    parser.add_argument('--width', type=int, default=2800)
-    parser.add_argument('--height', type=int, default=2000)
+    parser.add_argument('--width', type=int, default=2240)
+    parser.add_argument('--height', type=int, default=1600)
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
 
 
@@ -84,7 +84,11 @@ def load_review_slice(source, axis, index=None, mapping='allen', *, layer='anato
     corners[:, fixed] = index
     corners[:, grid.array_axes.index(x_axis)] = (x0, x0, x1, x1)
     corners[:, grid.array_axes.index(y_axis)] = (y0, y1, y0, y1)
-    return SampledPlane.from_arrays(grid.index_to_world(corners), pixels, sampling='nearest')
+    return SampledPlane.from_arrays(
+        grid.index_to_world(corners),
+        pixels,
+        sampling='linear' if layer == 'anatomy' else 'nearest',
+    )
 
 
 class ReviewControls:

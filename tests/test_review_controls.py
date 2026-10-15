@@ -80,15 +80,19 @@ def test_review_reset_is_explicit_and_restores_initial_viewer_state(viewer):
 
 
 @pytest.mark.parametrize('axis', ['ap', 'ml', 'dv'])
-def test_physical_review_slice_matches_oriented_source_pixels_and_affine_edges(axis):
+@pytest.mark.parametrize('layer', ['anatomy', 'annotation'])
+def test_physical_review_slice_matches_oriented_source_pixels_and_affine_edges(axis, layer):
     source = open_volume_pack(
         FIXTURE.parents[1] / 'linked-atlas-v1' / 'volume-pack'
     ).load_volumes()
     composer = AtlasSliceComposer(source, 'allen')
     array_axis = source.grid.array_axes.index(axis)
     index = source.grid.shape[array_axis] // 2
-    expected, _annotation = composer.compose_layers(axis, index, annotation_opacity=1)
-    plane = load_review_slice(composer, axis, index, 'allen', opacity=0.5)
+    anatomy, annotation = composer.compose_layers(axis, index, annotation_opacity=1)
+    expected = anatomy if layer == 'anatomy' else annotation
+    plane = load_review_slice(composer, axis, index, 'allen', layer=layer, opacity=0.5)
+    # Continuous anatomy may interpolate; categorical labels must retain exact pixels.
+    assert plane.sampling == ('linear' if layer == 'anatomy' else 'nearest')
     np.testing.assert_array_equal(plane.rgba[..., :3], expected[..., :3])
     np.testing.assert_array_equal(plane.rgba[..., 3], np.rint(expected[..., 3] * 0.5))
     affine = np.asarray(source.grid.index_to_world_um_matrix).reshape(4, 4)
