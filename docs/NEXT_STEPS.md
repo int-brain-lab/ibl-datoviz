@@ -9,12 +9,61 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Scientific layers and shared BWM bridge implemented — October 15 2026
+
+The user approved the consolidated architecture and both intended-use scripts,
+then authorized implementation and focused local commits. `AtlasViewer` now owns
+generic `Points`/`Paths` and recording groups, with package-level Layers controls.
+Core payloads snapshot immutable arrays, source keys, frame declarations and
+provenance. Recording children acquire source-scoped observation keys; viewer
+attachments remain distinct. Scalar values align with the complete population,
+including rows without coordinates. Source-backed quantities require ordered
+observation references. Physical sphere and pixel-point controls have explicit
+capabilities; native scientific picking is not claimed.
+
+Selection shares authoritative state between Python and GUI controls. Mapping
+changes clear regions while preserving observations; visibility preserves both,
+and removal prunes only owned attachments. Notifications follow full native and
+retained commits. Failed native updates restore old state, rollback failure closes
+the viewer, callback failures cannot undo committed state, and reentrant/foreign
+thread writes fail. Linked mapping/selection transitions and native input teardown
+were corrected to obey the same outer transaction and lifetime boundaries.
+
+An independent GPT-6.1 Sol subagent at high reasoning audited implementation and
+examples. Its final reread found no remaining P1/P2 architecture findings after
+fixes. Validation: **729 passed, one skip** for the unconfigured optional registered
+10 µm asset root; strict doctor, Ruff, strict docs and wheel build pass. An isolated
+installed-wheel check imports generic APIs and the optional adapter without an AI
+reader installed. Both original review apps pass bounded strict startups. The new
+generic annotation example runs over D070; its real GUI capture at scale 1.5 was
+inspected. These are Linux engineering checks, not user visual acceptance or Mac
+evidence. Receipts and captures are ignored under `build/ibl-integration/`.
+
+Runnable clients: `python -m examples.scientific_annotations` and
+`python -m examples.ibl_recordings`; both accept explicit existing assets,
+`--frames`, `--offscreen` and `--report`. The BWM client requires independent frame
+evidence, uses `BwmSource`/`prepare_bwm_recording`, reads metadata before GUI startup,
+and performs no signal reads. Two actual BWM metadata reads preserve 384 channels /
+459 units and 96 channels / 2 units; missing frame evidence is correctly rejected.
+The local legacy release documents neither its complete reference-frame chain nor
+an original-channel/converter pin. Official IBL code supports the legacy ML/AP/DV
+µm convention, but this is insufficient to claim verified per-release registration.
+Do not fabricate frame evidence to open the actual-data GUI. Obtain/review that
+source declaration before its scientific visual review; metadata source validation
+and insertion alignment quality remain unknown.
+
+Next user gate: inspect the generic annotation GUI and review the real-recording
+workflow once its source frame evidence is supplied. Unified linked-layout facade,
+linked observation tables, native exact picking, regional/voxel workflows and an
+agent app-authoring skill retain later stages. No data package extraction, dataset
+copy, production-agent modification, native rebuild or pin update was needed.
+
 ## App 1 and API direction accepted; staged implementation — October 15 2026
 
 The reviewer validates the current recording-context demo, including the latest
-interaction corrections. The app-1 visual gate is accepted; the immediate next
-step is reviewing the existing public API and the provisional recording/layer
-facade. App 2 and further platform evidence retain their own review scope.
+interaction corrections. The app-1 visual gate and subsequent scientific API
+direction are accepted. Implementation and the next workflow gate are recorded
+above. App 2 and further platform evidence retain their own review scope.
 
 The [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md) records the
 intended single-viewer facade, scientific payloads, recording/layer handles,
@@ -24,8 +73,8 @@ The consolidated proposal now includes generic owned points/paths, optional IBL
 recording composition, dependency boundaries, prerequisite identity/frame contracts
 and explicit selection transitions. Its two linked scripts are proposed API
 examples, not runnable supported examples. The user approved the architecture and scripts and authorized staged implementation
-with focused local commits. Generic payloads/layers precede optional IBL composition;
-visual acceptance of the resulting workflows remains a later gate. An independent
+with focused local commits. The initial payload/layer and optional IBL composition
+implementation is recorded above; visual acceptance remains a later gate. An independent
 GPT-6.1 Sol audit at high reasoning found no remaining P1/P2 architecture or
 consolidation issues after revision. Syntax and Ruff checks pass for both scripts;
 the strict documentation build passes. These checks do not exercise proposed APIs.

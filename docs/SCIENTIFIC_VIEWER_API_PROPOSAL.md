@@ -1,10 +1,12 @@
 # Scientific viewer API proposal
 
-Status: API direction and intended-use scripts approved by the user, October 15, 2026. The recording-context demo has
-been accepted visually. The interfaces below describe the intended refactor;
-they are not implemented APIs or an announcement of API stability. The user has now authorized staged implementation and focused local commits. This consolidated revision incorporates
-the shared-data investigation and the architectural audit; the earlier
-`IBLWorkbench` scripts are superseded.
+Status: API direction and intended-use scripts approved by the user, October 15,
+2026. Staged implementation is authorized. Generic payloads, owned handles,
+recording composition, programmatic exact selection and Layers controls are now
+implemented; visual acceptance of these workflows remains open. Later sections
+cover intended interfaces, including linked-layout and quantity work not yet
+implemented. This is not an announcement of API stability. The earlier
+`IBLWorkbench` sketches are superseded.
 
 Use one main `AtlasViewer`, prepared scientific data objects, and handles for
 recordings and layers. Python calls and GUI controls operate on the same retained
@@ -12,20 +14,16 @@ state. Keep anatomy, scientific observations, selection, cursor and camera
 independent. This replaces the earlier provisional `IBLWorkbench` naming; it does
 not add a second application controller beside the viewer.
 
-## Two scripts for API review
+## Approved scripts and executable examples
 
-Review these proposed interfaces before implementing them:
-
-- [Generic annotations](proposed_api/generic_annotations.py): add arbitrary points
-  and paths, color points and select an original annotation ID.
-- [Two IBL recordings](proposed_api/ibl_recordings.py): use the existing shared
-  metadata reader, adapt two insertions and select an original cluster ID.
-
-Both files are syntax-checkable design examples, not runnable examples of the
-current package. Their entry functions receive explicitly prepared assets and
-frames; they do not discover/download datasets. Proposed names, including the
-payload constructors and `prepare_bwm_recording`, require review. Do not copy
-these into the supported examples until their implementation gate passes.
+The [generic annotations](proposed_api/generic_annotations.py) and
+[two IBL recordings](proposed_api/ibl_recordings.py) scripts record the reviewed
+API and can now be called with prepared assets and frames. Executable module
+clients are `examples.scientific_annotations` and `examples.ibl_recordings`;
+see [scientific layer usage](api/components.md#viewer-owned-scientific-layers).
+The IBL client requires independent source-frame evidence and never infers
+registration from coordinate magnitudes or the atlas's frame. Both clients read
+explicit local inputs before starting the GUI and perform no downloads.
 
 ## Scientific workflow
 
@@ -511,7 +509,8 @@ scientific identity contracts through that migration.
 - Specify volume quantities and supplied alignment workflows at their later gate;
   their requirements must not force speculative renderer abstractions into stage 1.
 
-The next action is reviewing these interfaces and contracts before implementation.
+The next user review is the working generic annotation and recording workflows.
+Native picking and the unified linked-layout facade retain separate later gates.
 The current supported API remains documented in the [API reference](api/index.md).
 
 ## Architecture audit of the consolidated proposal

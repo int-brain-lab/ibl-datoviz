@@ -3,11 +3,16 @@
 The public API is intentionally small and split at data ownership boundaries.
 
 The [scientific viewer API proposal](../SCIENTIFIC_VIEWER_API_PROPOSAL.md) describes
-the planned refactor following acceptance of the recording-context demo. Its
-recording/layer facade and new payload names are proposals, not current exports.
+the approved direction following acceptance of the recording-context demo.
+Generic payloads, owned layer/recording handles, exact programmatic selection and
+package-level Layers controls are now implemented. Native exact picking and the
+unified linked-layout facade retain later acceptance gates.
 
 | Object | Responsibility |
 | --- | --- |
+| [`Points`, `Paths`](components.md#viewer-owned-scientific-layers) | Generic immutable geometry, original IDs, frames and provenance |
+| `Recording`, `Channels`, `Clusters`, `Sites`, `Trajectory` | Prepared insertion-scoped scientific populations |
+| `WorldFrame`, `SourceKey`, `SourceObservationKey` | Explicit coordinate evidence and immutable scientific identity |
 | [`AtlasViewer`](viewer.md) | Datoviz scene, native resources, mapping, overlays, GUI, and selection |
 | [`AtlasMesh`](data-models.md#ibl_datoviz.atlas.AtlasMesh) | Display-ready mesh arrays and presentation identity |
 | [`AtlasTreeModel`](data-models.md#ibl_datoviz.ontology.AtlasTreeModel) | Packed retained-tree rows derived from the shared catalog |
@@ -19,7 +24,12 @@ recording/layer facade and new payload names are proposals, not current exports.
 The compatibility surface is the package's explicit `ibl_datoviz.__all__`: `AtlasViewer`,
 `LinkedAtlasNavigator`, `AtlasMesh`, `ProbeSites`, `AtlasRegionValues`, `AtlasTreeModel`,
 `AtlasSliceSource`, `AtlasCursor`, `AtlasSliceComposer`, and `compose_atlas_slice`. Examples import
-these names from `ibl_datoviz`.
+these names from `ibl_datoviz`. The scientific API also exports `Points`, `Paths`,
+`Channels`, `Clusters`, `Sites`, `Trajectory`, `Recording`, `WorldFrame`, `SourceKey`,
+`SourceObservationKey`, `LayerObservationRef`, `LayerCapabilities` and
+`UnavailableLayerError`. The optional `ibl_datoviz.ibl` module documents `BwmSource`
+and `prepare_bwm_recording`; importing generic viewer APIs does not require the
+shared IBL reader or an AI runtime.
 
 Other module members are implementation details. In particular, SVG parsing, signed-link-key
 encoding, cursor-fraction helpers, and the concrete source-slice record may change without a

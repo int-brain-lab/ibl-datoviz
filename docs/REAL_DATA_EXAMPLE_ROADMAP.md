@@ -1,6 +1,9 @@
 # Real-data interactive example roadmap
 
-Status: the reviewer accepted the current app-1 recording-context demo after the reset and panned-rotation corrections. The next gate is public API review. App 2 and further platforms have separate acceptance scope.
+Status: the reviewer accepted the current app-1 recording-context demo after the reset and panned-rotation corrections. The user has also approved the consolidated API direction. Generic layers and
+recording composition are implemented; the next gate is workflow review, with
+independent source-frame evidence required for actual BWM geometry. App 2 and
+further platforms have separate acceptance scope.
 
 The current API design and implementation stages are in the
 [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md). It uses

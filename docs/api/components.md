@@ -1,4 +1,94 @@
-# Point collections and sampled planes
+# Scientific layers and reusable components
+
+## Viewer-owned scientific layers
+
+Use generic `Points` and `Paths` when the viewer should own their native resources.
+Their IDs can be integer or string labels. Repeated positions and rows with missing
+coordinates remain scientific observations. Only finite rows are rendered, and
+scalar values align with the complete population, including missing positions.
+
+```python
+from ibl_datoviz import AtlasViewer, Points, Paths
+
+with AtlasViewer(atlas=verified_assets, mapping="beryl") as app:
+    points = app.add_points(
+        Points(ids=("a", "b"), positions_um=xyz, frame=app.frame,
+               provenance={"kind": "user annotation"}),
+        name="Targets", glyph="point",
+    )
+    points.set_size_px(8)
+    points.color_by([0.2, 0.8], name="Confidence", units="1",
+                    cmap="viridis", limits=(0, 1))
+    paths = app.add_paths(
+        Paths(ids=("route",), positions_um=(route_xyz,), frame=app.frame,
+              provenance={"kind": "user annotation"}),
+        name="Candidate route",
+    )
+    paths.set_width_px(3)
+    app.selection.set_observations([points.observation("b")])
+    app.show()
+```
+
+`app.frame` can locate annotations authored in that atlas. It must not be copied
+onto external source coordinates to claim verified registration. Source payloads
+need a `WorldFrame` with recorded verification method/evidence and compatible
+reference-space and coordinate convention. This records caller-supplied evidence;
+it is not a registration validation service.
+
+`add_recording(recording, show=("channels", "clusters"))` composes supplied
+populations using the same owned registry. `show` sets initial visibility;
+unshown populations retain handles. An absent population raises
+`UnavailableLayerError`; an entirely unpositioned supplied population retains its
+IDs and handle. Recording observations default to physical sphere glyphs with
+`set_radius_um(20)`. Point sprites use `set_size_px`, paths use `set_width_px`,
+and unsupported operations fail. Inspect `layer.capabilities`; native scientific
+picking is currently unavailable for these handles. Exact ID selection is available
+through Python and the Layers panel, including hidden/unpositioned observations.
+
+Source-backed scalar calls require `observation_refs=payload.observation_keys`
+from the upstream quantity preparation in exactly the full payload order. Reject
+shuffled/foreign references rather than using length as evidence of an identity
+join. Missing scalar values receive an explicit missing color. Uniform color,
+visibility and scalar edits preserve selection. The initial native implementation
+rebuilds candidate visuals transactionally; dense animation performance is not
+qualified yet.
+
+`app.selection.set_regions(ids, mapping=app.mapping)` selects only regions;
+`set_observations(refs)` selects exact attachments. `clear_regions`,
+`clear_observations` and `clear` have explicit scopes. Mapping changes clear
+regions while retaining observations; removal prunes only owned attachments.
+`on_changed(callback)` returns a closable subscription. Events contain immutable
+previous/current states, a reason and a committed revision. Callback failures
+are recorded in `app.selection.callback_errors` without undoing committed state;
+reentrant viewer writes and writes from another thread are rejected. All resources
+and subscriptions close before scene destruction, including deferred native
+callback shutdown.
+
+Run the new examples as modules from the repository root in the configured native environment:
+
+```sh
+python -m examples.scientific_annotations /path/to/atlas-assets \
+    --context-root /path/to/major-surfaces
+python -m examples.ibl_recordings /path/to/atlas-assets \
+    --release /path/to/bwm-release --pid FIRST_PID --pid SECOND_PID \
+    --frame-evidence /path/to/reviewed-source-frame.json
+```
+
+Both support `--frames 3`, `--offscreen PNG` and `--report JSON`. They never
+fetch datasets. Major anatomy requires the prepared context surfaces; otherwise
+they explicitly choose detailed anatomy. The IBL example requires the optional
+shared reader and independent frame evidence. A frame JSON has the fields
+`reference_space_id`, `coordinate_convention` and `provenance`, whose
+`verification` mapping records nonempty `method` and `evidence` strings. Supplying
+that document does not change metadata or signal source-validation status.
+
+The shared reader owns integrity/validation and codecs; `BwmSource` retains all
+source metadata and `prepare_bwm_recording` snapshots it into core payloads. BWM
+cluster positions currently mean assigned channel locations, not neuron somata.
+Signal access remains an explicit upstream `source.spikes(..., requirements=...)`
+call; the example performs metadata reads only, before starting the GUI.
+
+## Borrowed-scene point collections and sampled planes
 
 `PointCollection` and `SampledPlane` are independent CPU payloads. Their constructors
 copy inputs into immutable contiguous arrays without changing the caller's write
