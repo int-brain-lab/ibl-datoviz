@@ -20,7 +20,14 @@ The [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md) records 
 intended single-viewer facade, scientific payloads, recording/layer handles,
 anatomy, selection, camera and linked-slice interfaces, along with staged delivery
 and open review decisions. It supersedes the earlier `IBLWorkbench` naming sketch.
-The proposal is recorded for review; its refactor has not started.
+The consolidated proposal now includes generic owned points/paths, optional IBL
+recording composition, dependency boundaries, prerequisite identity/frame contracts
+and explicit selection transitions. Its two linked scripts are proposed API
+examples, not runnable supported examples. Review those contracts and scripts
+before the viewer refactor; implementation has not started. An independent
+GPT-6.1 Sol audit at high reasoning found no remaining P1/P2 architecture or
+consolidation issues after revision. Syntax and Ruff checks pass for both scripts;
+the strict documentation build passes. These checks do not exercise proposed APIs.
 
 ## Consistent reset and panned rotation — October 15 2026
 
@@ -74,18 +81,25 @@ was not modified by this change.
 
 ## Shared-data integration checkpoint — October 15 2026
 
-The authorized read-only spike exercised validated BWM and portable HC-3 reads
+The initial read-only spike exercised validated BWM and portable HC-3 reads
 through `ibl-ai-agent-next` without copying datasets or changing its catalogs.
-Source IDs, fidelity and provenance survive; the warning-only BWM read is
-correctly refused. The next prerequisite for a live anatomy integration is public
-BWM channel/unit metadata access, including coordinates and scoped identities.
-Do not substitute the existing fixture's geometry for another registered PID.
+Source IDs, fidelity and provenance survive; warning-only signal access is refused.
 
-The [roadmap](REAL_DATA_EXAMPLE_ROADMAP.md) records the concrete findings and two
-provisional API scripts for review before broad viewer/controller changes.
-Executable probe and JSON evidence are ignored under `build/agent-data-spike/`.
-No agent-repository source, viewer implementation or scientific dataset changed
-in this investigation. Keep the other agent's visual corrections separate.
+The subsequent local commits `ibl-ai-agent-next:3cdb374` and
+`ibl-datoviz:818e286` implement pinned BWM metadata access and the optional
+`BwmSource` adapter. The reader owns integrity/source checks; the adapter retains
+all rows and original source identities, uses explicit legacy coordinate
+conventions and leaves signal validation gates unchanged. No production
+`ibl-ai-agent` code or scientific dataset changed. A complete verified atlas frame
+is still needed for the proposed bridge into the reviewed core payloads.
+
+Validation: package suite 675 passed, one skip for the unconfigured optional
+registered 10 µm asset root; sibling data package 343 passed, 13 opt-in local-data
+skips. The ignored workbench experiment has 10 passing CPU/native ownership and
+selection checks. Its facade is intentionally outside the package. This evidence
+supports the data seam and resource contracts, not acceptance of a new GUI or
+native scientific picking. Probe/prototype evidence remains under ignored
+`build/agent-data-spike/` and `build/ibl-integration/`.
 
 ## Zoom-aware panning correction — October 15 2026
 

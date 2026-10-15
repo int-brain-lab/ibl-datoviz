@@ -3,13 +3,30 @@
 Status: proposed for API review, October 15, 2026. The recording-context demo has
 been accepted visually. The interfaces below describe the intended refactor;
 they are not implemented APIs or an announcement of API stability. Recording this
-proposal does not start its implementation.
+proposal does not start its implementation. This consolidated revision incorporates
+the shared-data investigation and the architectural audit; the earlier
+`IBLWorkbench` scripts are superseded.
 
 Use one main `AtlasViewer`, prepared scientific data objects, and handles for
 recordings and layers. Python calls and GUI controls operate on the same retained
 state. Keep anatomy, scientific observations, selection, cursor and camera
 independent. This replaces the earlier provisional `IBLWorkbench` naming; it does
 not add a second application controller beside the viewer.
+
+## Two scripts for API review
+
+Review these proposed interfaces before implementing them:
+
+- [Generic annotations](proposed_api/generic_annotations.py): add arbitrary points
+  and paths, color points and select an original annotation ID.
+- [Two IBL recordings](proposed_api/ibl_recordings.py): use the existing shared
+  metadata reader, adapt two insertions and select an original cluster ID.
+
+Both files are syntax-checkable design examples, not runnable examples of the
+current package. Their entry functions receive explicitly prepared assets and
+frames; they do not discover/download datasets. Proposed names, including the
+payload constructors and `prepare_bwm_recording`, require review. Do not copy
+these into the supported examples until their implementation gate passes.
 
 ## Scientific workflow
 
@@ -45,6 +62,7 @@ with AtlasViewer(
     first.path.set_width_px(3)
     second.channels.color_by(
         firing_rates,
+        observation_refs=firing_rate_refs,  # retained by upstream preparation
         name="Mean firing rate",
         units="Hz",
         cmap="viridis",
@@ -64,7 +82,8 @@ for restoration.
 
 | Object | Responsibility |
 | --- | --- |
-| `AtlasViewer` | Application lifetime, fixed view layout, recording and quantity layers, native presentation |
+| `AtlasViewer` | Application lifetime, fixed view layout, owned generic layers and recording groups, native presentation |
+| `Points`, `Paths` | Prepared generic geometry, stable local IDs, frame and provenance; no required PID/EID |
 | `Recording` | Prepared observations and provenance for one insertion within a session |
 | Recording handle | Group visibility and access to that recording's available layer handles |
 | Layer handle | Visibility, supported styling, scalar encoding and exact observation identities |
@@ -79,38 +98,96 @@ data access or preparation. An IBL adapter produces the same payloads that a
 script can construct from arrays; the core viewer does not require an AI-agent
 runtime or a particular data loader.
 
+## Generic layers first
+
+`app.add_points(Points(...))` and `app.add_paths(Paths(...))` return viewer-owned
+handles without requiring a recording or native scene/panel arguments. `Paths`
+contains independently identified ordered polylines; each line has its own vertex
+array. Its scalar/selection domain is the path ID, not an implicit vertex ID.
+`add_recording` composes the same internal layer registry and ownership mechanisms
+for supplied channels, clusters, sites and trajectories. Removing a recording
+removes its children; removing a generic layer uses `app.remove_layer(handle)`.
+A recording child is removed with its group, rather than detached behind the
+recording handle. No second application facade is introduced.
+
+Generic payload IDs may be integer or string labels and remain unique within
+that payload. IDs are never renderer row indices. A generic payload without a
+source identity receives an application-local attachment scope; this is not
+advertised as persistent dataset provenance. Source-backed payloads retain
+immutable source keys independently of their viewer attachment keys. Core
+identities cannot require IBL PID, EID, channel/cluster kinds or integer-only IDs.
+The optional IBL adapter translates the current IBL-specific `ObservationRef`
+into that generic contract; it does not become the core reference type.
+
+`layer.observation(original_id)` resolves an exact reference for that attachment.
+Two layers using the same local ID stay distinct. Source-backed references also
+retain the original scientific source identity. Repeated attachment of the same
+recording source key is rejected explicitly for the first implementation; names
+are display labels and never replacement keys. Explicit replacement is a later
+API decision, not an implicit side effect of adding a layer.
+
 ## Scientific payloads and identities
 
 ```python
 from ibl_datoviz import Recording, Channels, Clusters, Trajectory
 
 recording = Recording(
+    source=source_key,
     insertion_id=pid,
     session_id=eid,
     name="Subject / session / probe00",
     path=Trajectory(
         positions_um=path_xyz,
+        frame=source_frame,
         provenance=path_provenance,
     ),
     channels=Channels(
         ids=channel_ids,
         positions_um=channel_xyz,
         allen_region_ids=channel_region_ids,
+        frame=source_frame,
         provenance=channel_provenance,
     ),
     clusters=Clusters(
         ids=cluster_ids,
         positions_um=cluster_xyz,
         allen_region_ids=cluster_region_ids,
+        frame=source_frame,
         provenance=cluster_provenance,
     ),
 )
 ```
 
-Each payload owns immutable array storage. Coordinates are atlas-world ML/AP/DV
-micrometres and identify their reference space through validated provenance. The
-viewer rejects incompatible frames. Coordinate normalization happens once in the
-presentation adapter and does not modify the scientific payload.
+Each payload owns immutable array storage and snapshots its identity/provenance
+metadata. Coordinates have an explicit `frame`: the shared anatomy reference-space
+identifier plus a documented coordinate convention, axes, origin and units.
+Reuse `ibl-anatomy` reference-space/grid contracts rather than minting another
+atlas registry. The initial viewer accepts its atlas-world ML/AP/DV micrometre
+convention and rejects unknown or incompatible frames. A caller must supply a
+verified conversion upstream for other conventions; matching units or numeric
+ranges do not establish compatible origin, orientation or registration.
+Renderer normalization happens once at the presentation boundary, with the same
+atlas transform for every layer, and never modifies the scientific payload.
+
+Before constructors freeze, review a minimal immutable contract with these fields:
+
+| Contract | Required information |
+| --- | --- |
+| Source key | Provider/dataset namespace, release version and immutable manifest/content identity |
+| Recording key | Source key and original insertion/recording ID; session identity is separate |
+| Observation identity | Source/recording scope where present, population and original ID; generic local scopes remain valid |
+| Frame | Shared reference-space identity and explicit world-coordinate convention; verified conversion provenance where needed |
+| Provenance | Input pins, derivation/position meaning, source validation status and declared uncertainties |
+
+A frame assertion is distinct from a validated source claim. Current BWM 1.1.0
+metadata lacks a complete frame declaration: `coordinate_convention="ibl-mlapdv-um"`
+is an explicit legacy convention assertion, not proof of atlas registration.
+The proposed `prepare_bwm_recording` bridge additionally requires verified frame
+information; it must fail if that information is unavailable. It returns the
+reviewed core `Recording`, rather than permanently adding a parallel payload model.
+Its immutable key/provenance snapshots must not depend on mutable detached source
+tables. Reject disagreements between table identity and retained observation refs
+rather than silently assigning new keys to existing observations.
 
 Session IDs and insertion IDs remain distinct. Channel and cluster IDs retain
 their original source identities, scoped by source/version and recording.
@@ -126,12 +203,17 @@ unknown rather than receiving invented source IDs.
 
 A supplied ordered path identifies its coordinate derivation. Connecting channel
 locations does not make it an independently reconstructed histology trace.
-Cluster locations retain their meaning as estimates from recordings, rather
-than exact neuron soma positions. Geometry can be absent: missing coordinates
-disable the corresponding spatial layer rather than generating replacements.
+Cluster positions declare their derivation: the current BWM adapter uses the
+assigned channel location, not an inferred neuron soma position. Missing positions
+remain rows in the scientific population. Only finite XYZ rows reach spatial
+rendering, with an explicit row-to-original-identity map; table/programmatic
+selection still addresses unpositioned observations. Controls report total and
+positioned counts. A supplied population with no positioned rows retains its
+handle and table identity but has no drawable marks. An absent population has no
+layer handle. Neither case generates replacement coordinates.
 
-The exact provenance record and source/version key types need review before
-freezing the payload constructors.
+Source/version, frame and provenance constructor types remain review decisions;
+their semantics above are prerequisites for stage 1, not deferred adapter details.
 
 ## Recording and layer handles
 
@@ -145,14 +227,17 @@ recording.set_visible(False)
 app.remove_recording(recording)
 ```
 
-Only supplied populations have available layer handles; missing-layer access has
-a defined explicit failure. Layer controls use a small shared vocabulary:
+Only supplied populations have available layer handles; missing-layer access
+raises `UnavailableLayerError` (proposed name), rather than returning `None`.
+A supplied but entirely unpositioned population is not an unavailable population.
+Layer controls use a small shared vocabulary:
 
 ```python
 layer.set_visible(True)
 layer.set_color("#40dcfa")
 layer.color_by(
     values,
+    observation_refs=value_refs,  # required for externally sourced values
     name="Amplitude",
     units="µV",
     cmap="magma",
@@ -163,21 +248,42 @@ layer.color_by(
 
 Uniform color identifies the layer. Scalar coloring identifies a named quantity
 with explicit units, limits, colormap and missing-value behavior. Array values
-align with the payload's stable observation order; mismatched lengths and
-infinities fail validation. Missing scalars do not silently remove observations
-or change the population. Switching color modes preserves geometry and identity.
+align with the complete payload's stable observation order, including rows without
+positions; mismatched lengths and infinities fail validation. Spatial upload
+applies the geometry row map to scalars and identities together. Externally prepared
+quantities must be explicitly joined by full scientific identity before this call,
+including reordered values from the same source. Reject duplicate/foreign keys;
+absent expected values become NaN in the complete population order. Length
+agreement alone does not establish that join. Source-backed scalar calls require
+`observation_refs` retained by the upstream preparation step and matching the
+complete target reference sequence; shuffled, missing or foreign equal-length
+references fail. These scalar references are immutable payload/source observation
+keys, not the viewer-attachment references returned by `layer.observation`.
+This initial API does not perform an implicit join. Bare arrays
+remain convenient for explicitly ordered local annotations, where the caller
+asserts the documented payload order. Missing scalars do not silently remove
+observations or change the population. Switching color modes preserves geometry
+and identity.
 
 Controls specific to geometry keep their units in their names:
 
 ```python
 recording.path.set_width_px(3)
-recording.channels.set_radius_um(20)
+recording.channels.set_radius_um(20)  # physical-sphere glyph capability
 ```
 
 Paths retain their supported opaque stroke style. Point, region and volume
 layers expose scalar coloring according to their capabilities; unsupported
 operations fail explicitly. A common handle interface does not imply that every
-renderer supports every material or quantity operation.
+renderer supports every material or quantity operation. Pixel-sized point sprites
+use `set_size_px`; physical sphere glyphs use `set_radius_um`. The initial glyph
+choice is declared at attachment, and capabilities are exposed before a control
+is offered. Neither setter implies the other rendering mode or native picking.
+Proposed defaults for review: generic `add_points` uses pixel point glyphs at
+8 px; recording channels/sites/clusters use physical sphere glyphs at 20 µm
+radius; paths use 3 px opaque strokes. These are display choices, not positional
+uncertainties or anatomical cell sizes. A supported glyph does not establish
+native scientific picking until its separate acceptance gate passes.
 
 ## Anatomy and selection
 
@@ -188,8 +294,11 @@ app.anatomy.set_mapping("beryl")
 app.anatomy.set_hemispheres(left=True, right=True)
 app.anatomy.set_explode(0.3)
 
-app.selection.set_regions([-718], mapping="allen")
-app.selection.clear()
+app.selection.set_regions(selected_region_ids, mapping="beryl")
+app.selection.set_observations([recording.clusters.observation(cluster_id)])
+app.selection.clear_observations()
+app.selection.clear_regions()
+app.selection.clear()  # both selection domains; never cursor/camera/filter state
 subscription = app.selection.on_changed(handle_selection)
 ```
 
@@ -201,15 +310,48 @@ behavior accepted in the demo.
 Selection emphasizes anatomy without silently isolating it, hiding observations
 or filtering a scientific population. Region references retain their mapping and
 hemisphere meaning; exact observation references retain source and recording
-scope. Mapping transitions follow the shared Allen/Beryl/Cosmos selector contract,
-including its selection-reset behavior. Observation selection, region selection,
-spatial cursor position and scientific filtering remain different operations.
+scope. `set_regions(..., mapping=...)` declares the ID namespace and must match
+the current displayed mapping; a mismatch fails before mutation. Change mapping
+explicitly first rather than silently converting or reinterpreting IDs.
+Mapping transitions follow the shared Allen/Beryl/Cosmos selector contract,
+including its region-selection reset behavior. Observation selection, region
+selection, spatial cursor position and scientific filtering remain different
+operations. Initial transitions are explicit:
+
+| Action | Selection result |
+| --- | --- |
+| Change mapping | Clear regions; retain exact observations |
+| Hide a layer/group or change scalar styling | Retain both domains, including hidden observations |
+| Remove a layer/recording | Clear only observation attachments owned by it |
+| Reset camera or move cursor | Preserve both selection domains |
+| Clear regions/observations | Clear only the named domain |
+| Select an unpositioned observation | Retain exact identity; no fabricated spatial highlight |
+
+`set_observations` replaces that domain with the supplied attached references;
+unknown IDs and removed/foreign handles fail before mutation. Region and
+observation selections can coexist. Removing a selected attachment also closes
+its native links before issuing the committed selection notification. Selection
+is attachment-specific initially: another layer displaying the same source
+observation is not implicitly selected. Cross-view linking explicitly resolves
+that source key to target attachments; it does not merge their ownership.
 
 Notifications expose scientific identities rather than native visual indices.
 GUI and Python edits produce the same authoritative state changes. Subscription
 cleanup belongs to the viewer lifetime; callers can also close subscriptions
-explicitly. The precise observation-selection methods and event payloads belong
-to the second implementation stage below.
+explicitly. The proposed immutable event contains previous/current region and
+observation references, a reason and a monotonically increasing committed revision.
+Emit once after retained state and native updates both commit; failure rolls back
+without a success event. Callback exceptions cannot undo a completed commit, and
+nested writes from callbacks are rejected initially to avoid reentrant partial
+updates. Exact event field names/error reporting remain a contract-review item.
+
+Table/programmatic exact selection is the first acceptance gate. Native picking
+is a separate capability gate: the pinned engine's scientific identity queries
+do not support styled point sprites, and `PointCollectionVisual` has no scientific
+identity link map. Use a demonstrated supported glyph/query route with explicit
+row/identity translation, or expose picking as unavailable. Do not upgrade the
+engine to hide this distinction. Native acceptance must cover overlap, hidden
+layers, multiple attachments, missing rows and original ID zero.
 
 ## Camera interaction
 
@@ -283,7 +425,7 @@ than calculating alignment.
 ## Ownership and architecture
 
 The viewer owns native scenes, layer resources, GUI handles, subscriptions and
-workers. It releases layers and callbacks before destroying the scene. Removed
+any workers it creates. Native resource mutation stays on the viewer/GUI thread. It releases layers and callbacks before destroying the scene. Removed
 or closed handles fail clearly when reused. Updates validate and prepare their
 replacement before replacing retained state, preserving existing transactional
 failure behavior.
@@ -294,6 +436,30 @@ API should not require native handles or immediate-mode GUI code. The accepted
 Layers panel moves from `ScientificSceneReview` into package-level presentation
 of the recording/layer state. The demo becomes a small client of that API.
 
+The dependency boundaries are:
+
+| Layer | Owns | Must not depend on |
+| --- | --- | --- |
+| Shared data access | Catalogs, pinned releases, codecs, source/signal validation and prepared metadata | Viewer, GUI, agent execution |
+| Optional IBL adapter | EID/PID/session semantics, source-to-payload conversion and explicit joins | Agent execution, native scenes |
+| Core payloads/state | Generic identity, frame checks, layer/selection transitions | IBL reader, codecs, AI runtime |
+| Viewer presentation | Datoviz resources, GUI, native links and commit/cleanup mechanics | Dataset discovery, implicit scientific analysis |
+| Scientific apps / AI agent | Compose readers, adapters, viewer and explicit analyses | Private renderer internals |
+
+The reusable reader currently resides in `ibl-ai-agent-next` and is imported
+through `ibl_ai_agent.access`. Preserve this tested seam for both clients before
+physically extracting a standalone data distribution. Do not add a second reader,
+codec, catalog or copy of the compressed releases to this repository. Trial/event
+and signal loading stays explicit, outside GUI callbacks; validation requirements
+are passed through unchanged. Unknown metadata validation and passed signal
+validation remain separate facts. Common-clock mapping does not imply measured
+synchronization accuracy. Background results must carry source/request identities
+and be ignored after removal/close; workers stop before native scene destruction.
+
+An agent can later generate small apps through these same public interfaces and
+a dedicated authoring skill. That requires stable examples and review gates first,
+not an agent dependency in the viewer or a new plugin framework now.
+
 Datoviz remains responsible for generic rendering, controllers, picking and GUI
 primitives. IBL semantics stay in `ibl-datoviz` and shared anatomy/data packages.
 Add engine functionality only for a demonstrated generic gap, with its own
@@ -303,15 +469,21 @@ validation, before deliberately updating the native package's immutable pin.
 
 | Stage | Deliverable | Acceptance gate |
 | --- | --- | --- |
-| 1 | Viewer facade, payloads and recording/layer handles; paths, sites/channels, scalar coloring, anatomy, camera and retained Layers GUI | Reproduce the accepted demo through a short public script; compare GUI and Python edits and independent recording visibility; test identities, ownership, rollback and reset |
-| 2 | Source metadata adapter, multiple-recording examples, exact channel/cluster selection, linked tables and events | Use matching source-scoped metadata; validate coordinates and associations; link exact observations without changing population or borrowing another insertion's geometry |
+| 0 | Review immutable identity/frame/provenance contracts, generic and IBL scripts, selection transitions and capabilities | Approve scripts; inspect two actual insertion metadata results, original IDs, missingness and declared frames before freezing constructors |
+| 1 | Owned generic point/path handles; recording composition through the optional adapter; retained layer/selection state and committed events, programmatic exact selection and package-level controls | Reproduce accepted demo; exercise both scripts, independent visibility, scalar alignment, selection transitions, rollback and cleanup; no IBL imports for generic use |
+| 2 | Linked observation tables and capability-specific native exact picking | Match original source identities across tables/scene; validate native overlap, hidden/missing rows and multi-recording linking; preserve scientific population |
 | 3 | Consolidate linked slices under the viewer; regional and voxel quantities; supplied alignment comparisons | Review cursor/selection semantics, reduction, coverage, missingness and colormaps through dedicated scientific workflows |
 
-Stage 1 establishes handles that can own several recordings; stage 2 exercises
-them with live source-backed workflows. Source metadata access is a prerequisite
-for that integration: the inspected data interface does not yet expose all
-required channel coordinates and cluster associations. Signal-validation failures
-must not trigger an unvalidated direct-file fallback.
+The shared metadata prerequisite is now implemented locally: `ibl-ai-agent-next`
+commit `3cdb374` exposes pinned BWM recording metadata, and this repository's
+`818e286` adds the optional `BwmSource` adapter. The interim `BwmRecording` is an
+integration result, not an approved replacement for the core payload contract.
+Read-only checks exercised one insertion with 384 channels/459 released units and
+another with 96 channels/2 units, preserving source rows and original IDs.
+This does not establish verified atlas registration or native picking acceptance.
+Signal-validation failures must not trigger an unvalidated direct-file fallback.
+The old `IBLWorkbench` experiment remains ignored engineering evidence, not an
+additional facade to merge or publish.
 
 Keep native implementation and focused commits on `feature/datoviz-v04`. Generic
 engine changes, if needed, remain on `rc4/scientific-3d`. Shared anatomy assets
@@ -333,10 +505,24 @@ scientific identity contracts through that migration.
   the behavior of unavailable layer access.
 - Confirm handle names, `show` defaults, uniform/scalar color transitions and
   physical versus screen-space glyph controls.
-- Place the hover toggle in the public interaction API and define observation
-  selection events without conflating them with regions or the spatial cursor.
+- Review the two scripts, generic local/source-backed identity scopes and the
+  minimal immutable event contract; approve selection transitions above.
+- Confirm the BWM-to-core bridge name and the authority supplying its verified frame.
+- Place the hover toggle in the public interaction API.
 - Specify volume quantities and supplied alignment workflows at their later gate;
   their requirements must not force speculative renderer abstractions into stage 1.
 
 The next action is reviewing these interfaces and contracts before implementation.
 The current supported API remains documented in the [API reference](api/index.md).
+
+## Architecture audit of the consolidated proposal
+
+An independent GPT-6.1 Sol subagent at high reasoning reviewed the boundaries,
+current reader/adapter code, revised proposal, roadmap and both scripts on
+October 15, 2026. Its final reread reported no remaining P1/P2 architecture or
+consolidation findings after revisions. The review addressed generic identities,
+source versus attachment scope, verified frames, scalar row alignment, selection
+transitions, committed events and resource ownership. This is a design audit,
+not approval of the proposed API or evidence that its interfaces are implemented.
+User review of the scripts and open constructor choices remains stage 0; verified
+BWM frame evidence and capability-specific native picking retain separate gates.

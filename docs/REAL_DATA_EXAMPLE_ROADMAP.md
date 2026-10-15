@@ -5,8 +5,8 @@ Status: the reviewer accepted the current app-1 recording-context demo after the
 The current API design and implementation stages are in the
 [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md). It uses
 `AtlasViewer` as the single entry point and supersedes the historical
-`IBLWorkbench` sketches below. The shared-data investigation and source metadata
-prerequisites remain applicable.
+`IBLWorkbench` sketches. The shared-data findings below inform that proposal;
+the source metadata prerequisite has since been implemented locally.
 
 ## First visual prototype available — October 15 2026
 
@@ -40,71 +40,43 @@ returned 89,148 events with original codes 0–8 and a declared 25 µs timing bo
 source codes retain their original meaning and are not an implicitly selected
 neural population. These are engineering checks, not new scientific analyses.
 
-The immediate gap is metadata access: the BWM release declares channel and unit
-tables, but its current public workspace reads do not expose channel coordinates
-or cluster-to-channel associations. The Datoviz fixture's insertion is not in the
-inspected BWM catalogs; do not join its geometry to a different registered PID.
-Add source-scoped metadata access in the data layer before presenting a live
-recording geometry integration. Validate the IDs, coordinate units/reference
-space, missingness and file hashes at that boundary. A failed signal gate must
-never cause a fallback to direct file reads.
+The initial metadata-access gap has since been addressed locally in
+`ibl-ai-agent-next` (`3cdb374`) and the optional `BwmSource` adapter here
+(`818e286`). The shared reader now exposes pinned channel/unit metadata and
+cluster-to-channel associations. Two insertion reads retained 384 channels/459
+units and 96 channels/2 units respectively, without deduplication or cross-PID
+geometry substitution. The legacy coordinate convention is an explicit caller
+assertion; a complete verified reference-frame contract remains a prerequisite
+for the proposed core-payload bridge. Signal failures still prohibit direct-file
+fallbacks. These checks do not establish native picking or scientific visual
+acceptance.
 
 Evidence and the executable probe live under ignored `build/agent-data-spike/`.
 Observed local BWM and HC-3 spike opens took approximately 0.1 s and 0.01 s;
 cache state was uncontrolled and the BWM insertion has only two units. These
 measurements do not establish full-recording interactive performance.
 
-### Historical API sketches
+### Consolidated API review
 
-These unimplemented scripts preserve the earlier feasibility sketch. The newer
-[API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md) replaces their `IBLWorkbench`
-naming with one `AtlasViewer` facade. The source adapter still uses the shared
-data library rather than implementing its own reader.
+The earlier `IBLWorkbench` scripts and `layers=` construction sketch are
+superseded. Review the [single-viewer proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md)
+and its two proposed scripts: [generic points/paths](proposed_api/generic_annotations.py)
+and [two IBL recordings](proposed_api/ibl_recordings.py). `show=` specifies initial
+visibility, and supplied populations retain handles even when hidden or entirely
+unpositioned. Generic layers and IBL composition share one retained state and
+ownership model.
 
-One recording:
-
-```python
-from ibl_ai_agent.access import open_workspace
-from ibl_datoviz.ibl import BwmSource, IBLWorkbench
-
-source = BwmSource.from_workspace(open_workspace(workspace_root))
-recording = source.insertion(pid)
-with IBLWorkbench.from_asset_set(atlas_root, source=source) as app:
-    app.add_recording(recording, name="Recording", layers=("channels",))
-    app.show()
-```
-
-Several recordings, each with independent layers:
-
-```python
-with IBLWorkbench.from_asset_set(atlas_root, source=source) as app:
-    first = app.add_recording(source.insertion(pid_a), name="First",
-                              layers=("channels", "clusters"))
-    second = app.add_recording(source.insertion(pid_b), name="Second",
-                               layers=("channels",))
-    first.clusters.set_visible(False)
-    second.channels.set_visible(True)
-    app.show()
-```
-
-`IBLWorkbench` denotes the proposed controller/presenter facade, not another
-renderer. Its GUI and Python methods must use one authoritative state. Exact
-observation identities include source/version, recording and original object ID;
-they stay separate from region selection, spatial cursor and scientific filters.
-Requested unavailable geometry fails explicitly. Cluster geometry must retain
-its source meaning as an estimate, rather than a claim of exact neuron positions.
-All workbench-owned layers/workers/subscriptions close before scene destruction.
-
-Next review the sketches and the current visual gate. Then implement a narrow
-source metadata reader, a one-recording adapter/example, exact-object linking,
-and multi-recording layer ownership in focused commits. Keep native work on
-`feature/datoviz-v04`; choose any necessary `ibl-ai-agent-next` branch explicitly
-before editing it. Physical data-package extraction and the app-authoring skill
-follow the demonstrated two-client boundary.
+The experimental workbench remains ignored under `build/ibl-integration/prototype/`
+as engineering evidence, not a competing API or a supported example. Physical
+extraction of the reusable data library and an agent app-authoring skill follow
+reviewed contracts and a demonstrated independently tested two-client boundary.
 
 ## Proposed scientific workflow reset — October 15 2026
 
-This proposal was approved through the first visual gate; later phases await visual acceptance. The original audit made no implementation changes. It draws on the native source, Datoviz's RC4 capabilities and release lanes, the web application's data/presentation semantics, and scientific workflows documented in `ibl-ai-agent`.
+Historical design record: this reset proposal was approved through the first visual
+gate. Its asset inventory and implementation checkpoints describe that earlier
+stage; the consolidated API proposal and current handoff above govern new work.
+Later phases await their own review and visual acceptance. The original audit made no implementation changes. It draws on the native source, Datoviz's RC4 capabilities and release lanes, the web application's data/presentation semantics, and scientific workflows documented in `ibl-ai-agent`.
 
 The first goal is a scientist understanding where a recording lies in anatomy within seconds. The current renderer/settings demonstration is not that experience. Preserve the validated low-level identity, ownership, sparse interaction and failure-recovery work; reconsider the composition and public API. The reviewer explicitly permits breaking this early, unused package's API. Earlier instructions to preserve every export do not constrain this proposal.
 
@@ -139,26 +111,16 @@ If needed, extend `ibl-anatomy`'s currently root-only surface descriptor into a 
 
 The opacity discontinuity comes from switching approximate WBOIT mixing below opacity one to opaque frontmost-depth rendering at one. Reducing irrelevant contributors helps clutter; it does not prove correct transparent composition. Sweep representative coarse and dense scenes, diagnose generic engine defects separately, and keep remaining approximation explicit. Depth peeling is not a drop-in replacement for the current indexed-state/fragment-coverage profiles. The scientific API should expose anatomy presentation intent; renderer comparisons belong in diagnostics.
 
-### Proposed Python boundary
+### Consolidated Python boundary
 
-Names are provisional and should be reviewed through two short runnable scripts before a broad refactor:
-
-```python
-with AtlasViewer.from_assets(atlas_assets, context="major") as view:
-    paths = view.add_insertions(insertion_paths, name="Insertions")
-    sites = view.add_sites(recording_sites, name="Recording sites")
-    sites.set_coloring(values, name="Mean firing rate", units="Hz",
-                       cmap="viridis", limits=(low, high))
-    view.set_selected_region_ids([signed_region_id])
-    sites.set_visible(True)
-    view.show()
-```
-
-Each addition returns a reusable viewer-owned layer handle supporting visibility, styling, replacement and removal. Multiple independent recording layers must coexist; the current singleton probe-sites route is insufficient. A small retained layer list is enough; do not build a plugin graph or application framework.
-
-Use focused modules for insertion paths, recording sites, cluster observations, prepared regional fields and compatible slices/grids. Reuse current immutable payloads and native component adapters where suitable. Ordinary scientist scripts should not require raw Datoviz scene/panel handles; advanced caller-owned adapters can remain in a components namespace.
-
-Payloads own immutable retained arrays and declare coordinate units/reference space. Engine query tokens are internal encodings of scoped scientific identities. Viewer shutdown closes owned layers, subscriptions and workers before destroying the scene; advanced borrowed-scene components retain their documented closure ordering. Replacement and error recovery remain transactional. GUI and Python controls operate on the same layer state. Region association and exact observation selection must not collapse into one identity.
+The provisional `from_assets`, `add_insertions`, `add_sites` and `set_coloring`
+sketch has been superseded by the [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md).
+Review its [generic annotations](proposed_api/generic_annotations.py) and
+[two-recording](proposed_api/ibl_recordings.py) scripts instead. They use one
+`AtlasViewer`, generic owned handles, optional IBL composition and authoritative
+selection state. They are proposed interfaces, not current runnable examples.
+Explicit payload replacement remains a later API decision; existing native
+transactional update/rollback and resource ownership contracts remain required.
 
 ### Two task demos first
 
