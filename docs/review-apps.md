@@ -44,6 +44,22 @@ window, and hiding a selected layer. The complete payload and exact selection
 remain independent of regional mapping and visibility. This table addition needs
 its own interactive review; the earlier annotation acceptance does not cover it.
 
+A separately built native endpoint-gap candidate can be reviewed explicitly:
+
+```bash
+PYTHONPATH="/path/to/candidate:$PWD" DATOVIZ_LIBRARY=/path/to/candidate/build/src/libdatoviz.so \
+  uv run --frozen python -m examples.scientific_annotations build/atlas-d070 \
+  --context-root build/allen-major-context --ui-scale 1.5 --endpoint-gaps-px 4 4
+```
+
+Use that candidate's matching refreshed Python bindings and established graphics
+runtime; select the matching native library name on other platforms. Rotate the
+view and inspect both marker/path junctions. The radii are an authored fixed style:
+changing point size or hiding points does not automatically update the gaps.
+Normal configured review and the supported pin are unchanged until this native
+candidate is accepted and adopted. See `NEXT_STEPS.md` for exact candidate and
+validation evidence.
+
 For bounded startup or a geometry-only capture:
 
 ```bash

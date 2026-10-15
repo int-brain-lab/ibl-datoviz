@@ -9,6 +9,68 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Native endpoint-gap candidate implemented — October 15 2026
+
+The user authorized implementing, building, auditing and rendering an isolated
+native correction before changing the supported baseline. Datoviz commit
+`b5401cfd142981d0e0de9d59a32220f40bb98c29` on `fix/path-endpoint-gap` adds
+`dvz_path_set_endpoint_gaps(visual, start_px, end_px)`. The candidate is based on
+f77 and lives in a separate worktree; the normal engine checkout, review config,
+immutable package pin and baseline binary remain unchanged. No changes were
+published. Generated Python bindings are refreshed locally and pass their native
+freshness/ABI gates, but remain unstaged according to the native repository policy.
+
+The opt-in radii are fixed logical pixels, default zero. Each open subpath's
+original start/end disk excludes fragments from every segment, including later
+segments re-entering a disk. Closed paths ignore gaps; endpoints outside the
+camera depth range contribute no disk. Coordinates and normal depth tests remain
+unchanged. The same mask covers color, picking/query and surface-depth output;
+WGSL shaders share the appearance policy. Native rendering lowers radii to
+physical pixels; scientific queries use logical target pixels and user scale.
+The exterior boundary has an antialias feather. This is explicit styling, with
+no automatic dependency on point size or visibility.
+
+Package commit `a5fc60b` adds retained `layer.set_endpoint_gaps_px(start, end)` and
+the annotation example's `--endpoint-gaps-px START END`. Nonzero gaps fail clearly
+on the supported f77 baseline before layer replacement. Defaults preserve the
+current appearance. Style survives width/color/visibility/selection rebuilds,
+and direct component updates restore native and retained state after failure.
+
+Validation: native path 19/19, vector 5/5 and DPI 12/12 tests pass, with zero skips.
+Tests cover multiple subpaths, gaps crossing the first segment, short overlapping
+disks, zero reset, offset panels, device/user scale and near/far original
+endpoints. Binding generation/checks, shader ABI and scene boundaries pass.
+Naga validates both expanded WGSL stages; path/vector WebGPU packet layouts pass.
+Actual browser rendering and macOS interaction remain unvalidated. The final
+package suite passes **781 tests with one optional registered 10 µm asset-root
+skip on both the original baseline and native candidate**. Lint and strict docs
+pass. Exact suite logs are ignored under
+`build/endpoint-depth/package-{baseline,candidate}-pytest.log`.
+
+The rendered matrix passes **288 cases**: both gaps, start only and end only,
+96 each. Cases span both slopes, attachment orders, three camera rotations,
+point alpha modes, endpoint re-entry in either direction and overlapping short
+paths. There are zero path pixels in marker interiors, zero path/marker pixels
+through the nearer opaque mesh, full mesh coverage of every marker reference
+pixel, and surviving external path geometry. Short paths covered by overlapping
+disks disappear. The 24 zero-gap controls retain the original overlap in all
+12 nearer-slope cases (85–86 white interior pixels), confirming unchanged defaults.
+All reports identify the final native commit and library SHA256
+`e3c060fa8392f8f531b78e13b97e4d1a4c427a7667503e1ba773267fc4849d85`.
+Reports and captures are ignored under `build/endpoint-gap-{candidate,start-only,end-only,zero}/`.
+The actual annotation example with 4 px radii around 8 px markers was captured
+and visually inspected in `build/endpoint-depth/annotations-candidate.png`.
+
+The final GPT-6.1 Sol high audit reports no remaining P1/P2 findings. Its review
+caught and resolved shared vector input-layout compatibility and device-scale
+query sizing before the final native commit. Interactive candidate review is now
+the next gate; native integration into the maintained engine branch and supported
+baseline adoption follow acceptance and compatibility validation. Ordinary
+`just review annotations` still uses the existing configured runtime/defaults.
+The ignored local launcher `build/endpoint-depth/review_candidate.py` checks the
+reviewed source, binary and local binding identities before opening the candidate,
+and does not modify normal setup or approve another envrc.
+
 ## Linked observation tables and native endpoint reproduction — October 15 2026
 
 The user authorized the next two tracks after accepting generic annotations.
