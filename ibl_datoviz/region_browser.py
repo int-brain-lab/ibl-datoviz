@@ -1,4 +1,4 @@
-"""Compact permanent region browser and its optional scene/details windows."""
+"""Compact permanent region browser and its optional display/details windows."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class RegionBrowserSidebar:
         )
 
     def header(self, gui):
-        """Draw mapping, anatomical-side visibility and the Scene launcher."""
+        """Draw mapping, anatomical-side visibility and the Display settings launcher."""
         viewer, dvz = self.viewer, self.viewer.dvz
         self.sidebar_rect = self.rect(gui)
         width, height = self.available(gui)
@@ -80,7 +80,7 @@ class RegionBrowserSidebar:
             gui,
             b'##ibl_scene',
             'SETTINGS',
-            'Scene and display settings',
+            'Display settings',
             active=self.scene_open.value,
         ):
             self.scene_open.value = not self.scene_open.value
@@ -169,7 +169,7 @@ class RegionBrowserSidebar:
         if not self.scene_open.value:
             return
         viewer, dvz = self.viewer, self.viewer.dvz
-        visible = self._window(gui, b'Scene', self.scene_open)
+        visible = self._window(gui, b'Display settings', self.scene_open)
         try:
             self.scene_rect = self.rect(gui)
             if visible:

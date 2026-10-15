@@ -667,13 +667,13 @@ def test_scene_and_details_are_explicit_nonmodal_windows(viewer):
     viewer._draw_extra_gui = lambda _gui: controls.append('scene')
     viewer._gui_callback(None, None, None)
     assert controls == []
-    assert fake.windows == [b'Allen mouse brain atlas']
+    assert fake.windows == [b'Regions']
     fake.buttons = {b'##ibl_scene', b'##ibl_selection_details'}
     viewer._gui_callback(None, None, None)
     assert controls == ['scene']
     assert viewer._sidebar.scene_open.value and viewer._sidebar.details_open.value
     for title, opened, flags in fake.window_flags:
-        if title in (b'Scene', b'Selection details'):
+        if title in (b'Display settings', b'Selection details'):
             assert opened._obj.value
             assert flags == 1 << 19  # Vendored ImGuiWindowFlags_NoDocking.
     fake.buttons = {b'Close##ibl_scene', b'Close##ibl_details'}

@@ -367,3 +367,45 @@ def test_scientific_data_failure_balances_separate_window(viewer, result, droppe
         viewer._draw_data_tables_gui(None)
     assert calls == [(b'Scientific data', True), 'end']
     assert viewer._show_scientific_data.value
+
+
+def test_data_layer_controls_only_draw_for_enabled_layers(viewer):
+    drawn = []
+    viewer.dvz.dvz_gui_button = lambda *_: False
+    viewer.dvz.dvz_gui_checkbox = lambda *_: False
+    viewer.dvz.dvz_gui_collapsing_header = lambda *_: False
+    viewer._draw_point_gui = lambda _gui: drawn.append('points')
+    viewer._draw_plane_gui = lambda _gui: drawn.append('plane')
+    viewer._draw_insertion_gui = lambda _gui: drawn.append('insertions')
+    viewer._draw_layer_controls(None)
+    assert drawn == []
+    viewer.set_layer_visible('points', True)
+    viewer.set_layer_visible('plane', True)
+    viewer._draw_layer_controls(None)
+    assert drawn == ['plane']
+    assert viewer.camera_angles == (0.1, 0.2, 0.3)
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_data_layers_window_is_optional_and_balances_gui_scope(viewer, fail):
+    calls = []
+    viewer._sidebar = SimpleNamespace(
+        _window=lambda _gui, title, opened: calls.append((title, opened.value)) or True
+    )
+    viewer.dvz.dvz_gui_end = lambda *_: calls.append('end')
+
+    def draw(_gui):
+        calls.append('controls')
+        if fail:
+            raise RuntimeError('layer draw failed')
+
+    viewer._draw_layer_controls = draw
+    viewer._draw_auxiliary_gui(None)
+    assert calls == []
+    viewer._show_data_layers.value = True
+    if fail:
+        with pytest.raises(RuntimeError, match='layer draw failed'):
+            viewer._draw_auxiliary_gui(None)
+    else:
+        viewer._draw_auxiliary_gui(None)
+    assert calls == [(b'Data layers', True), 'controls', 'end']

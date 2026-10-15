@@ -20,6 +20,7 @@ from examples.review_common import (
     load_review_slice,
 )
 from ibl_datoviz import (
+    AtlasEnvelope,
     AtlasViewer,
     PointCollection,
     PointCollectionVisual,
@@ -86,9 +87,12 @@ class ScientificSceneReview(AtlasViewer):
     def __init__(self, mesh, **kwargs):
         self.review_controls = None
         self._show_scientific_data = ctypes.c_bool(False)
+        self._show_data_layers = ctypes.c_bool(False)
+        self.envelope_note = ''
         self.review_points = self.review_plane = None
         self._review_error = ''
         kwargs.setdefault('enable_hover', False)
+        kwargs.setdefault('selection_presentation', 'focus')
         super().__init__(mesh, **kwargs)
 
     def configure_review(self, sites, plane, paths=(), *, unavailable_note=''):
@@ -347,54 +351,89 @@ class ScientificSceneReview(AtlasViewer):
         )
 
     def _draw_extra_gui(self, gui):
+        """Keep atlas display choices separate from optional scientific data."""
         if self.review_controls is None:
             return
+        self.review_controls.draw(gui)
+        if self.envelope_note:
+            self._text(gui, self.envelope_note)
+
+    def _draw_viewport_toolbar_gui(self, gui):
+        super()._draw_viewport_toolbar_gui(gui)
+        self.dvz.dvz_gui_same_line(gui, 0.0, 16.0 * self.ui_scale)
+        if self.dvz.dvz_gui_button(gui, b'Data layers'):
+            self._show_data_layers.value = not self._show_data_layers.value
+
+    def _draw_auxiliary_gui(self, gui):
+        """Draw optional layer controls without consuming region tree height."""
+        if self.review_controls is None or not self._show_data_layers.value:
+            return
+        visible = self._sidebar._window(gui, b'Data layers', self._show_data_layers)
+        try:
+            if visible:
+                self._draw_layer_controls(gui)
+        finally:
+            self.dvz.dvz_gui_end(gui)
+
+    def _draw_layer_controls(self, gui):
+        if self.dvz.dvz_gui_button(gui, b'Close##ibl_data_layers'):
+            self._show_data_layers.value = False
         self.dvz.dvz_gui_checkbox(
-            gui, b'Show scientific data', ctypes.byref(self._show_scientific_data)
+            gui, b'Show data table', ctypes.byref(self._show_scientific_data)
         )
-        self.dvz.dvz_gui_separator_text(gui, b'Scientific scene')
+        for layer, label in (
+            ('sites', 'Recording sites'),
+            ('plane', 'Anatomical plane'),
+            ('insertions', 'Insertion paths'),
+        ):
+            control = self._layer_controls[layer]
+            if self.dvz.dvz_gui_checkbox(gui, label.encode(), ctypes.byref(control)):
+                self._action(self.set_layer_visible, layer, control.value)
+                control.value = self.layers[layer]
+            if not self.layers[layer]:
+                continue
+            if layer == 'sites':
+                low, high = self.value_range
+                self._text(gui, f'Mean firing rate (Hz): {low:.3g} - {high:.3g}.')
+                self._text(gui, 'Purple=low; teal=mid; yellow=high. Missing values are gray.')
+            elif layer == 'plane':
+                self._draw_plane_gui(gui)
+            elif layer == 'insertions':
+                self._draw_insertion_gui(gui)
+        if self._review_error:
+            self._text(gui, f'Change failed: {self._review_error}')
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Examples and presets', 0):
+            self._draw_examples_gui(gui)
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Advanced renderer comparison', 0):
+            control = self._layer_controls['points']
+            if self.dvz.dvz_gui_checkbox(gui, b'Comparison points', ctypes.byref(control)):
+                self._action(self.set_layer_visible, 'points', control.value)
+                control.value = self.layers['points']
+            if self.layers['points']:
+                self._draw_point_gui(gui)
+
+    def _draw_examples_gui(self, gui):
         labels = tuple(PRESET_LABELS[PRESETS.index(name)] for name in self._available_presets)
-        if self._combo(gui, 'Preset', self._preset_control, labels) and not self._action(
+        if self._combo(gui, 'Example', self._preset_control, labels) and not self._action(
             self.apply_preset, self._available_presets[self._preset_control.value]
         ):
             self._preset_control.value = self._available_presets.index(self.preset)
         if self.unavailable_note:
             self._text(gui, self.unavailable_note)
-        if self.dvz.dvz_gui_button(gui, b'Reset scientific scene'):
+        if self.dvz.dvz_gui_button(gui, b'Restore all example defaults'):
             self._action(self.reset_review)
-        if self._review_error:
-            self._text(gui, f'Change failed: {self._review_error}')
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Scientific layers', 0):
-            for layer, label in (
-                ('atlas', 'Atlas surface'),
-                ('sites', 'Analytic sites: FR colors'),
-                ('points', 'WBOIT recording-site points'),
-                ('plane', 'Physical anatomical plane'),
-                ('insertions', 'Insertion paths'),
-            ):
-                control = self._layer_controls[layer]
-                if self.dvz.dvz_gui_checkbox(gui, label.encode(), ctypes.byref(control)):
-                    self._action(self.set_layer_visible, layer, control.value)
-                    control.value = self.layers[layer]
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Point encoding', 0):
-            self._draw_point_gui(gui)
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Physical plane', 0):
-            self._draw_plane_gui(gui)
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Independent insertion styles', 0):
-            self._draw_insertion_gui(gui)
-        self.review_controls.draw(gui)
 
     def _draw_point_gui(self, gui):
         self._text(
             gui,
-            'These controls affect WBOIT recording-site points. '
-            'Analytic sites keep their independent firing-rate colors.',
+            'Comparison points use the same recorded coordinates. '
+            'Missing firing rates are hidden; uniform color shows every site.',
         )
         if self._combo(
             gui,
             'Color mode',
             self._point_mode_control,
-            ('Uniform site geometry', 'Mean firing rate (Hz)'),
+            ('Uniform color', 'Mean firing rate (Hz)'),
         ):
             self._action(
                 self.set_point_mode, ('uniform', 'scalar')[self._point_mode_control.value]
@@ -412,7 +451,7 @@ class ScientificSceneReview(AtlasViewer):
             self._point_opacity_control.value = self.point_opacity
 
     def _draw_plane_gui(self, gui):
-        if self._combo(gui, 'Composition', self._plane_mode_control, ('WBOIT', 'Mask')):
+        if self._combo(gui, 'Appearance', self._plane_mode_control, ('Transparent', 'Cutout')):
             self._action(self.set_plane_mode, ('wboit', 'mask')[self._plane_mode_control.value])
             self._plane_mode_control.value = ('wboit', 'mask').index(self.plane_mode)
         if self.dvz.dvz_gui_slider_float(
@@ -421,14 +460,14 @@ class ScientificSceneReview(AtlasViewer):
             self._action(self.set_plane_opacity, self._plane_opacity_control.value)
             self._plane_opacity_control.value = self.plane_opacity
         if self.plane_mode == 'mask' and self.dvz.dvz_gui_slider_float(
-            gui, b'Inclusive alpha cutoff', ctypes.byref(self._plane_cutoff_control), 0.0, 1.0
+            gui, b'Cutout threshold', ctypes.byref(self._plane_cutoff_control), 0.0, 1.0
         ):
             self._action(self.set_plane_mode, 'mask', cutoff=self._plane_cutoff_control.value)
             self._plane_cutoff_control.value = self.plane_cutoff
         self._text(
             gui,
-            'Mask writes physical depth where effective alpha is at least '
-            'the cutoff; zero alpha always leaves a hole.',
+            'Cutout keeps pixels at or above the threshold. '
+            'Fully transparent pixels leave a hole.',
         )
 
     def _draw_insertion_gui(self, gui):
@@ -525,6 +564,11 @@ def main():
     parser.add_argument('asset_root', type=Path)
     parser.add_argument('volume_root', type=Path)
     parser.add_argument('--fixture', type=Path, default=FIXTURE)
+    parser.add_argument(
+        '--envelope-root', type=Path,
+        default=Path(__file__).resolve().parents[1] / 'build' / 'allen-root',
+        help='prepared Allen root source for the neutral selection outline',
+    )
     parser.add_argument('--paths', type=Path, default=DEFAULT_PATHS)
     parser.add_argument('--provenance', type=Path)
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='beryl')
@@ -555,7 +599,14 @@ def main():
         ui_scale=args.ui_scale,
         enable_hover=args.hover,
         enable_interaction=True,
+        fit_workarea=args.offscreen is None,
     ) as viewer:
+        if args.envelope_root.is_dir():
+            viewer.set_selection_envelope(
+                AtlasEnvelope.from_source(args.envelope_root, viewer.mesh_data)
+            )
+        else:
+            viewer.envelope_note = 'Selection outline unavailable: prepare the Allen root source.'
         viewer.configure_review(sites, plane, paths, unavailable_note=note)
         viewer.apply_preset(args.preset)
         finish_review(viewer, args, 'IBL scientific scene review')

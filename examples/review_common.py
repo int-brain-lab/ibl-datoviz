@@ -17,8 +17,8 @@ def add_review_arguments(parser):
     """Add consistent review options without changing native discovery."""
     parser.add_argument('--frames', type=int, default=0, help='zero runs until closed')
     parser.add_argument('--ui-scale', type=float, default=1.0)
-    parser.add_argument('--width', type=int, default=1400)
-    parser.add_argument('--height', type=int, default=1000)
+    parser.add_argument('--width', type=int, default=2800)
+    parser.add_argument('--height', type=int, default=2000)
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
 
 
@@ -124,14 +124,17 @@ class ReviewControls:
     def draw(self, gui):
         """Draw stable control IDs and read state back from the authoritative model."""
         dvz = self.viewer.dvz
-        if dvz.dvz_gui_collapsing_header(gui, b'Atlas appearance and region styles', 0):
+        if dvz.dvz_gui_collapsing_header(gui, b'3D atlas', 0):
+            visible = ctypes.c_bool(self.viewer._surface_visible)
+            if dvz.dvz_gui_checkbox(gui, b'Atlas visible', ctypes.byref(visible)):
+                self._attempt(self.viewer.set_surface_visible, visible.value)
             self._draw_styles(gui)
         if self.error:
             dvz.dvz_gui_text(gui, f'Change failed: {self.error}'.encode())
 
     def _draw_styles(self, gui):
         viewer, dvz = self.viewer, self.viewer.dvz
-        dvz.dvz_gui_text(gui, b'3D surface styles; slice labels keep mapping colors.')
+        dvz.dvz_gui_text(gui, b'Slice labels keep mapping colors.')
         opacity = ctypes.c_float(viewer.surface_opacity)
         if dvz.dvz_gui_slider_float(gui, b'Surface opacity', ctypes.byref(opacity), 0, 1):
             self._attempt(viewer.set_surface_opacity, opacity.value)

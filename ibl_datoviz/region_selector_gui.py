@@ -230,7 +230,15 @@ class RegionSelectorGui:
             else len(candidate.visible_rows())
         )
         dvz.dvz_gui_text(gui, f'{count} regions'.encode())
+        # Keep the inverse tree actions visually paired. Persistent multiselect
+        # is a separate mode, with a larger gap before its button.
         dvz.dvz_gui_same_line(gui, 0.0, gap)
+        if sidebar.icon(gui, b'##ibl_collapse_all', 'COLLAPSE', 'Collapse all'):
+            candidate.set_all_expanded(False)
+        dvz.dvz_gui_same_line(gui, 0.0, 2.0 * scale)
+        if sidebar.icon(gui, b'##ibl_expand_all', 'EXPAND', 'Expand all'):
+            candidate.set_all_expanded(True)
+        dvz.dvz_gui_same_line(gui, 0.0, 16.0 * scale)
         if sidebar.icon(
             gui,
             b'##ibl_multiple',
@@ -239,12 +247,6 @@ class RegionSelectorGui:
             active=candidate.multiple,
         ):
             candidate.multiple = not candidate.multiple
-        dvz.dvz_gui_same_line(gui, 0.0, gap)
-        if sidebar.icon(gui, b'##ibl_collapse_all', 'COLLAPSE', 'Collapse all'):
-            candidate.set_all_expanded(False)
-        dvz.dvz_gui_same_line(gui, 0.0, gap)
-        if sidebar.icon(gui, b'##ibl_expand_all', 'EXPAND', 'Expand all'):
-            candidate.set_all_expanded(True)
         label = {
             'anatomy': 'Anatomy order',
             'value-asc': 'Value ascending',
