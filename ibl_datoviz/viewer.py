@@ -1771,7 +1771,7 @@ class AtlasViewer:
         self.dvz.dvz_gui_set_next_item_width(gui, 160.0)
         if self.dvz.dvz_gui_slider_float(
             gui,
-            b'Explode selected region' if self.anatomy_presentation == 'major' else b'Explode',
+            b'Explode selection' if self.anatomy_presentation == 'major' else b'Explode',
             ctypes.byref(self._explode_control),
             0.0,
             1.0,
