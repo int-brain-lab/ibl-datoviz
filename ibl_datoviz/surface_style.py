@@ -95,12 +95,12 @@ class SurfaceStyle:
             self.hemispheres[side] = bool(visible)
 
     def visible_faces(self, mapping):
-        """Return canonical face membership; zero opacity suppresses picking too."""
-        mask = np.ones(len(self.mesh.face_presentation_ids), dtype=bool)
+        """Exclude unmapped faces from both rendering and picking, like the web."""
+        ids = self.mesh.face_mapping_ids(mapping)
+        mask = ids != 0
         for side, visible in self.hemispheres.items():
             if not visible:
                 mask[self.face_sides == side] = False
-        ids = self.mesh.face_mapping_ids(mapping)
         for (style_mapping, region_id), style in self.regions.items():
             if style_mapping == mapping and (
                 not style.visible

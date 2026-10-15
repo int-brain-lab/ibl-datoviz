@@ -9,6 +9,29 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Review readiness: unmapped surface visibility — October 15 2026
+
+Unmapped presentations are now omitted from native surface rendering and FACE
+queries in the active mapping, matching web v2's null-ID handling. This uses the
+existing transactional face/index/key filter; mapping switches restore mapped
+faces and preserve hemisphere controls and authored styles. Raw canonical mesh
+arrays and colors remain available unchanged. No engine, anatomy, web source,
+binary asset or dependency pin changed in this follow-up.
+
+For D070, this omits eighteen Beryl presentations (1,244 private draw triangles);
+Allen and Cosmos have no unmapped presentations. The previous CI run at
+`b0e1268` passed. Local validation passes 594 tests with zero skips and both real
+asset roots, strict doctor, lint and docs. A layered native regression checks
+that an unmapped foreground neither draws nor occludes a mapped region behind
+it, an all-unmapped mapping draws only background, and switching back restores
+the source surface. CPU regressions exercise partial/all-unmapped startup,
+selection/hover, explosion and hemisphere/mapping transitions. Real D070 checks
+cover all eighteen mapping/hemisphere/explode states, signed picks and combined
+versus isolated-side silhouette equality. Ignored captures and logs are under
+`build/unmapped-review/`; the Beryl capture was inspected. Both review apps also
+pass bounded startup at UI scale 1.5 on an isolated display. Manual review is the
+next gate; hover stays off by default and scientific layers stay hidden initially.
+
 ## Hemisphere coverage and reserved browsing — October 15 2026
 
 Datoviz is pinned to `bf9794f7ba658c7c6256bab054948661d26db403` on `rc4/scientific-3d`. The rebuilt

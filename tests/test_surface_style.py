@@ -158,8 +158,52 @@ def test_invalid_styles_do_not_mutate_viewer_or_gpu(mesh, method, args):
 def test_hemisphere_membership_uses_canonical_side_when_mapping_has_void(mesh):
     state = SurfaceStyle(mesh)
     state.set_hemisphere_visible('left', False)
-    expected = state.face_sides == 'right'
+    expected = (state.face_sides == 'right') & (mesh.face_mapping_ids('beryl') != 0)
     np.testing.assert_array_equal(state.visible_faces('beryl'), expected)
+
+
+@pytest.mark.parametrize('unmapped_sides', [('left',), ('left', 'right')])
+def test_unmapped_presentations_stay_hidden_through_mapping_and_interaction(mesh, unmapped_sides):
+    mesh = replace(
+        mesh,
+        presentations=tuple(
+            {
+                **p,
+                'mappings': {
+                    **p['mappings'],
+                    'beryl': None if p['side'] in unmapped_sides else 8,
+                },
+            }
+            for p in mesh.presentations
+        ),
+    )
+    fake = FakeDatoviz()
+    with AtlasViewer(mesh, datoviz=fake, mapping='beryl') as viewer:
+        render = viewer._surface_mesh
+        mapped = render.face_mapping_ids('beryl') != 0
+        np.testing.assert_array_equal(viewer._surface_face_mask, mapped)
+        if mapped.any():
+            np.testing.assert_array_equal(
+                last_keys(fake), render.face_mapping_ids('beryl')[mapped]
+            )
+            uploaded = [call[1] for call in fake.calls if call[0] == 'indices'][-1]
+            np.testing.assert_array_equal(
+                uploaded, render.indices.reshape(-1, 3)[mapped].reshape(-1)
+            )
+        else:
+            assert ('visible', 'mesh', False) in fake.calls
+        viewer.set_selected_region_ids((8,))
+        viewer._set_hovered_region_ids((8,))
+        viewer.set_explode(1)
+        viewer.set_hemisphere('left')
+        assert not viewer._surface_face_mask.any()
+        viewer.set_hemisphere('both')
+        np.testing.assert_array_equal(viewer._surface_face_mask, mapped)
+        viewer.set_mapping('allen')
+        assert viewer._surface_face_mask.all()
+        np.testing.assert_array_equal(last_keys(fake), render.face_mapping_ids('allen'))
+        viewer.set_mapping('beryl')
+        np.testing.assert_array_equal(viewer._surface_face_mask, mapped)
 
 
 def test_linked_selection_remains_signed_when_selected_region_hidden(mesh):

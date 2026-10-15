@@ -121,3 +121,60 @@ def test_native_boundary_retains_signed_queries_through_mapping_explode_and_deco
     except RuntimeError as error:
         _skip_without_native_datoviz(error)
         raise
+
+
+def test_native_unmapped_surface_neither_draws_nor_occludes_mapped_surface():
+    source = crossing_surface()
+    # Two overlapping quads: an unmapped foreground must reveal the mapped back.
+    positions = np.concatenate((source.positions.copy(), source.positions.copy()))
+    positions[:4, 2], positions[4:, 2] = 0.15, -0.15
+    source = replace(
+        source,
+        positions=positions,
+        positions_um=positions * 1000,
+        normals=np.tile(np.array([0, 0, 1], np.float32), (8, 1)),
+        explode_offsets=np.zeros((8, 3), np.float32),
+        component_ids=np.repeat(np.array([0, 1], np.uint16), 4),
+        presentation_ids=np.repeat(np.array([0, 1], np.int32), 4),
+        indices=np.concatenate((source.indices, source.indices + 4)),
+        face_presentation_ids=np.array([0, 0, 1, 1], np.int32),
+        presentations=(
+            {
+                'presentation_id': 0,
+                'side': 'left',
+                'mappings': {'allen': -315, 'beryl': None, 'cosmos': None},
+            },
+            {
+                'presentation_id': 1,
+                'side': 'right',
+                'mappings': {'allen': 315, 'beryl': 8, 'cosmos': None},
+            },
+        ),
+        _presentation_boundary=None,
+    )
+    palette = {-315: (220, 30, 40), 315: (30, 180, 40), 8: (30, 180, 40)}
+    try:
+        with AtlasViewer(source, width=256, height=192, palette=palette) as viewer:
+            viewer._create_view(offscreen=True, title='Unmapped surface occlusion')
+            assert query_at(viewer, 128, 96, 1) == (True, -315)
+            foreground = viewer.dvz.dvz_view_capture_rgba(viewer.view).copy()
+            viewer.hide_region(-315)
+            assert query_at(viewer, 128, 96, 2) == (True, 315)
+            reference = viewer.dvz.dvz_view_capture_rgba(viewer.view).copy()
+            viewer.set_mapping('beryl')
+            assert query_at(viewer, 128, 96, 3) == (True, 8)
+            np.testing.assert_array_equal(viewer.dvz.dvz_view_capture_rgba(viewer.view), reference)
+            assert not np.array_equal(foreground, reference)
+            viewer.set_mapping('cosmos')
+            assert not query_at(viewer, 128, 96, 4)[0]
+            rgba = viewer.dvz.dvz_view_capture_rgba(viewer.view)
+            assert np.all(rgba[..., :3] == [29, 33, 39])
+            viewer.set_mapping('allen')
+            viewer.show_region(-315)
+            assert query_at(viewer, 128, 96, 5) == (True, -315)
+            np.testing.assert_array_equal(
+                viewer.dvz.dvz_view_capture_rgba(viewer.view), foreground
+            )
+    except RuntimeError as error:
+        _skip_without_native_datoviz(error)
+        raise

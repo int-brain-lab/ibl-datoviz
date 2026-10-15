@@ -128,7 +128,9 @@ an absolute region ID; omitting it targets the supplied signed ID exactly.
 Unknown or unmapped IDs fail before native changes. Overrides are stored per
 mapping, so switching back restores that mapping's region styles. Global
 hemisphere visibility persists across mappings and uses verified presentation
-side metadata, including unmapped faces.
+side metadata. Presentations without an ID in the active mapping are excluded
+from rendering and picking, matching the web selector; switching mappings can
+restore them when they have an ID.
 
 ```python
 viewer.set_region_color(-315, (220, 80, 40))

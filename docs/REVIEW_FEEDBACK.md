@@ -83,13 +83,20 @@ known zero clip values or coplanar source coordinates. The correction encodes th
 required half-open rule explicitly and keeps the complete source-triangle
 footprint in both copies, avoiding dependence on shared-edge raster ownership.
 
-This batch targets hemisphere coverage, signed picking and explosion parity.
-An adjacent audit found a separate difference: web hides presentations whose
-active mapping is null, whereas native currently renders its existing gray
-missing-ID context. D070 has eighteen such Beryl presentations. This behavior
-is recorded for follow-up rather than described as full rendering parity.
+The hemisphere batch targets coverage, signed picking and explosion parity.
+Its adjacent audit found that web hides presentations whose active mapping is
+null while native rendered gray missing-ID context. The review-readiness
+follow-up now excludes those faces from both rendering and picking. For D070,
+this removes eighteen unmapped Beryl presentations (1,244 private triangles);
+Allen and Cosmos remain fully mapped. A native layered regression verifies
+that these faces cannot occlude a mapped region behind them, all-unmapped
+mappings render only background, and mapping switches restore the surface.
+Selection, hover and hemisphere changes cannot reveal unmapped faces. Automated
+checks pass; manual acceptance remains open. This closes the recorded null-ID
+visibility difference without claiming full rendering parity between stacks.
 
-Ignored evidence is in `build/hemisphere-audit/` and `build/hemisphere-review/`.
+Ignored evidence is in `build/hemisphere-audit/`, `build/hemisphere-review/` and
+`build/unmapped-review/`.
 
 ## Hover profiling
 
