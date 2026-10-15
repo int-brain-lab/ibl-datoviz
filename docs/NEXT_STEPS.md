@@ -9,6 +9,13 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## App 1 accepted; API review next — October 15 2026
+
+The reviewer validates the current recording-context demo, including the latest
+interaction corrections. The app-1 visual gate is accepted; the immediate next
+step is reviewing the existing public API and the provisional recording/layer
+facade. App 2 and further platform evidence retain their own review scope.
+
 ## Consistent reset and panned rotation — October 15 2026
 
 The viewer registers its startup orientation with `dvz_arcball_initial`, so native

@@ -7,6 +7,12 @@ in dated implementation handoffs.
 
 ## Feedback and status
 
+The reviewer accepted the current app-1 recording-context demo after the reset
+and panned-rotation corrections on October 15, 2026: "the demo it is good now".
+This closes that visual gate and moves the conversation to a quick public API
+review. Earlier requests and their validation details remain historical evidence;
+this acceptance does not establish app-2 or additional platform acceptance.
+
 | Point | Observation or request | Status and acceptance |
 | --- | --- | --- |
 | Larger controls | Increase UI scale for manual review. | Available through `--ui-scale 1.5`; retain the chosen scale while reviewing. |

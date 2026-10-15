@@ -1,17 +1,16 @@
 # Real-data interactive example roadmap
 
-Status: the first recording-context prototype is implemented and awaits manual acceptance. It supersedes the app-1 visualization and floating Data layers experience rejected in the October 15 review. Earlier validation remains historical evidence, not UX acceptance.
+Status: the reviewer accepted the current app-1 recording-context demo after the reset and panned-rotation corrections. The next gate is public API review. App 2 and further platforms have separate acceptance scope.
 
 ## First visual prototype available — October 15 2026
 
-The first gate is implemented and awaits manual review: six shared source-native
+The first visual gate is accepted: six shared source-native
 context landmarks, the reference-oriented camera, one visible real recording,
 context-preserving selection and persistent dockable Layers. This supersedes the
 rejected focus/isolation default. See [the review commands and checklist](review-apps.md#app-1-where-did-we-record)
 and [the implementation evidence](NEXT_STEPS.md#first-recording-context-visual-gate-october-15-2026).
-The approved sequence stops here until scientific visual acceptance; API naming,
-multiple-recording layer handles, alignment comparisons and new scalar/voxel
-workflows remain later phases.
+The next gate reviews API naming and multiple-recording layer handles. Alignment
+comparisons and new scalar/voxel workflows remain later phases.
 
 ## Shared data and IBL controller feasibility — October 15 2026
 
