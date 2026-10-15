@@ -21,7 +21,7 @@ The first goal is a scientist understanding where a recording lies in anatomy wi
 
 ### Recommended default experience
 
-- Use a named oblique dorsal camera matching the review reference, with olfactory bulbs toward the lower left and cerebellum toward the upper right. Determine actual camera parameters through visual comparison, not guessed Euler angles.
+- Use a named lateral-oblique camera matching the latest review reference, with olfactory bulbs toward the lower left and cerebellum toward the upper right. Determine actual camera parameters through visual comparison, not guessed Euler angles.
 - Start the recording demo with one real BWM recording's sites and supplied path already visible, inside lightly transparent, muted, colored major anatomical structures. An explicit anatomy-only preset can be opaque.
 - Keep the Regions browser dominant. Provide a compact persistent, dockable Layers panel with clearly named rows, visibility state, color swatch and useful count. Ordinary visibility should not require opening a floating settings window. Keep style details secondary and the viewport unobstructed.
 - Highlight selection without removing or restyling the rest of the context. Accent an already displayed context structure at its authored opacity; reveal a fine selected region as a separate restrained translucent overlay. Do not make selected anatomy an opaque obstacle to its recording sites.
