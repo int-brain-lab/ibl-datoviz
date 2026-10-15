@@ -126,7 +126,7 @@ wheels = [
 [[package]]
 name = "datoviz"
 version = "0.4.0rc2"
-source = { git = "https://github.com/datoviz/datoviz.git?rev=45c82fa4ca60855dc525e80a6e7fe4cc5dbb2cbb#45c82fa4ca60855dc525e80a6e7fe4cc5dbb2cbb" }
+source = { git = "https://github.com/datoviz/datoviz.git?rev=0ae953d3f9e07695d99722eaf9cbcc6a46dbbffa#0ae953d3f9e07695d99722eaf9cbcc6a46dbbffa" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -175,7 +175,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "datoviz", git = "https://github.com/datoviz/datoviz.git?rev=45c82fa4ca60855dc525e80a6e7fe4cc5dbb2cbb" },
+    { name = "datoviz", git = "https://github.com/datoviz/datoviz.git?rev=0ae953d3f9e07695d99722eaf9cbcc6a46dbbffa" },
     { name = "ibl-anatomy", git = "https://github.com/int-brain-lab/ibl-anatomy.git?rev=81bd7d79044e4dc3a528abe50a0296381143f03e" },
     { name = "numpy", specifier = ">=1.24" },
 ]
