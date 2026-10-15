@@ -59,6 +59,8 @@ def _layer_controls(viewer, gui, layer, key):
     meaning = layer.payload.provenance.get('position_meaning')
     if meaning:
         _text(viewer, gui, meaning)
+    if dvz.dvz_gui_button(gui, f'Observation table##{key}'.encode()):
+        viewer.tables.show(layer)
     if not layer.refs:
         return
     selected = viewer.selection.observations

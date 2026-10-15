@@ -65,7 +65,12 @@ class ComponentVisual:
             raise RuntimeError('component is closed')
 
     def _positions(self, coordinates):
-        transformed = coordinates if self.transform is None else self.transform(coordinates)
+        # Empty populations own no drawable positions; atlas normalization needs bounds.
+        transformed = (
+            coordinates
+            if self.transform is None or not len(coordinates)
+            else self.transform(coordinates)
+        )
         result = owned(transformed, np.float32)
         if result.shape != coordinates.shape or not np.isfinite(result).all():
             raise ValueError('display transform must return finite positions of the same shape')

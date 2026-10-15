@@ -26,6 +26,7 @@ from .envelope import AtlasEnvelope
 from .gui_data import create_probe_table, create_region_table, create_region_tree
 from .insertions import InsertionCollectionVisual
 from .layers import LayerRegistry
+from .observation_tables import ObservationTables
 from .ontology import AtlasTreeModel
 from .payloads import WorldFrame
 from .presentation import region_presentation, scalar_colors
@@ -246,6 +247,7 @@ class AtlasViewer:
         self.selection = SelectionController(self)
         self.anatomy = AnatomyController(self)
         self.camera = CameraController(self)
+        self.tables = ObservationTables(self)
         self._layer_registry = LayerRegistry(
             self, before_mutation=self.selection._check_mutation,
             on_remove=self.selection._removed, validate_frame=self._validate_layer_frame,
@@ -1812,6 +1814,8 @@ class AtlasViewer:
 
         self._draw_auxiliary_gui(gui)
         self._draw_scientific_layers_gui(gui)
+        if getattr(self, 'tables', None) is not None:
+            self.tables.draw(gui)
 
     def _draw_sidebar_gui(self, gui) -> None:
         """Keep the browser permanent; scene controls live in an ordinary window."""
@@ -2378,6 +2382,8 @@ class AtlasViewer:
                 self.dvz.dvz_app_stop(self.app)
             return
         datoviz = getattr(self, 'dvz', None)
+        if getattr(self, 'tables', None) is not None:
+            self.tables._close()
         if getattr(self, '_layer_registry', None) is not None:
             self._layer_registry.close()
         if getattr(self, 'selection', None) is not None:

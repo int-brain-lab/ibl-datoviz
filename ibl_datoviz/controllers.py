@@ -112,7 +112,21 @@ class SelectionController:
             raise ValueError('observation reference is foreign, removed or unknown')
         if refs == self._observations:
             return
-        registry.update_selection(refs)
+        tables = getattr(self.viewer, 'tables', None)
+        if tables is not None:
+            tables._set_selection(refs)
+        try:
+            registry.update_selection(refs)
+        except Exception:
+            if tables is not None and not self.viewer._closed:
+                try:
+                    tables._set_selection(self._observations)
+                except Exception as rollback_error:
+                    self.viewer.close()
+                    raise RuntimeError(
+                        'observation table rollback failed; viewer closed'
+                    ) from rollback_error
+            raise
         self._observations = refs
         self._publish('observations')
 
@@ -157,6 +171,9 @@ class SelectionController:
         self._publish('clear')
 
     def _removed(self, refs):
+        tables = getattr(self.viewer, 'tables', None)
+        if tables is not None:
+            tables._remove(refs)
         removed = set(refs)
         self._observations = tuple(ref for ref in self._observations if ref not in removed)
         self._publish('removed')
