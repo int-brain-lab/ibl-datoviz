@@ -60,7 +60,11 @@ contracts do not assume mouse, Allen anatomy or IBL. Frame evidence, byte
 integrity, scientific source validation and insertion alignment are distinct.
 Legacy releases with no declaration retain an empty coordinate-declaration list
 and unknown source validation; channel coordinate columns remain intact. Full shared-reader suite: **369 passed, 13 existing skips**; focused
-contract/reader checks, Ruff and mypy pass. Production `ibl-ai-agent` is untouched.
+contract/reader checks, Ruff and mypy pass. Those 13 skips are intentional
+`local_data` opt-in exclusions (enable with `pytest -m local_data` or
+`IBL_AI_AGENT_LOCAL_DATA=1`), not missing dependencies or confirmed missing assets.
+Exact reasons are in `build/ibl-integration/reader-skip-reasons.log`. Production
+`ibl-ai-agent` is untouched.
 
 Final package validation on both the exact f77 source/original binary and the
 separate endpoint candidate: **915 passed, one optional registered 10 µm asset-root
