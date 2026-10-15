@@ -34,6 +34,20 @@ class FakeTreeTextSpan(ctypes.Structure):
     _fields_ = [('start', ctypes.c_uint32), ('length', ctypes.c_uint32)]
 
 
+class FakeTreeLayout(ctypes.Structure):
+    _fields_ = [('flags', ctypes.c_uint32)] + [
+        (name, ctypes.c_float)
+        for name in (
+            'indent_em',
+            'row_padding_em',
+            'item_spacing_em',
+            'disclosure_gap_em',
+            'swatch_gap_em',
+            'secondary_gap_em',
+        )
+    ]
+
+
 class FakeTreeAnnotation(ctypes.Structure):
     _fields_ = [
         ('flags', ctypes.c_uint32),
@@ -56,6 +70,8 @@ class FakeStateStyle(ctypes.Structure):
 
 
 class FakeDatoviz:
+    DVZ_GUI_TREE_LAYOUT_FLAGS_EXACT_SPACING = 1
+    DVZ_GUI_TREE_LAYOUT_FLAGS_READABLE_SECONDARY = 2
     DvzSelectionItem = FakeSelectionItem
     DvzGuiTreeTextSpan = FakeTreeTextSpan
     DVZ_GUI_DATA_WIDGET_FLAGS_CONTROLLED = 4
@@ -252,6 +268,14 @@ class FakeDatoviz:
 
     def dvz_gui_tree(self, *_args):
         return self._handle('region_tree')
+
+    @staticmethod
+    def dvz_gui_tree_layout():
+        return FakeTreeLayout()
+
+    def dvz_gui_tree_set_layout(self, _tree, layout):
+        self.calls.append(('tree_layout', layout._obj.flags, layout._obj.item_spacing_em))
+        return 0
 
     @staticmethod
     def dvz_gui_tree_annotation():

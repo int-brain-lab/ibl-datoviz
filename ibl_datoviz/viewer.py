@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ctypes
-import textwrap
 from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
@@ -24,6 +23,7 @@ from .gui_data import create_probe_table, create_region_table, create_region_tre
 from .insertions import InsertionCollectionVisual
 from .ontology import AtlasTreeModel
 from .presentation import region_presentation, scalar_colors
+from .region_browser import RegionBrowserSidebar
 from .region_selector_gui import RegionSelectorGui, selector_from_tree, signed_selection
 from .selection import (
     mesh_ids_from_keys,
@@ -138,6 +138,7 @@ class AtlasViewer:
         self.surface_opacity = surface_opacity
         self.ui_scale = float(ui_scale)
         self.sidebar_width = float(sidebar_width)
+        self._sidebar = RegionBrowserSidebar(self)
         self.tree_root_acronym = tree_root_acronym
         self.enable_interaction = bool(enable_interaction)
         self.enable_hover = bool(enable_hover)
@@ -1426,47 +1427,25 @@ class AtlasViewer:
                 self.dvz.dvz_gui_tooltip(gui, self._hovered_region_label.encode())
 
     def _draw_sidebar_gui(self, gui) -> None:
-        """Keep controls, selection and browser in independently bounded areas."""
-        # Keep scene controls independently scrollable. The browser below
-        # always retains its share of the sidebar, even with all controls open.
-        rect = self.dvz.DvzRect()
-        height = self.height
-        if self.dvz.dvz_gui_current_window_rect(gui, ctypes.byref(rect)):
-            height = rect.height
-        # Reserve search/selector controls and several tree rows before sharing
-        # the remaining space between scene controls and selection details.
-        remaining = max(1.0, height - 370.0 * self.ui_scale)
-        summary_height = min(105.0 * self.ui_scale, max(20.0 * self.ui_scale, remaining * 0.3))
-        controls_height = min(
-            220.0 * self.ui_scale,
-            max(40.0 * self.ui_scale, remaining - summary_height - 25.0 * self.ui_scale),
-        )
-        controls_visible = self.dvz.dvz_gui_begin_child(
-            gui, b'Atlas scene controls', 0.0, controls_height, 0
-        )
-        region_table_changed = table_changed = False
+        """Keep the browser permanent; scene controls live in an ordinary window."""
         try:
-            if controls_visible:
-                self._draw_sidebar_controls_gui(gui)
-                region_table_changed, table_changed = self._draw_data_tables_gui(gui)
+            self._sidebar.header(gui)
+            self._sidebar.scene(gui)
+            region_table_changed, table_changed = self._draw_data_tables_gui(gui)
+            candidate = self._selector_gui.candidate()
+            candidate.values = self._selector_values(candidate)
+            self._selector_gui.value_name = (
+                self.region_data.value_name if self.region_data is not None else 'Value'
+            )
+            self._selector_gui.controls(gui, candidate, self._tree_filter, self._sidebar)
         except Exception:
             self._restore_sidebar_feedback()
             raise
-        finally:
-            self.dvz.dvz_gui_end_child(gui)
-        clear_selection_requested = self._draw_selection_summary_gui(gui, summary_height)
-        self.dvz.dvz_gui_separator_text(gui, b'Browse regions')
-        self.dvz.dvz_gui_text(gui, b'Search by name or acronym')
-        candidate = self._selector_gui.candidate()
-        if clear_selection_requested:
-            candidate.set_selected(())
-        candidate.values = self._selector_values(candidate)
-        self._selector_gui.value_name = (
-            self.region_data.value_name if self.region_data is not None else 'Value'
+        tree_visible = self.dvz.dvz_gui_begin_child(
+            gui, b'Atlas region hierarchy', 0.0, self._sidebar.reserve_tree(gui), 0
         )
-        self._selector_gui.controls(gui, candidate, self._tree_filter)
-        tree_visible = self.dvz.dvz_gui_begin_child(gui, b'Atlas region hierarchy', 0.0, 0.0, 0)
         try:
+            self._sidebar.tree_rect = self._sidebar.rect(gui)
             self._selector_gui.upload(candidate)
             events = ()
             if tree_visible:
@@ -1475,6 +1454,14 @@ class AtlasViewer:
                 if dropped:
                     raise RuntimeError('region selector input batch dropped')
             self._selector_gui.intents(candidate, events)
+        except Exception:
+            self._restore_sidebar_feedback()
+            raise
+        finally:
+            self.dvz.dvz_gui_end_child(gui)
+        try:
+            if self._sidebar.footer(gui):
+                candidate.set_selected(())
             self._sync_selection_highlight(
                 tree_changed=candidate.selected != self._selector_model.selected,
                 table_changed=table_changed,
@@ -1484,38 +1471,7 @@ class AtlasViewer:
         except Exception:
             self._restore_sidebar_feedback()
             raise
-        finally:
-            self.dvz.dvz_gui_end_child(gui)
-
-    def _draw_selection_summary_gui(self, gui, height):
-        """Keep selection details bounded so long selections cannot move the tree."""
-        clear_selection_requested = False
-        self.dvz.dvz_gui_separator_text(gui, b'Selection')
-        selection_visible = self.dvz.dvz_gui_begin_child(
-            gui, b'Atlas selection summary', 0.0, height, 0
-        )
-        try:
-            if selection_visible:
-                if self._selected_region_ids:
-                    for region_id in self._selected_region_ids[:6]:
-                        label = (
-                            self.tree_model.describe(region_id)
-                            if self.tree_model
-                            else str(region_id)
-                        )
-                        for part in label.split(' — '):
-                            for line in textwrap.wrap(part, width=32):
-                                self.dvz.dvz_gui_text(gui, line.encode())
-                    if len(self._selected_region_ids) > 6:
-                        remaining = len(self._selected_region_ids) - 6
-                        self.dvz.dvz_gui_text(gui, f'+ {remaining} more regions'.encode())
-                    if self.dvz.dvz_gui_button(gui, b'Clear selection'):
-                        clear_selection_requested = True
-                else:
-                    self.dvz.dvz_gui_text(gui, b'Click a region to select it')
-        finally:
-            self.dvz.dvz_gui_end_child(gui)
-        return clear_selection_requested
+        self._sidebar.details(gui)
 
     def _restore_sidebar_feedback(self):
         """Restore retained widgets after a partially failing frame update."""
@@ -1531,17 +1487,7 @@ class AtlasViewer:
             ) from rollback_error
 
     def _draw_sidebar_controls_gui(self, gui) -> None:
-        """Draw controls inside the bounded scene pane above the region browser."""
-        self.dvz.dvz_gui_text(gui, b'CCF 2017 anatomy')
-        self.dvz.dvz_gui_text(gui, b'Atlas mapping')
-        if self.dvz.dvz_gui_combo(
-            gui,
-            b'##ibl_atlas_mapping',
-            ctypes.byref(self._mapping_control),
-            self._mapping_items,
-            len(self._mapping_items),
-        ):
-            self.set_mapping(self.mesh_data.mapping_names[self._mapping_control.value])
+        """Draw all optional scene controls in the explicit Scene window."""
         if self.dvz.dvz_gui_collapsing_header(gui, b'Appearance', 0):
             self.dvz.dvz_gui_text(gui, b'Region separation')
             if self.dvz.dvz_gui_slider_float(
@@ -1557,23 +1503,32 @@ class AtlasViewer:
         """Draw optional controls supplied by specialized viewers."""
 
     def _draw_data_tables_gui(self, gui):
-        """Draw data tables and return region/probe selection changes."""
-        changes = []
-        for title, table in (
-            (b'Region values', self.region_table),
-            (b'Probe sites', self.probe_table),
-        ):
-            changed = False
-            if table is not None:
-                self.dvz.dvz_gui_separator_text(gui, title)
-                result, events, dropped = self.dvz.dvz_gui_table_draw(gui, table)
-                self._check(result, 'data table draw')
-                if dropped:
-                    raise RuntimeError('data table input batch dropped')
-                changed = any(
-                    event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED for event in events
-                )
-            changes.append(changed)
+        """Draw retained tables in a separate window without consuming browser space."""
+        if self.region_table is None and self.probe_table is None:
+            return False, False
+        visible = self._sidebar._window(gui, b'Scientific data', None, details=True)
+        changes = [False, False]
+        try:
+            if visible:
+                for index, (title, table) in enumerate(
+                    (
+                        (b'Region values', self.region_table),
+                        (b'Probe sites', self.probe_table),
+                    )
+                ):
+                    if table is None:
+                        continue
+                    self.dvz.dvz_gui_separator_text(gui, title)
+                    result, events, dropped = self.dvz.dvz_gui_table_draw(gui, table)
+                    self._check(result, 'data table draw')
+                    if dropped:
+                        raise RuntimeError('data table input batch dropped')
+                    changes[index] = any(
+                        event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED
+                        for event in events
+                    )
+        finally:
+            self.dvz.dvz_gui_end(gui)
         return tuple(changes)
 
     def _set_tree_selection(self, region_ids: Sequence[int]) -> None:
@@ -1843,7 +1798,11 @@ class AtlasViewer:
             if self.region_data is not None:
                 self._replace_region_table()
             config = self.dvz.dvz_gui_config()
-            config.gui_flags = self.dvz.DVZ_GUI_FLAGS_DOCKING | self.dvz.DVZ_GUI_FLAGS_DOCKSPACE
+            config.gui_flags = (
+                self.dvz.DVZ_GUI_FLAGS_DOCKING
+                | self.dvz.DVZ_GUI_FLAGS_DOCKSPACE
+                | self.dvz.DVZ_GUI_FLAGS_NAV_KEYBOARD
+            )
             config.default_window_width = 430
             self.gui = self.dvz.dvz_view_gui(self.view, ctypes.byref(config))
             if not self.gui:

@@ -451,22 +451,30 @@ class ScientificSceneReview(AtlasViewer):
     def _draw_data_tables_gui(self, gui):
         if self.review_controls is None or not self._show_scientific_data.value:
             return False, False
-        self.dvz.dvz_gui_dock_window_once(
-            gui, b'Scientific data', self.dvz.DVZ_GUI_DOCK_SLOT_BOTTOM, 280.0 * self.ui_scale
+        visible = self._sidebar._window(
+            gui, b'Scientific data', self._show_scientific_data, details=True
         )
         probe_changed = False
-        if self.dvz.dvz_gui_begin(gui, b'Scientific data', None, 0):
-            low, high = self.value_range
-            self._text(gui, f'Mean FR scale (Hz, 5-95%): {low:.3g} - {high:.3g}', width=55)
-            self._text(gui, 'Purple=low; teal=mid; yellow=high.', width=55)
-            if self.dvz.dvz_gui_collapsing_header(gui, b'Encoding and interaction notes', 0):
-                self._draw_encoding_notes(gui)
-            if self.probe_table is not None:
-                _, events, _dropped = self.dvz.dvz_gui_table_draw(gui, self.probe_table)
-                probe_changed = any(
-                    event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED for event in events
-                )
-        self.dvz.dvz_gui_end(gui)
+        try:
+            if visible:
+                if self.dvz.dvz_gui_button(gui, b'Close##ibl_scientific_data'):
+                    self._show_scientific_data.value = False
+                low, high = self.value_range
+                self._text(gui, f'Mean FR scale (Hz, 5-95%): {low:.3g} - {high:.3g}', width=55)
+                self._text(gui, 'Purple=low; teal=mid; yellow=high.', width=55)
+                if self.dvz.dvz_gui_collapsing_header(gui, b'Encoding and interaction notes', 0):
+                    self._draw_encoding_notes(gui)
+                if self.probe_table is not None:
+                    result, events, dropped = self.dvz.dvz_gui_table_draw(gui, self.probe_table)
+                    self._check(result, 'scientific data table draw')
+                    if dropped:
+                        raise RuntimeError('scientific data table input batch dropped')
+                    probe_changed = any(
+                        event.type == self.dvz.DVZ_GUI_DATA_EVENT_SELECTION_CHANGED
+                        for event in events
+                    )
+        finally:
+            self.dvz.dvz_gui_end(gui)
         return False, probe_changed
 
     def _draw_encoding_notes(self, gui):

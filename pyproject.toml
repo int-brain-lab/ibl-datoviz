@@ -31,7 +31,7 @@ testpaths = ["tests"]
 [tool.uv.sources]
 # Immutable revisions define this unreleased source snapshot. Adjacent source
 # checkouts may override them only through an explicit PYTHONPATH development command.
-datoviz = { git = "https://github.com/datoviz/datoviz.git", rev = "bf9794f7ba658c7c6256bab054948661d26db403" }
+datoviz = { git = "https://github.com/datoviz/datoviz.git", rev = "78855559edd5ebfc7eace5228935754f37228b7e" }
 ibl-anatomy = { git = "https://github.com/int-brain-lab/ibl-anatomy.git", rev = "81bd7d79044e4dc3a528abe50a0296381143f03e" }
 
 [dependency-groups]

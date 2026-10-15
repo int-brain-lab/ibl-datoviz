@@ -19,13 +19,17 @@ from tests.test_volume_free_navigator import VOLUME, CpuNavigator
 
 class InputDatoviz(FakeDatoviz):
     class DvzRect(ctypes.Structure):
-        _fields_ = [('height', ctypes.c_float)]
+        _fields_ = [(name, ctypes.c_float) for name in ('x', 'y', 'width', 'height')]
 
     def dvz_gui_current_window_rect(self, _gui, rect):
         rect._obj.height = 1200.0
         return True
 
     DVZ_GUI_DOCK_SLOT_LEFT = 0
+    DVZ_GUI_ICON_CLEAR, DVZ_GUI_ICON_SETTINGS, DVZ_GUI_ICON_INFO = 0, 1, 2
+    DVZ_GUI_ICON_EXPAND, DVZ_GUI_ICON_COLLAPSE = 3, 4
+    DVZ_GUI_ICON_MULTISELECT, DVZ_GUI_ICON_ELLIPSIS, DVZ_GUI_ICON_SORT = 5, 6, 7
+    DVZ_GUI_ICON_BUTTON_FLAGS_ACTIVE, DVZ_GUI_ICON_BUTTON_FLAGS_DISABLED = 1, 2
 
     def __init__(self):
         super().__init__()
@@ -36,18 +40,48 @@ class InputDatoviz(FakeDatoviz):
         self.query = None
         self.multiple = None
         self.texts = []
+        self.available_height = 1100.0
+        self.windows = []
+        self.window_flags = []
+        self.combos = {}
+        self.combo_values = {}
+
+    def dvz_gui_content_avail(self, _gui, size):
+        size[:] = (560.0, self.available_height)
+        return True
+
+    def dvz_gui_set_next_item_width(self, *_args):
+        pass
+
+    def dvz_gui_set_next_window_rect(self, *_args):
+        return 0
+
+    def dvz_gui_icon_button(self, _gui, name, _kind, _size, _tooltip, flags):
+        if flags & self.DVZ_GUI_ICON_BUTTON_FLAGS_DISABLED:
+            return False
+        if name == b'##ibl_multiple' and self.multiple is not None:
+            clicked = self.multiple != bool(flags & self.DVZ_GUI_ICON_BUTTON_FLAGS_ACTIVE)
+            self.multiple = None
+            return clicked
+        return name in self.buttons
 
     def dvz_gui_dock_window_once(self, *_args):
         pass
 
-    def dvz_gui_begin(self, *_args):
+    def dvz_gui_begin(self, _gui, title, opened, flags):
+        self.windows.append(title)
+        self.window_flags.append((title, opened, flags))
         return True
 
     def dvz_gui_end(self, *_args):
         pass
 
-    def dvz_gui_combo(self, *_args):
-        return False
+    def dvz_gui_combo(self, _gui, label, value, _items, _count):
+        self.combo_values[label] = value._obj.value
+        if label not in self.combos:
+            return False
+        value._obj.value = self.combos.pop(label)
+        return True
 
     def dvz_gui_collapsing_header(self, *_args):
         return False
@@ -70,6 +104,9 @@ class InputDatoviz(FakeDatoviz):
         buffer.value = self.query.encode()
         self.query = None
         return True
+
+    def dvz_gui_input_text_with_hint(self, gui, label, _hint, buffer, size):
+        return self.dvz_gui_input_text(gui, label, buffer, size)
 
     def dvz_gui_checkbox(self, _gui, _label, value):
         if self.multiple is None:
@@ -164,16 +201,16 @@ def test_controls_search_fold_and_rank_cycle_restore_requested_order(viewer):
     viewer, fake = viewer
     viewer._selector_model.values = {'-101': 2.0, '-102': 1.0}
     viewer._selector_values = lambda _model: {'-101': 2.0, '-102': 1.0}
-    fake.buttons = {b'Anatomy order'}
+    fake.buttons = {b'##ibl_order'}
     viewer._gui_callback(None, None, None)
     assert viewer._selector_model.order == 'value-desc'
     fake.query = 'leaf'
-    fake.buttons = {b'Value descending'}
+    fake.buttons = {b'##ibl_order'}
     viewer._gui_callback(None, None, None)
     assert viewer._selector_model.order == 'anatomy'
     assert viewer._selector_model.requested_order == 'value-desc'
-    assert b'2 regions / 0 selected' in fake.texts
-    fake.buttons = {b'Clear search'}
+    assert b'2 regions' in fake.texts
+    fake.buttons = {b'##ibl_clear_search'}
     viewer._gui_callback(None, None, None)
     assert viewer._selector_model.order == 'value-desc'
 
@@ -292,7 +329,7 @@ def test_failed_projection_rollback_closes_viewer(viewer, monkeypatch):
     with pytest.raises(RuntimeError, match='rollback failed; viewer closed'):
         viewer._gui_callback(None, None, None)
     assert viewer._closed
-    assert scopes == ['end_child', 'end_child', 'end_child', 'end']
+    assert scopes == ['end_child', 'end']
     assert sum(call[0] == 'tree_destroy' for call in fake.calls) == 1
 
 
@@ -622,3 +659,148 @@ def test_disabled_tree_hover_retains_click_selection(viewer):
     fake.events = [event(fake, 'ROW_CLICKED', -101)]
     viewer._gui_callback(None, None, None)
     assert viewer.selected_region_ids() == (-101,)
+
+
+def test_scene_and_details_are_explicit_nonmodal_windows(viewer):
+    viewer, fake = viewer
+    controls = []
+    viewer._draw_extra_gui = lambda _gui: controls.append('scene')
+    viewer._gui_callback(None, None, None)
+    assert controls == []
+    assert fake.windows == [b'Allen mouse brain atlas']
+    fake.buttons = {b'##ibl_scene', b'##ibl_selection_details'}
+    viewer._gui_callback(None, None, None)
+    assert controls == ['scene']
+    assert viewer._sidebar.scene_open.value and viewer._sidebar.details_open.value
+    for title, opened, flags in fake.window_flags:
+        if title in (b'Scene', b'Selection details'):
+            assert opened._obj.value
+            assert flags == 1 << 19  # Vendored ImGuiWindowFlags_NoDocking.
+    fake.buttons = {b'Close##ibl_scene', b'Close##ibl_details'}
+    viewer._gui_callback(None, None, None)
+    assert not viewer._sidebar.scene_open.value
+    assert not viewer._sidebar.details_open.value
+    fake.buttons = set()
+    viewer._gui_callback(None, None, None)
+    assert controls == ['scene', 'scene']
+
+
+def test_hemisphere_header_reads_authoritative_state_and_can_hide_both(viewer):
+    viewer, fake = viewer
+    viewer.set_hemisphere('right')
+    viewer._gui_callback(None, None, None)
+    assert fake.combo_values[b'##ibl_hemisphere'] == 2
+    fake.combos[b'##ibl_hemisphere'] = 3
+    viewer._gui_callback(None, None, None)
+    assert viewer._surface_style.hemispheres == {'left': False, 'right': False}
+    viewer._gui_callback(None, None, None)
+    assert fake.combo_values[b'##ibl_hemisphere'] == 3
+    fake.combos[b'##ibl_hemisphere'] = 0
+    viewer._gui_callback(None, None, None)
+    assert viewer._surface_style.hemispheres == {'left': True, 'right': True}
+
+
+def test_tables_remain_live_in_separate_window_with_scene_closed(viewer):
+    viewer, fake = viewer
+    widget = GuiWidget(
+        fake, 'table', SimpleNamespace(region_ids=np.array([101, 102], dtype=np.int64))
+    )
+    widget.handle = SimpleNamespace(name='table')
+    viewer._retain_gui_widget('region_table', widget)
+    fake.dvz_gui_table_draw = lambda *_args: (0, [event(fake, 'SELECTION_CHANGED')], 0)
+    fake.table_selection = [encode_region_key(101)]
+    viewer._gui_callback(None, None, None)
+    assert b'Scientific data' in fake.windows
+    assert b'Scene' not in fake.windows
+    assert viewer.selected_region_ids() == (101,)
+    assert not viewer._sidebar.scene_open.value
+
+
+def test_compact_footer_bounds_do_not_depend_on_selection_size(viewer):
+    viewer, fake = viewer
+    sidebar = viewer._sidebar
+    sidebar.row_height = 32.0
+    sidebar.browser_width = 560.0
+    initial_height = sidebar.reserve_tree(None)
+    for selected in ((), (101,), tuple(range(101, 113))):
+        viewer._selected_region_ids = selected
+        fake.texts.clear()
+        sidebar.footer(None)
+        assert sidebar.reserve_tree(None) == initial_height
+        assert sidebar.footer_height == 64.0
+        assert len(fake.texts) == 2
+    viewer._selected_region_ids = (101, 102)
+    sidebar.details_open.value = True
+    fake.texts.clear()
+    sidebar.details(None)
+    assert b'Leaf A' in fake.texts and b'Leaf B' in fake.texts
+    assert b'grey / Branch / LeafA' in fake.texts
+    assert b'grey / Branch / LeafB' in fake.texts
+    assert viewer.selected_region_ids() == (101, 102)
+
+
+def test_auxiliary_window_placement_tracks_resized_sidebar(viewer):
+    viewer, fake = viewer
+    sidebar = viewer._sidebar
+    sidebar.sidebar_rect = (12.0, 20.0, 650.0, 1100.0)
+    placed = []
+    fake.dvz_gui_set_next_window_rect = lambda _gui, rect, condition: (
+        placed.append((rect._obj.x, rect._obj.width, condition)) or 0
+    )
+    sidebar.scene_open.value = True
+    sidebar.scene(None)
+    x, width, condition = placed[0]
+    assert x == 678.0  # Actual sidebar right edge plus the 16-unit gap.
+    assert width > 0 and condition == 4
+    sidebar.scene(None)
+    assert placed[-1][2] == 4  # Preserve a user's drag when the layout is unchanged.
+    viewer.view = object()
+    fake.dvz_view_resolved_size = lambda _view: SimpleNamespace(
+        host_logical_width=950, host_logical_height=720
+    )
+    sidebar.scene(None)
+    x, width, condition = placed[-1]
+    assert x == 678.0
+    assert x + width < 950.0  # Resizing the host cannot shift the window over the tree.
+    assert condition == 0  # ImGuiCond_Always applies the new bounds after first use.
+    sidebar.scene(None)
+    assert placed[-1][2] == 4
+    sidebar.sidebar_rect = (12.0, 20.0, 600.0, 720.0)
+    sidebar.scene(None)
+    assert placed[-1][0] == 628.0 and placed[-1][2] == 0
+    sidebar.scene(None)
+    assert placed[-1][2] == 4
+    sidebar.details_open.value = True
+    sidebar.details(None)
+    assert placed[-1][2] == 4  # Each ordinary window retains its own layout signature.
+    viewer.view = None
+
+
+@pytest.mark.parametrize('failure', ['bounds', 'begin'])
+def test_auxiliary_window_resize_retries_after_failed_bounds_or_begin(viewer, failure):
+    viewer, fake = viewer
+    sidebar = viewer._sidebar
+    sidebar.scene_open.value = True
+    sidebar.scene(None)
+    previous = sidebar._window_layouts.copy()
+    sidebar.sidebar_rect = (0.0, 0.0, 700.0, 1200.0)
+    placed = []
+
+    def bounds(_gui, _rect, condition):
+        placed.append(condition)
+        return -1 if failure == 'bounds' else 0
+
+    fake.dvz_gui_set_next_window_rect = bounds
+    begin = fake.dvz_gui_begin
+    if failure == 'begin':
+        fake.dvz_gui_begin = lambda *_: (_ for _ in ()).throw(RuntimeError('begin failed'))
+    with pytest.raises(RuntimeError):
+        sidebar.scene(None)
+    assert sidebar._window_layouts == previous
+    fake.dvz_gui_set_next_window_rect = lambda _gui, _rect, condition: (
+        placed.append(condition) or 0
+    )
+    fake.dvz_gui_begin = begin
+    sidebar.scene(None)
+    assert placed == [0, 0]
+    assert sidebar._window_layouts != previous

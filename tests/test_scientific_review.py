@@ -347,3 +347,23 @@ def test_finalizer_closes_components_before_the_borrowed_scene(viewer, monkeypat
     assert viewer._closed and closed == [viewer.scene]
     viewer.__del__()
     assert len(closed) == 1
+
+
+@pytest.mark.parametrize(('result', 'dropped'), [(-1, 0), (0, 1)])
+def test_scientific_data_failure_balances_separate_window(viewer, result, dropped):
+    calls = []
+    viewer._show_scientific_data.value = True
+    viewer._sidebar = SimpleNamespace(
+        _window=lambda _gui, title, opened, **_kwargs: (
+            calls.append((title, opened.value)) or True
+        )
+    )
+    viewer.dvz.dvz_gui_button = lambda *_: False
+    viewer.dvz.dvz_gui_text = lambda *_: None
+    viewer.dvz.dvz_gui_collapsing_header = lambda *_: False
+    viewer.dvz.dvz_gui_table_draw = lambda *_: (result, [], dropped)
+    viewer.dvz.dvz_gui_end = lambda *_: calls.append('end')
+    with pytest.raises(RuntimeError, match='scientific data table'):
+        viewer._draw_data_tables_gui(None)
+    assert calls == [(b'Scientific data', True), 'end']
+    assert viewer._show_scientific_data.value

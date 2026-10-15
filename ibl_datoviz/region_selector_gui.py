@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ctypes
 import math
 
 import numpy as np
@@ -204,30 +203,47 @@ class RegionSelectorGui:
             raise
         self.model = candidate
 
-    def controls(self, gui, candidate, filter_buffer):
-        """Collect controls into a candidate without changing committed state."""
+    def controls(self, gui, candidate, filter_buffer, sidebar):
+        """Collect two compact rows without changing committed selector state."""
         dvz = self.widget.dvz
-        if dvz.dvz_gui_input_text(gui, b'##ibl_atlas_filter', filter_buffer, len(filter_buffer)):
+        scale = sidebar.viewer.ui_scale
+        icon_size, gap = 22.0 * scale, 6.0 * scale
+        width, _ = sidebar.available(gui)
+        dvz.dvz_gui_set_next_item_width(gui, max(1.0, width - icon_size - gap))
+        if dvz.dvz_gui_input_text_with_hint(
+            gui,
+            b'##ibl_atlas_filter',
+            b'Search name or acronym',
+            filter_buffer,
+            len(filter_buffer),
+        ):
             candidate.set_query(filter_buffer.value.decode())
-        if dvz.dvz_gui_button(gui, b'Clear search'):
+        dvz.dvz_gui_same_line(gui, 0.0, gap)
+        if sidebar.icon(
+            gui, b'##ibl_clear_search', 'CLEAR', 'Clear search', disabled=not candidate.query
+        ):
             filter_buffer.value = b''
             candidate.set_query('')
-        multiple = ctypes.c_bool(candidate.multiple)
-        if dvz.dvz_gui_checkbox(gui, b'Multiple selection', ctypes.byref(multiple)):
-            candidate.multiple = bool(multiple.value)
         count = (
             len(candidate._context()[0] & {row.region.id for row in candidate.hierarchy})
             if candidate.query
             else len(candidate.visible_rows())
         )
-        text = f'{count} regions / {len(candidate.selected)} selected'
-        dvz.dvz_gui_text(gui, text.encode())
-        if candidate.values:
-            dvz.dvz_gui_text(gui, f'{self.value_name} (left hemisphere)'.encode())
-        if dvz.dvz_gui_button(gui, b'Collapse all'):
+        dvz.dvz_gui_text(gui, f'{count} regions'.encode())
+        dvz.dvz_gui_same_line(gui, 0.0, gap)
+        if sidebar.icon(
+            gui,
+            b'##ibl_multiple',
+            'MULTISELECT',
+            'Multiple selection (Ctrl/Cmd also adds)',
+            active=candidate.multiple,
+        ):
+            candidate.multiple = not candidate.multiple
+        dvz.dvz_gui_same_line(gui, 0.0, gap)
+        if sidebar.icon(gui, b'##ibl_collapse_all', 'COLLAPSE', 'Collapse all'):
             candidate.set_all_expanded(False)
-        dvz.dvz_gui_same_line(gui, 0.0, 8.0)
-        if dvz.dvz_gui_button(gui, b'Expand all'):
+        dvz.dvz_gui_same_line(gui, 0.0, gap)
+        if sidebar.icon(gui, b'##ibl_expand_all', 'EXPAND', 'Expand all'):
             candidate.set_all_expanded(True)
         label = {
             'anatomy': 'Anatomy order',
@@ -237,19 +253,17 @@ class RegionSelectorGui:
         finite_values = any(
             value is not None and math.isfinite(value) for value in candidate.values.values()
         )
-        if candidate.query:
-            dvz.dvz_gui_text(gui, b'Anatomy order (search)')
-        elif finite_values:
-            if dvz.dvz_gui_button(gui, label.encode()):
-                orders = ('anatomy', 'value-desc', 'value-asc')
-                candidate.apply(
-                    {
-                        'op': 'order',
-                        'value': orders[(orders.index(candidate.requested_order) + 1) % 3],
-                    }
-                )
-        else:
-            dvz.dvz_gui_text(gui, b'Anatomy order (no values)')
+        tooltip = 'Anatomy order (search)' if candidate.query else label
+        if candidate.values:
+            tooltip += f' / {self.value_name} (left hemisphere)'
+        if not finite_values:
+            return
+        dvz.dvz_gui_same_line(gui, 0.0, gap)
+        if sidebar.icon(gui, b'##ibl_order', 'SORT', tooltip, disabled=bool(candidate.query)):
+            orders = ('anatomy', 'value-desc', 'value-asc')
+            candidate.apply(
+                {'op': 'order', 'value': orders[(orders.index(candidate.requested_order) + 1) % 3]}
+            )
 
     def intents(self, candidate, events):
         """Translate generic widget input into browser-local semantics."""

@@ -6,6 +6,7 @@ translation; native callbacks and borrowed GUI control buffers stay with viewers
 
 from __future__ import annotations
 
+import ctypes
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -257,6 +258,21 @@ def create_region_tree(dvz, model, root_acronym, filter_text, *, controlled=Fals
         if not owner.handle:
             owner.handle = None
             raise RuntimeError('dvz_gui_tree() failed')
+        layout = dvz.dvz_gui_tree_layout()
+        layout.flags = (
+            dvz.DVZ_GUI_TREE_LAYOUT_FLAGS_EXACT_SPACING
+            | dvz.DVZ_GUI_TREE_LAYOUT_FLAGS_READABLE_SECONDARY
+        )
+        layout.indent_em = 0.65
+        layout.row_padding_em = 0.15
+        layout.item_spacing_em = 0.0
+        layout.disclosure_gap_em = 0.2
+        layout.swatch_gap_em = 0.35
+        layout.secondary_gap_em = 0.5
+        owner.check(
+            dvz.dvz_gui_tree_set_layout(owner.handle, ctypes.byref(layout)),
+            'atlas ontology compact layout',
+        )
         owner.check(
             dvz.dvz_gui_tree_set_rows(
                 owner.handle,
@@ -286,7 +302,7 @@ def create_region_tree(dvz, model, root_acronym, filter_text, *, controlled=Fals
             style = dvz.dvz_gui_data_style()
             style.flags = dvz.DVZ_GUI_DATA_STYLE_FLAGS_FOREGROUND
             style.row_key = encode_region_key(int(region_id))
-            style.foreground = dvz.DvzColor(118, 126, 137, 255)
+            style.foreground = dvz.DvzColor(174, 182, 193, 255)
             styles.append(style)
         if styles:
             owner.check(

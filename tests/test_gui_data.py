@@ -47,6 +47,7 @@ def test_widget_constructor_failure_has_no_handle_to_destroy(kind):
 @pytest.mark.parametrize(
     ('kind', 'setter'),
     [
+        ('tree', 'dvz_gui_tree_set_layout'),
         ('tree', 'dvz_gui_tree_set_rows'),
         ('tree', 'dvz_gui_tree_set_swatches'),
         ('tree', 'dvz_gui_tree_expand_to_depth'),
