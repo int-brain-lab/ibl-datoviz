@@ -9,6 +9,69 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Linked observation tables and native endpoint reproduction — October 15 2026
+
+The user authorized the next two tracks after accepting generic annotations.
+`app.tables.show(layer)` and the layer's Observation table button now open retained
+native tables linked through `app.selection`. Complete source populations remain
+available, including missing/hidden observations and zero/string IDs. A single
+active-table selector keeps multiple opened populations accessible. Source context
+and validation status remain visible; full pins/session details are expandable.
+IDs sort explicitly as text. Row tokens never become scientific IDs.
+
+Table selection, layer highlights and successful notifications commit together.
+Native input that changes selection before host validation is rolled back on
+failure. Removal and shutdown release table handles before source/scene cleanup.
+Closed-table and foreign-thread reads fail before native access. An integration
+test also exposed and fixed empty point populations calling atlas normalization
+without any geometry. The GPT-6.1 Sol high audit, including a final reread of the lifetime guards,
+found no remaining P1/P2 findings.
+
+Validation: the final full suite passes 763 tests with one optional registered
+10 µm asset-root skip. Lint and strict docs pass. Two actual BWM
+recordings run through the existing shared reader and reviewed frame evidence;
+the GUI capture `build/ibl-integration/observation-tables-gui.png` was inspected,
+showing original cluster IDs 21/36 and source validation unknown. Actual XTest
+mouse input selects original cluster 36; Python then selects 21, with native table
+and scientific selection synchronized in both directions. The receipt is
+`build/ibl-integration/observation-table-mouse-receipt.json`. No signal reads,
+source-data edits or package extraction were needed. Table interaction remains a
+new user review gate.
+
+The normally configured engine checkout was independently advanced to
+`54c9ce13a5661c917ac3d38d5a8e99cf71340216` (compiler warning changes). The existing
+library SHA256 remains exactly the recorded f77 baseline:
+`6d8a59ace2bf44d014da92e67cb7457b38767ed8ab5286fc7ee6e3a040ea4d40`.
+Validation used an isolated, detached f77 source worktree under
+`build/endpoint-depth/native-baseline`, that existing binary, strict source/library
+checks and the already approved original runtime environment. No original engine
+checkout was switched, no new envrc approved, no build/configuration changed and
+no pin upgraded. Normal configured `--strict` commands currently reject that
+external source revision; ordinary review reports the mismatch and uses the
+existing configured runtime. Resolve that source choice explicitly before calling
+normal configured strict checks accepted.
+
+The endpoint diagnostic is now reproducible via
+`uv run --frozen tools/diagnose_endpoint_depth.py` on a matching configured source;
+portable `--datoviz`/`--library` options select an explicit pair. Its worker also
+checks the imported source pin. At the pinned baseline, 24 synthetic cases cover
+both slope signs, both attachment orders, three camera rotations and both point
+alpha policies. The 12 nearer-slope cases show 85–86 white path pixels inside 640
+pink marker-interior pixels; farther slopes show none. Every nearer opaque mesh
+occludes all 640 pixels correctly. These measured results reproduce the issue;
+they are not encoded as desired rendering assertions. Seven pure geometry tests
+check the depth model and why cap correction alone cannot produce full marker
+priority. Evidence, seven inspected representative images out of 72 captures,
+report and an unapplied candidate patch are ignored under `build/endpoint-depth/`.
+
+A screen-extruded cap compresses the depth interpolation, but even an exact
+centerline correction leaves nearer path-body pixels in front of a flat marker.
+A complete fix needs an explicit connected-endpoint gap/marker-priority policy,
+with near-occluder regressions, in the native engine. The partial shader patch is
+not a production fix and was not compiled/applied. Native implementation and any
+baseline upgrade need their own explicit decision and compatibility validation;
+no depth test was disabled or scientific coordinate moved to mask the issue.
+
 ## Generic annotation workflow accepted — October 15 2026
 
 The user interactively reviewed `just review annotations` and accepts the

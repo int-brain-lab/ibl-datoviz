@@ -35,6 +35,15 @@ pan, zoom and reset; layer state should persist. Native mouse picking of these
 annotations is a later gate; the region browser and anatomical picking still work.
 Changing a scalar-colored layer's uniform color clears its scalar encoding.
 
+The accepted workflow now includes an additional **Observation table** button
+per layer. Open the targets table and select a row: its original ID should become
+the selected annotation. Change the ID in Layers and check that the table follows.
+Open the route's table and switch between opened layers in the Observations
+window; paths show vertex counts. Try sorting/filtering, closing and reopening the
+window, and hiding a selected layer. The complete payload and exact selection
+remain independent of regional mapping and visibility. This table addition needs
+its own interactive review; the earlier annotation acceptance does not cover it.
+
 For bounded startup or a geometry-only capture:
 
 ```bash

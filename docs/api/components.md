@@ -98,6 +98,37 @@ cluster positions currently mean assigned channel locations, not neuron somata.
 Signal access remains an explicit upstream `source.spikes(..., requirements=...)`
 call; the example performs metadata reads only, before starting the GUI.
 
+## Linked observation tables
+
+Open a retained table from a layer's **Observation table** button, or from Python:
+
+```python
+table = app.tables.show(recording.clusters)
+app.selection.set_observations([recording.clusters.observation(cluster_id)])
+```
+
+The **Observations** window switches between opened layers. Its rows cover the
+complete attached population, including hidden layers and unavailable coordinates.
+Original integer/string IDs remain distinct; IDs currently sort as text, and string
+labels use quoted representations. `XYZ?` reports whether all three coordinates
+are available. Path tables list path IDs and vertex counts rather than inventing a
+representative point. Source/recording/session information is shown in the header
+and expandable provenance details. A source Allen ID column appears when supplied.
+
+Native row keys are private widget-local tokens mapped to exact attachment
+references. Filtering and sorting change presentation, not the payload population.
+Table selection updates `app.selection`; Python/GUI selection updates all opened
+tables before the successful selection event is emitted. Selecting in one table
+preserves selections in other layers. Failed updates restore native selection and
+highlights together; rollback failure closes the viewer. Removal destroys the
+owned table before notification. Table reads fail after removal/close or from a
+foreign thread. Closing the table window retains its widget state; the layer
+button reopens it.
+
+No table action loads datasets or signals. Exact native scene picking remains a
+separate capability gate; the table does not turn styled point sprites into
+pickable scientific observations.
+
 ## Borrowed-scene point collections and sampled planes
 
 `PointCollection` and `SampledPlane` are independent CPU payloads. Their constructors

@@ -2,8 +2,8 @@
 
 Status: API direction and intended-use scripts approved by the user, October 15,
 2026. Staged implementation is authorized. Generic payloads, owned handles,
-recording composition, programmatic exact selection and Layers controls are now
-implemented; visual acceptance of these workflows remains open. Later sections
+recording composition, programmatic exact selection, linked observation tables
+and Layers controls are now implemented; visual acceptance of these workflows remains open. Later sections
 cover intended interfaces, including linked-layout and quantity work not yet
 implemented. This is not an announcement of API stability. The earlier
 `IBLWorkbench` sketches are superseded.
@@ -86,6 +86,7 @@ for restoration.
 | Layer handle | Visibility, supported styling, scalar encoding and exact observation identities |
 | `app.anatomy` | Anatomical context, mapping, hemisphere visibility and explosion |
 | `app.selection` | Committed region and observation selection and change notifications |
+| `app.tables` | Retained complete-population observation tables linked to exact selection |
 | `app.camera` | Current view and the registered startup view used by reset |
 | `app.slices` | Linked spatial cursor, slice composition and optional physical planes |
 
