@@ -1706,7 +1706,7 @@ class AtlasViewer:
         """Draw retained tables in a separate window without consuming browser space."""
         if self.region_table is None and self.probe_table is None:
             return False, False
-        visible = self._sidebar._window(gui, b'Scientific data', None, details=True)
+        visible = self._sidebar._window(gui, b'Data table', None, details=True)
         changes = [False, False]
         try:
             if visible:

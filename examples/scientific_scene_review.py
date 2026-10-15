@@ -498,7 +498,7 @@ class ScientificSceneReview(AtlasViewer):
         if self.review_controls is None or not self._show_scientific_data.value:
             return False, False
         visible = self._sidebar._window(
-            gui, b'Scientific data', self._show_scientific_data, details=True
+            gui, b'Data table', self._show_scientific_data, details=True
         )
         probe_changed = False
         try:

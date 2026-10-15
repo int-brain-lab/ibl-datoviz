@@ -124,7 +124,7 @@ class ReviewControls:
     def draw(self, gui):
         """Draw stable control IDs and read state back from the authoritative model."""
         dvz = self.viewer.dvz
-        if dvz.dvz_gui_collapsing_header(gui, b'3D atlas', 0):
+        if dvz.dvz_gui_collapsing_header(gui, b'3D atlas', 1 << 5):
             visible = ctypes.c_bool(self.viewer._surface_visible)
             if dvz.dvz_gui_checkbox(gui, b'Atlas visible', ctypes.byref(visible)):
                 self._attempt(self.viewer.set_surface_visible, visible.value)

@@ -710,8 +710,8 @@ def test_tables_remain_live_in_separate_window_with_scene_closed(viewer):
     fake.dvz_gui_table_draw = lambda *_args: (0, [event(fake, 'SELECTION_CHANGED')], 0)
     fake.table_selection = [encode_region_key(101)]
     viewer._gui_callback(None, None, None)
-    assert b'Scientific data' in fake.windows
-    assert b'Scene' not in fake.windows
+    assert b'Data table' in fake.windows
+    assert b'Display settings' not in fake.windows
     assert viewer.selected_region_ids() == (101,)
     assert not viewer._sidebar.scene_open.value
 
@@ -804,3 +804,20 @@ def test_auxiliary_window_resize_retries_after_failed_bounds_or_begin(viewer, fa
     sidebar.scene(None)
     assert placed == [0, 0]
     assert sidebar._window_layouts != previous
+
+
+def test_folding_keeps_region_count_and_toolbar_anchor_stable(viewer):
+    viewer, fake = viewer
+    viewer._gui_callback(None, None, None)
+    count = next(text for text in fake.texts if text.endswith(b' regions'))
+    expanded = len(viewer._selector_model.visible_rows())
+    fake.buttons = {b'##ibl_collapse_all'}
+    fake.texts.clear()
+    viewer._gui_callback(None, None, None)
+    assert len(viewer._selector_model.visible_rows()) < expanded
+    assert count in fake.texts
+    fake.buttons = {b'##ibl_expand_all'}
+    fake.texts.clear()
+    viewer._gui_callback(None, None, None)
+    assert len(viewer._selector_model.visible_rows()) == expanded
+    assert count in fake.texts

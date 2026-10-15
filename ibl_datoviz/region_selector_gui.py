@@ -227,7 +227,7 @@ class RegionSelectorGui:
         count = (
             len(candidate._context()[0] & {row.region.id for row in candidate.hierarchy})
             if candidate.query
-            else len(candidate.visible_rows())
+            else len(candidate.hierarchy)
         )
         dvz.dvz_gui_text(gui, f'{count} regions'.encode())
         # Keep the inverse tree actions visually paired. Persistent multiselect

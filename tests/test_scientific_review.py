@@ -365,7 +365,7 @@ def test_scientific_data_failure_balances_separate_window(viewer, result, droppe
     viewer.dvz.dvz_gui_end = lambda *_: calls.append('end')
     with pytest.raises(RuntimeError, match='scientific data table'):
         viewer._draw_data_tables_gui(None)
-    assert calls == [(b'Scientific data', True), 'end']
+    assert calls == [(b'Data table', True), 'end']
     assert viewer._show_scientific_data.value
 
 

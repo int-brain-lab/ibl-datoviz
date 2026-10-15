@@ -797,7 +797,7 @@ def test_interaction_reuses_bank_and_vertex_indices_across_mapping(mesh):
         assert viewer._surface_state.handle is bank
         assert viewer._surface_state.indices is indices
         assert indices.flags.owndata
-        assert viewer._surface_state._mapping == 'beryl'
+        assert viewer._surface_state._mapping == ('beryl', False)
         assert not bank.active
         np.testing.assert_array_equal(bank.words, np.zeros(len(mesh.presentations), np.uint32))
         assert not any(c[0] in ('state_binding', 'item_state_buffer') for c in fake.calls[before:])
