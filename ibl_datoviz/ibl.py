@@ -13,10 +13,11 @@ from numbers import Integral
 import numpy as np
 
 from .component import owned
+from .payloads import Channels, Clusters, Recording, SourceKey, SourceObservationKey, WorldFrame
 
 __all__ = [
     'BwmRecording', 'BwmSource', 'ObservationRef',
-    'RecordingObservations', 'prepare_recording',
+    'RecordingObservations', 'prepare_bwm_recording', 'prepare_recording',
 ]
 
 COORDINATE_CONVENTION = 'ibl-mlapdv-um'
@@ -169,6 +170,79 @@ def prepare_recording(metadata, *, coordinate_convention, object_id=None):
         tuple(refs), np.asarray(coordinates).reshape(-1, 3), 'assigned channel location',
     )
     return BwmRecording(metadata, channels, clusters, coordinate_convention, object_id)
+
+
+def _table_provenance(table):
+    provenance = getattr(table, 'provenance', None)
+    if provenance is None:
+        return {'validation_status': 'unknown'}
+    # The optional reader exposes a Pydantic provenance object. No reader import
+    # is needed here, and callers may also provide detached plain mappings.
+    if hasattr(provenance, 'model_dump'):
+        return provenance.model_dump(mode='json')
+    return provenance
+
+
+def prepare_bwm_recording(recording, *, frame):
+    """Bridge detached BWM observations to the viewer's generic payload contract.
+
+    ``frame`` requires externally supplied registration evidence. The legacy
+    coordinate assertion is checked separately; neither metadata integrity nor
+    passed signal validation establishes a verified anatomical registration.
+    No source data is loaded or scientific source validation performed here.
+    """
+    if not isinstance(recording, BwmRecording):
+        raise ValueError('recording must be a prepared BwmRecording')
+    if not isinstance(frame, WorldFrame):
+        raise ValueError('frame must be a WorldFrame with verified source-frame evidence')
+    frame.require_verified()
+    if (
+        frame.coordinate_convention != COORDINATE_CONVENTION
+        or recording.coordinate_convention != frame.coordinate_convention
+    ):
+        raise ValueError('BWM and verified frame coordinate conventions disagree')
+    metadata = recording.metadata
+    source = SourceKey('ibl', metadata.dataset_name, metadata.dataset_version,
+                       metadata.manifest_sha256)
+    # The integration object retains mutable detached metadata tables. Reject a
+    # table/ref disagreement instead of relabeling existing observations.
+    canonical = prepare_recording(metadata, coordinate_convention=recording.coordinate_convention)
+    payloads = {}
+    for name, kind, table in (
+        ('channels', Channels, metadata.channels), ('clusters', Clusters, metadata.units),
+    ):
+        observations = getattr(recording, name)
+        expected = getattr(canonical, name)
+        if (
+            observations.refs != expected.refs
+            or not np.array_equal(observations.positions_um, expected.positions_um, equal_nan=True)
+            or observations.position_meaning != expected.position_meaning
+        ):
+            raise ValueError(f'{name} retained observations disagree with source metadata')
+        keys = tuple(SourceObservationKey(source, metadata.pid, name, ref.source_id)
+                     for ref in observations.refs)
+        payloads[name] = kind(
+            ids=tuple(ref.source_id for ref in observations.refs),
+            positions_um=observations.positions_um,
+            frame=frame,
+            observation_keys=keys,
+            provenance={
+                'position_meaning': observations.position_meaning,
+                'source_metadata': _table_provenance(table),
+                'coordinate_assertion': recording.coordinate_convention,
+                'frame_evidence': frame.provenance,
+            },
+        )
+    return Recording(
+        source=source, insertion_id=metadata.pid, session_id=metadata.eid,
+        channels=payloads['channels'], clusters=payloads['clusters'],
+        provenance={
+            'manifest_sha256': metadata.manifest_sha256,
+            'source_validation_status': 'unknown',
+            'signal_validation': 'not_requested',
+            'frame_evidence': frame.provenance,
+        },
+    )
 
 
 class BwmSource:
