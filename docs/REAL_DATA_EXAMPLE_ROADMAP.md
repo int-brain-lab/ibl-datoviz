@@ -1,10 +1,21 @@
 # Real-data interactive example roadmap
 
-Status: the October 15 scientific-user review rejects the current app-1 visualization and floating Data layers experience. The following proposal supersedes earlier product acceptance and API-freeze assumptions; earlier implementation evidence remains historical evidence, not UX acceptance.
+Status: the first recording-context prototype is implemented and awaits manual acceptance. It supersedes the app-1 visualization and floating Data layers experience rejected in the October 15 review. Earlier validation remains historical evidence, not UX acceptance.
+
+## First visual prototype available — October 15 2026
+
+The first gate is implemented and awaits manual review: six shared source-native
+context landmarks, the reference-oriented camera, one visible real recording,
+context-preserving selection and persistent dockable Layers. This supersedes the
+rejected focus/isolation default. See [the review commands and checklist](review-apps.md#app-1-where-did-we-record)
+and [the implementation evidence](NEXT_STEPS.md#first-recording-context-visual-gate-october-15-2026).
+The approved sequence stops here until scientific visual acceptance; API naming,
+multiple-recording layer handles, alignment comparisons and new scalar/voxel
+workflows remain later phases.
 
 ## Proposed scientific workflow reset — October 15 2026
 
-This is an audited proposal, awaiting adoption and manual visual acceptance. This audit makes no implementation changes. It draws on the native source, Datoviz's RC4 capabilities and release lanes, the web application's data/presentation semantics, and scientific workflows documented in `ibl-ai-agent`.
+This proposal was approved through the first visual gate; later phases await visual acceptance. The original audit made no implementation changes. It draws on the native source, Datoviz's RC4 capabilities and release lanes, the web application's data/presentation semantics, and scientific workflows documented in `ibl-ai-agent`.
 
 The first goal is a scientist understanding where a recording lies in anatomy within seconds. The current renderer/settings demonstration is not that experience. Preserve the validated low-level identity, ownership, sparse interaction and failure-recovery work; reconsider the composition and public API. The reviewer explicitly permits breaking this early, unused package's API. Earlier instructions to preserve every export do not constrain this proposal.
 

@@ -29,54 +29,46 @@ icon opens **Selection details**. Both are ordinary in-app windows: the uncovere
 tree stays usable while they are open. Opening settings or selecting many regions
 must not move the search box or resize the tree. Icon buttons provide tooltips.
 
-App 1 uses **Focus selection** by default: selecting a region shows its selected hemisphere and descendants in their authored colors, against one faint neutral brain envelope. **Isolate** hides the envelope; **Show all** restores whole-brain browsing while retaining the selection. Clear selection to return to the ordinary atlas. In focus/isolate mode, only visible selected surfaces are picking targets; use the tree or Show all to choose another target. Explicitly hidden or zero-opacity regions remain hidden. Authored translucency remains intentional and is preserved.
+App 1 keeps independent coarse anatomical context visible throughout selection. A 3D click selects the displayed major anatomical structure and its actual side; use the tree for finer regions. Fine selection adds a translucent regional overlay without hiding context or filtering scientific observations. Selecting a displayed coarse parent accents its existing surface without revealing every fine descendant mesh. Clearing selection removes the emphasis only. App 2 and ordinary library callers retain their existing presentation unless explicitly configured otherwise.
 
-The reference envelope uses the verified companion Allen root asset, prepared by `just setup`. It is hidden during explosion and when either hemisphere is hidden, to avoid displaying misleading context. If the asset is absent, selected geometry remains visible and Display settings explains that the outline is unavailable. No substitute geometry is generated.
-
-App 2 and library callers retain the existing selection-context rendering unless they explicitly opt into focus presentation. Hover uses sparse GPU state in both apps; it does not rebuild geometry or upload dense colors.
+Hover remains sparse GPU decoration in both apps; it does not upload dense colors or rebuild geometry. The browser owns scientific selection details, so the engine's raw visual/item/key metadata card is disabled.
 
 Check branch folding and leaf selection separately. Search for a parent acronym, open a retained descendant branch, then clear search and verify that ordinary folding returns. Select multiple leaves with Ctrl/Cmd and the multiple-selection icon; use Shift-click for visible siblings. Use the arrow keys and Enter/Space without moving focus back to the search box. A search with no matches should leave an empty browser and remain editable.
 
 When regional values are supplied, switch between anatomical and value order. Search temporarily uses anatomical order and clearing it restores the requested ordering. Verify that surface/table selections preserve the browser's focus and folding, and that mapping changes clear selection. Hiding a selected surface region still preserves committed selection.
 
-## App 1: 3D atlas
+## App 1: Where did we record?
 
-The workspace keeps a **Regions** browser beside the **3D atlas**. The atlas starts opaque, with optional scientific layers hidden. **Explode** is always available above the viewport, alongside **Reset view** and the selection display choice. Reset view restores only the camera. Orbit with left-drag and zoom with the wheel; choose Allen, Beryl or Cosmos in the browser.
+This is the first visual review gate, before the broader scientist-facing API refactor. Launch the prepared workspace from the repository:
 
-The initial review window requests 2800 × 2000 logical pixels and fits within its monitor's usable area. Explicit `--width` and `--height` overrides remain available when running the example directly. The larger window does not change the selected UI scale.
+```bash
+just doctor --strict
+just review 1 --strict --ui-scale 1.5
+```
 
-**Display settings** contains atlas appearance and selected-region styles. **Data layers** opens a separate optional panel with recording sites, insertion paths and an anatomical plane. Controls appear beside the enabled layer. The data table is optional; examples/presets and rendering comparisons are secondary controls. These changes preserve one scene and its scientific inputs rather than rebuilding the workspace.
+The window requests 2800 × 2000 logical pixels and fits one monitor's decorated work area. The named oblique dorsal orientation puts olfactory areas toward the lower left and cerebellar cortex toward the upper right. **Reset view** restores orientation, pan and zoom without resetting scientific layers or selection. **Explode selection** separates a selected fine region using its authored displacement; the coarse context remains a stationary anatomical reference.
 
-The BWM inputs are hash-verified real recording sites. Firing-rate colors run from
-purple through teal to yellow, clipped at the finite-site 5th/95th percentiles in
-Hz. The numeric range remains visible beside the table; original table values are
-unchanged. Missing rates have transparent scalar points, and gray analytic-site
-and table swatches. Uniform cyan points retain all real recording-site coordinates.
-Point opacity is a display multiplier, not a scientific measurement. Table selection
-links mapped atlas regions; arbitrary points and sampled planes are not direct
-picking targets. The physical plane shows real Allen 50 um grayscale anatomy at
-its affine-defined location. Insertion colors identify paths; paths connect actual
-channel coordinates without fitted or extrapolated points.
+The default scene contains six verified source-native context structures: Isocortex, Olfactory areas, Midbrain, Pons, Medulla and Cerebellar cortex. They form an incomplete orientation cut, not a complete brain partition or a closed shell. Their source colors identify anatomy. The shared `ibl-anatomy` catalog contains twelve structures; the default omits six internal structures to reduce visual clutter. Setup materializes the hash-pinned source meshes in `build/allen-major-context`. Missing/corrupt assets fail explicitly rather than falling back to the dense brain.
 
-Prepare optional W39 trajectories using the instructions in the
-[real-data roadmap](REAL_DATA_EXAMPLE_ROADMAP.md#october-13-runnable-examples).
-When those inputs are absent, the multiple-insertion preset is unavailable and the
-examples section explains preparation. Present files with invalid hashes/provenance fail
-explicitly. The persistent data area continues to show the pinned BWM recording-site
-fixture; it does not claim W39 firing-rate data.
+A real BWM recording starts visible: 192 prepared recording sites in cyan and one amber path joining their actual coordinates. The path is not an independent histology trace. Layer counts describe the supplied observations. **Layers** is persistently docked below the viewport and can be resized, moved or docked elsewhere; the Regions browser retains its own full-height reservation. Its three checkboxes control Anatomical context, Insertion paths and Recording sites. No toggle changes the camera or context opacity.
 
-Review these scenarios within the same window:
+**Recording details → Site color** switches uniform geometry to mean firing rate. Values are means of good units assigned to co-located channel groups in the default verified fixture; these are not individual neuron soma locations. The range uses finite-site 5th/95th percentiles in Hz, with purple low and yellow high. Missing scalar values are gray and original table values remain unchanged. **Site table** opens the optional linked recording table. Recording captions and derivation text come from the supplied fixture's provenance, not a hardcoded subject identity.
 
-1. Orbit the atlas, switch mappings, hover/select a region and find it in the tree.
-   Edit its color/opacity and hide it. Check that committed selection remains
-   understandable; a mapping switch intentionally clears selection.
-2. Load the single-probe preset. Toggle uniform/firing-rate point colors, resize
-   points and change opacity. Sort/filter the table and select rows. Check units,
-   missing-value behavior and the association with the anatomical region.
-3. If W39 is prepared, load multiple insertions and style/hide each path independently.
-4. Load points + plane. Orbit to judge depth and overlap, compare blending/cutout,
-   vary cutoff and isolate individual layers. Check that toggles retain the camera,
-   table state and layout. Use Restore all example defaults to reset data settings; Reset view restores only the camera.
+The settings gear opens **Display settings**, including Context opacity. Context uses one approximate transparency technique throughout 0–1, avoiding the old automatic transparent-to-opaque pipeline jump at 1. This does not make overlapping transparent surfaces physically exact. At high opacity, internal data can still be obscured; the recording task starts at 0.04. Fine overlays cap opacity at 0.18 so they do not become opaque obstacles. The optional explicit detailed-anatomy presentation retains its separate rendering behavior.
+
+Review in this order:
+
+1. Judge the initial camera against the reference. The recording should be findable immediately, and major anatomical context should be understandable without individual cortical layers.
+2. Turn Recording sites off: the amber path should remain. Turn Insertion paths off too: both data layers disappear. Restore each independently; camera, region selection and styles must stay fixed.
+3. Turn Anatomical context off/on. Sites and paths remain visible; restoring context restores its previous appearance.
+4. Select FRP, then TH (Thalamus) through the tree. Context and data must remain. Clear selection, then click a large visible cortex surface: select the shown parent/side without exposing all cortical layers. Try Allen/Beryl/Cosmos and left/right visibility.
+5. Open Recording details, switch Site color to Mean firing rate (Hz), and inspect the range/missing-value legend. Open Site table and check linked selection. Restore uniform color to compare geometry readability.
+6. Resize or dock Layers elsewhere. At UI scale 1.5, the three primary toggles must remain readable and accessible; the tree should not jump when selection changes. Orbit/zoom and verify Reset view; inspect Explode selection with a fine region selected.
+7. In Display settings, compare low opacity, 0.9 and 1.0. Check the endpoint transition and judge the transparency approximation separately from anatomical clutter.
+
+Advanced diagnostics retain the older presets, comparison point renderer, physical plane and optional W39 paths. They are outside this first visual gate. Missing optional W39 data disables that example without borrowing BWM firing rates. Later gates will review multiple-recording API scripts and linked slices; no alignment computation or new cluster/voxel feature workflow is claimed here.
+
+For a deliberate twelve-structure comparison, run the example directly with `--context-detail all` in the configured Datoviz environment. Ordinary review should start with the six landmarks above. Offscreen output captures scientific views without interactive controls.
 
 ## App 2: linked atlas navigator
 

@@ -29,6 +29,12 @@ Pass a prepared `AtlasEnvelope` through `selection_envelope=` or `set_selection_
 
 `fit_workarea=True` opts interactive windows into initial fitting within one monitor's usable area. It leaves offscreen dimensions unchanged; the library default is `False`.
 
+## Independent anatomical context
+
+The visual prototype adds `anatomy_presentation='major'`, `anatomical_context=` and `context_opacity=`. Prepare `AtlasContextSurface` records with `ibl_datoviz.context.AtlasContextSurface.from_geometry()` from verified shared surface geometry; these arrays use the atlas's unchanged normalization. `set_anatomical_context()` replaces the owned context transactionally, and `set_context_opacity()` changes only its presentation. `set_anatomy_presentation('detailed')` explicitly returns to the detailed atlas. These adapters support the first visual gate; the broader layer-handle API remains proposed.
+
+Major context is independent of mapping, regional scalar colors and fine selection. It retains authored colors, geometry and opacity while selection updates sparse tint state. Displayed coarse parents are highlighted directly without exposing their fine descendants; explicit fine selections receive a translucent overlay capped at 0.18. Context meshes retain true signed Allen parent identities for supported surface picks, rather than inventing fine reduced-mapping identities. Hidden context has no query coverage. Original-world hemisphere predicates follow the atlas midline policy; context stays at its reference position during fine-region explosion.
+
 ## Linked atlas navigator
 
 ::: ibl_datoviz.linked_atlas.LinkedAtlasNavigator

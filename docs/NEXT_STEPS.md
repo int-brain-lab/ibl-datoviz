@@ -9,6 +9,72 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## First recording-context visual gate — October 15 2026
+
+The approved implementation now reaches the first visual review gate; the broader
+scientist-facing layer API refactor remains pending manual feedback. App 1 is
+Where did we record?: six original major-structure orientation landmarks at
+context opacity 0.04, one amber supplied path and 192 cyan recording sites.
+The named camera is `RECORDING_CAMERA = (-0.12, 0.18, 2.50)`, selected through
+isolated comparisons against the supplied oblique dorsal reference. Exact visual
+acceptance belongs to the reviewer.
+
+The shared anatomy catalog has twelve verified source-native meshes. The default
+uses Isocortex 315, Olfactory areas 698, Midbrain 313, Pons 771, Medulla 354 and
+Cerebellar cortex 528; six internal context structures remain available through
+`--context-detail all` when running the example directly. The inventory rejected
+Cerebellum 512's zero normals instead of silently repairing them. Source bytes,
+counts, parent lineage, labels and colors are verified; this is incomplete display
+context, not a complete closed anatomical partition. `just setup` prepares the
+catalog under `build/allen-major-context`; missing/corrupt assets fail explicitly.
+
+Context geometry/colors/opacity remain independent of mapping and selection.
+Coarse clicks retain true signed source-parent identities and accent the displayed
+surface without exposing all fine descendants. Explicit fine selections add a
+translucent overlay capped at 0.18. Other context and scientific layers stay
+visible. Hemisphere coverage uses original ML and the atlas's zero-ownership
+policy. Context stays at its anatomical reference position during fine explosion.
+Major context uses fixed WBOIT throughout opacity 0–1, removing the old implicit
+pipeline jump at the endpoint; approximate overlapping transparency remains a
+visual-review concern. Library detailed anatomy remains a separate presentation.
+
+Layers starts docked below the viewport with context/path/site visibility and
+counts; it can be moved or docked elsewhere. The tree retains full height.
+Recording details enables scalar firing-rate colors with units/range and actual
+fixture provenance. The supplied path joins channel coordinates; it is not an
+independent histology trace. Visibility preserves styles, camera and selection;
+Reset view restores orientation/pan/zoom without resetting scientific state.
+Datoviz adds only `DVZ_SELECTION_FLAGS_NO_CARD` so applications owning scientific
+details can suppress raw visual/item/key cards while retaining native selection.
+
+Pins: anatomy `6498a830e9b078ff4fc4cb06e39436d0fc68aa48`; Datoviz
+`efbef43b8fd120519da48088a39deb86df3b1bbe` on `rc4/scientific-3d`.
+Native library SHA256:
+`368d26834fd99bcc2845b3b7d6b061095256534dd53653d1b258fc5d36a2a4b6`.
+Anatomy remains on its permitted `main`; native remains on `feature/datoviz-v04`.
+The user authorizes publication of these relevant branches at this review gate.
+
+Validation: 653 native-package tests pass with zero skips and both real asset
+roots, strict doctor, lint, strict docs, source/wheel builds and bounded startups
+of both review apps at scale 1.5. Anatomy has 153 passing tests with source-backed
+inventory checks, package/resource checks and an independent hash/lineage audit.
+The narrow engine change passes build, selection/interaction tests, binding/ABI,
+API-reference and strict documentation checks. Native context regression proves
+parent identities under mapping changes, hemisphere/zero-alpha query coverage,
+restoration and fine-overlay alpha. CPU regressions cover ownership, sparse
+hover, zero-plane predicates, context replacement and rollback.
+
+Isolated live captures cover 1600 × 1200 and 1100 × 720 at scale 1.5, superficial,
+deep and coarse-parent selection, layer visibility and scalar coloring. Real
+mouse checks cover all three checkboxes, a cortex pick returning -315, a fine FRP
+tree click, explosion and Reset view. These are Linux evidence, not manual or Mac
+acceptance. Ignored evidence is under `build/recording-prototype/`.
+
+Run `just doctor --strict`, then `just review 1 --strict --ui-scale 1.5`.
+Follow the exact [app-1 checklist](review-apps.md#app-1-where-did-we-record).
+Review the visual composition before proceeding to API scripts and the broader
+refactor. App 2 is a regression check at this gate, not a new demo redesign.
+
 ## Scientific-user review reset — October 15 2026
 
 The latest manual review rejects app 1's focus/isolation default, dense anatomy,
