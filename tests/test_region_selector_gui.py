@@ -275,12 +275,90 @@ def test_partial_projection_failure_restores_old_model_and_native_projection(vie
 
 def test_failed_projection_rollback_closes_viewer(viewer, monkeypatch):
     viewer, fake = viewer
+    scopes = []
+
+    def end_child(_gui):
+        assert not viewer._closed
+        scopes.append('end_child')
+
+    def end(_gui):
+        assert not viewer._closed
+        scopes.append('end')
+
+    monkeypatch.setattr(fake, 'dvz_gui_end_child', end_child)
+    monkeypatch.setattr(fake, 'dvz_gui_end', end)
     monkeypatch.setattr(fake, 'dvz_gui_tree_set_projection', lambda *_args: -1)
     fake.query = 'leaf'
     with pytest.raises(RuntimeError, match='rollback failed; viewer closed'):
         viewer._gui_callback(None, None, None)
     assert viewer._closed
+    assert scopes == ['end_child', 'end_child', 'end_child', 'end']
     assert sum(call[0] == 'tree_destroy' for call in fake.calls) == 1
+
+
+def test_native_gui_rollback_stops_then_closes_after_app_run_returns(viewer, monkeypatch):
+    viewer, fake = viewer
+    viewer.app = app = object()
+    scene = viewer.scene
+    scopes, lifecycle = [], []
+    returned = False
+
+    def begin(*_args):
+        scopes.append('window')
+        return True
+
+    def begin_child(*_args):
+        scopes.append('child')
+        return True
+
+    def end_child(*_args):
+        assert not viewer._closed and viewer.scene is scene
+        assert scopes.pop() == 'child'
+        lifecycle.append('end_child')
+
+    def end(*_args):
+        assert not viewer._closed and viewer.app is app
+        assert scopes.pop() == 'window'
+        lifecycle.append('end')
+
+    def stop(native_app):
+        assert native_app is app and not returned and scopes
+        lifecycle.append('stop')
+        return 0
+
+    def destroy(native_app):
+        assert native_app is app and returned and not scopes
+        lifecycle.append('destroy')
+
+    def run(_native_app, _frames):
+        nonlocal returned
+        viewer._gui_callback(None, None, None)
+        assert viewer._close_pending and not viewer._closed
+        assert viewer.app is app and viewer.scene is scene
+        assert viewer._gui_callback_error is not None
+        # A frame resumed by the native caller may invoke the callback again.
+        before = lifecycle.copy()
+        viewer._gui_callback(None, None, None)
+        assert lifecycle == before
+        returned = True
+        lifecycle.append('run_return')
+
+    monkeypatch.setattr(viewer, '_create_view', lambda **_kwargs: None)
+    monkeypatch.setattr(fake, 'dvz_gui_begin', begin)
+    monkeypatch.setattr(fake, 'dvz_gui_begin_child', begin_child)
+    monkeypatch.setattr(fake, 'dvz_gui_end_child', end_child)
+    monkeypatch.setattr(fake, 'dvz_gui_end', end)
+    monkeypatch.setattr(fake, 'dvz_app_stop', stop, raising=False)
+    monkeypatch.setattr(fake, 'dvz_app_run', run, raising=False)
+    monkeypatch.setattr(fake, 'dvz_app_destroy', destroy)
+    monkeypatch.setattr(fake, 'dvz_gui_tree_set_projection', lambda *_args: -1)
+    fake.query = 'leaf'
+    with pytest.raises(RuntimeError, match='rollback failed; viewer closed'):
+        viewer.show()
+    assert viewer._closed and viewer.app is None and viewer.scene is None
+    assert lifecycle.index('stop') < lifecycle.index('end')
+    assert lifecycle[-2:] == ['run_return', 'destroy']
+    assert viewer._gui_callback_error is None
 
 
 def test_annotation_spans_are_utf8_bytes_and_native_copies_temporary_storage():

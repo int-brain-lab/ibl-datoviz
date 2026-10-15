@@ -142,6 +142,9 @@ class AtlasViewer:
         self.enable_interaction = bool(enable_interaction)
         self.enable_hover = bool(enable_hover)
         self._closed = False
+        self._gui_callback_depth = 0
+        self._close_pending = False
+        self._gui_callback_error = None
         self.scene = None
         self.app, self.view, self.arcball, self.arcball_controller = None, None, None, None
         self.figure, self.panel, self.mesh, self.probe = None, None, None, None
@@ -1369,7 +1372,27 @@ class AtlasViewer:
                 values[available[int(region_id)]] = float(value)
         return values
 
-    def _gui_callback(self, gui, _view, _user_data) -> None:  # noqa: PLR0912, PLR0915
+    def _gui_callback(self, gui, _view, _user_data) -> None:
+        """Keep native resources alive until GUI scopes and the app frame unwind."""
+        if self._closed or self._close_pending:
+            return
+        self._gui_callback_depth += 1
+        try:
+            self._draw_gui_frame(gui)
+        except Exception as error:
+            if self._close_pending and self.app is not None:
+                # ctypes cannot propagate callback exceptions to app_run's caller.
+                self._gui_callback_error = error
+                return
+            raise
+        finally:
+            self._gui_callback_depth -= 1
+            if self._close_pending and self._gui_callback_depth == 0 and self.app is None:
+                # Direct controlled-widget calls have no native app frame to resume.
+                self.close()
+
+    def _draw_gui_frame(self, gui) -> None:
+        """Draw one GUI frame with balanced native window and child scopes."""
         self.dvz.dvz_gui_dock_window_once(
             gui,
             b'Allen mouse brain atlas',
@@ -1884,7 +1907,14 @@ class AtlasViewer:
         """Run an interactive arcball and region-picking view."""
         self._require_open()
         self._create_view(offscreen=False, title=title)
-        self.dvz.dvz_app_run(self.app, frame_count)
+        try:
+            self.dvz.dvz_app_run(self.app, frame_count)
+        finally:
+            if self._close_pending:
+                self.close()
+        if self._gui_callback_error is not None:
+            error, self._gui_callback_error = self._gui_callback_error, None
+            raise error
 
     def _require_open(self) -> None:
         """Reject operations that require live native viewer state."""
@@ -1894,6 +1924,11 @@ class AtlasViewer:
     def close(self) -> None:
         """Destroy app before scene; scene owns all remaining handles."""
         if getattr(self, '_closed', False):
+            return
+        if getattr(self, '_gui_callback_depth', 0):
+            self._close_pending = True
+            if getattr(self, 'app', None) is not None:
+                self.dvz.dvz_app_stop(self.app)
             return
         datoviz = getattr(self, 'dvz', None)
         if getattr(self, '_insertions', None) is not None:
@@ -1920,6 +1955,7 @@ class AtlasViewer:
             self.dvz.dvz_scene_destroy(self.scene)
             self.scene = None
         self._closed = True
+        self._close_pending = False
 
     def __enter__(self) -> AtlasViewer:
         """Return this owned viewer."""
