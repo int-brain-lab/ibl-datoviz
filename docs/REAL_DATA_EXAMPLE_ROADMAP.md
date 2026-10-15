@@ -2,7 +2,7 @@
 
 Status: the reviewer accepted the current app-1 recording-context demo after the reset and panned-rotation corrections. The user has also approved the consolidated API direction. Generic layers and
 recording composition are implemented; the next gate is workflow review, with
-independent source-frame evidence required for actual BWM geometry. App 2 and
+reviewed source-frame evidence required for actual BWM geometry. App 2 and
 further platforms have separate acceptance scope.
 
 The current API design and implementation stages are in the
@@ -49,8 +49,9 @@ The initial metadata-access gap has since been addressed locally in
 cluster-to-channel associations. Two insertion reads retained 384 channels/459
 units and 96 channels/2 units respectively, without deduplication or cross-PID
 geometry substitution. The legacy coordinate convention is an explicit caller
-assertion; a complete verified reference-frame contract remains a prerequisite
-for the proposed core-payload bridge. Signal failures still prohibit direct-file
+assertion. A subsequent source-contract audit produced a reviewed, release/PID-scoped
+legacy coordinate declaration for exploratory review; alignment quality and
+scientific source validation remain unknown. See the current handoff. Signal failures still prohibit direct-file
 fallbacks. These checks do not establish native picking or scientific visual
 acceptance.
 

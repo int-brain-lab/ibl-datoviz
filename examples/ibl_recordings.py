@@ -4,8 +4,9 @@
 Run as ``python -m examples.ibl_recordings ATLAS_ROOT --release RELEASE --pid PID
 --frame-evidence frame.json`` in the configured Datoviz environment with the
 optional shared reader installed. No discovery, downloads or signal reads occur.
-Frame evidence must independently establish source registration; do not copy
-atlas frame metadata merely to label unknown source coordinates.
+Frame evidence must identify the source coordinate convention and atlas reference;
+do not copy atlas frame metadata merely to label unknown source coordinates.
+An insertion's alignment quality and scientific source validation remain separate.
 """
 
 from __future__ import annotations

@@ -179,8 +179,11 @@ Before constructors freeze, review a minimal immutable contract with these field
 A frame assertion is distinct from a validated source claim. Current BWM 1.1.0
 metadata lacks a complete frame declaration: `coordinate_convention="ibl-mlapdv-um"`
 is an explicit legacy convention assertion, not proof of atlas registration.
-The proposed `prepare_bwm_recording` bridge additionally requires verified frame
-information; it must fail if that information is unavailable. It returns the
+The `prepare_bwm_recording` bridge additionally requires reviewed evidence for the
+source coordinate interpretation and atlas reference; it fails without it. An
+explicit reviewed legacy declaration can document its inferential assumptions.
+Coordinate compatibility does not establish insertion alignment quality, exact
+producer execution or scientific source-validation success. It returns the
 reviewed core `Recording`, rather than permanently adding a parallel payload model.
 Its immutable key/provenance snapshots must not depend on mutable detached source
 tables. Reject disagreements between table identity and retained observation refs

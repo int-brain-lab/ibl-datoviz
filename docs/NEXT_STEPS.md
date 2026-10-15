@@ -9,6 +9,51 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Reviewed BWM coordinate declaration and two-recording run — October 15 2026
+
+The follow-up GPT-6.1 Sol high-reasoning audit separates coordinate interpretation
+from insertion alignment quality. The earlier gate treated an unavailable full
+producer execution chain as a blocker to any reviewed legacy frame declaration;
+that was too strong for exploratory metadata visualization. The reviewed converter
+preserves `channels.mlapdv.npy` XYZ columns, the historical official IBL writer
+supplies AllenAtlas coordinates in µm, and the historical atlas contract agrees
+with the shared anatomy bregma origin and axis orientation. This is a documented
+legacy interpretation, not proof of exact upstream writer/configuration or
+scientific source-validation success.
+
+Primary pins: [IBL channel writer](https://github.com/int-brain-lab/ibllib/blob/db4ad4f2cc2e15b7c4a59f95fc9996e41ba7e51c/ibllib/qc/alignment_qc.py#L342-L358)
+and [IBL atlas contract](https://github.com/int-brain-lab/iblatlas/blob/b874deaacf01c91ad54d8115b5e02ba5475ad88c/iblatlas/atlas.py).
+The complete reviewed evidence is ignored at
+`build/ibl-integration/reviewed-bwm-frame.json`, SHA256
+`cc745213a47587b8ad89674ad243cc1c14eea22d9f528d8583cd7f0b4ab881ba`.
+It declares manifest
+`43978e003c20e4bb526486ef26f9ab286d9379a73a4d412f48293e20e527613b`
+and exactly two PIDs: `a21bade7-5be7-4a17-a9b9-ddee453e6260` and
+`bf746764-78e0-4b9c-bdf6-65b6ff45745d`. Original channel-file hashes, exact
+producer execution/configuration, source validation and insertion alignment
+quality remain unavailable/unknown and are retained in the evidence.
+
+The BWM bridge now enforces optional `source_manifest_sha256` and
+`source_insertion_ids` provenance scopes before conversion. Stale or foreign
+recordings are rejected; no source/signal validation gate is relaxed. A future
+shared-data release should carry an authoritative coordinate declaration and
+producer pins itself rather than duplicating readers or mutating this pinned
+release. No production data, catalog, dataset or agent source changed here.
+
+Both real recordings now run through the shared reader, generic payload bridge
+and AtlasViewer: 384 channels / 459 clusters and 96 channels / 2 clusters, all
+positioned. Native offscreen capture and a strict three-frame GUI run at scale
+1.5 pass; original cluster 21 in the second PID is selected in the GUI. Images
+were inspected. Receipts are `build/ibl-integration/reviewed-bwm-recordings.json`
+and `reviewed-bwm-startup.json`; captures are beside them. These are Linux
+engineering checks, not user acceptance of alignment, interaction or scientific
+validity. No signal reads were performed.
+
+Validation: 46 payload/bridge/adapter tests pass, including release/PID scope
+regressions; lint and strict docs pass. The high audit's final reread found no
+remaining P1/P2 findings. Generic interactive review is ready independently via
+`just review annotations --strict --ui-scale 1.5`.
+
 ## Interactive annotation launcher — October 15 2026
 
 Run `just review annotations --strict --ui-scale 1.5` for the generic point/path
@@ -21,7 +66,7 @@ rules. See [the annotation review checklist](review-apps.md#scientific-annotatio
 
 Validation: 28 launcher tests pass; recipe parsing/discovery, strict three-frame
 native startup and strict lint/docs pass. Interactive quality still needs the
-user's review. BWM source-frame research continues independently of this launcher.
+user's review. The subsequent BWM source-frame findings are recorded above.
 
 ## Scientific layers and shared BWM bridge implemented — October 15 2026
 

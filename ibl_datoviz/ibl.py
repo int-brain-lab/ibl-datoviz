@@ -186,9 +186,10 @@ def _table_provenance(table):
 def prepare_bwm_recording(recording, *, frame):
     """Bridge detached BWM observations to the viewer's generic payload contract.
 
-    ``frame`` requires externally supplied registration evidence. The legacy
-    coordinate assertion is checked separately; neither metadata integrity nor
-    passed signal validation establishes a verified anatomical registration.
+    ``frame`` requires reviewed evidence for the source coordinate convention
+    and atlas reference. This identifies the frame, not the quality of individual
+    insertion alignment. Metadata integrity and signal validation remain separate.
+    A source_manifest_sha256 provenance scope, when supplied, must match this release.
     No source data is loaded or scientific source validation performed here.
     """
     if not isinstance(recording, BwmRecording):
@@ -202,6 +203,15 @@ def prepare_bwm_recording(recording, *, frame):
     ):
         raise ValueError('BWM and verified frame coordinate conventions disagree')
     metadata = recording.metadata
+    declared_manifest = frame.provenance.get('source_manifest_sha256')
+    if declared_manifest is not None and declared_manifest != metadata.manifest_sha256:
+        raise ValueError('frame evidence source manifest does not match the recording release')
+    declared_insertions = frame.provenance.get('source_insertion_ids')
+    if declared_insertions is not None and (
+        not isinstance(declared_insertions, (tuple, list))
+        or metadata.pid not in declared_insertions
+    ):
+        raise ValueError('frame evidence insertion scope does not include this recording')
     source = SourceKey('ibl', metadata.dataset_name, metadata.dataset_version,
                        metadata.manifest_sha256)
     # The integration object retains mutable detached metadata tables. Reject a

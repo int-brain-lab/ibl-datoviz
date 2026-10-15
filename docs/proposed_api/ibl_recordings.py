@@ -1,7 +1,7 @@
 """Approved scientific API: two IBL recordings using the existing shared data seam.
 
 Callable example with the optional shared IBL reader installed. The caller supplies
-an existing workspace, verified atlas assets, and verified source frame evidence.
+an existing workspace, verified atlas assets, and reviewed source coordinate-frame evidence.
 No discovery or downloads occur.
 """
 

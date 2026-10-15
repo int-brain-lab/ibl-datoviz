@@ -100,3 +100,32 @@ def test_forged_geometry_cannot_override_source_rows(recording, frame):
     clusters = replace(recording.clusters, positions_um=np.zeros((2, 3)))
     with pytest.raises(ValueError, match='disagree'):
         prepare_bwm_recording(replace(recording, clusters=clusters), frame=frame)
+
+
+def test_release_scoped_frame_evidence_cannot_be_reused_for_another_manifest(recording):
+    provenance = {
+        'verification': {'method': 'source convention audit', 'evidence': 'pinned source code'},
+        'source_manifest_sha256': 'b' * 64,
+    }
+    frame = WorldFrame('allen-ccf-2017', provenance=provenance)
+    with pytest.raises(ValueError, match='source manifest'):
+        prepare_bwm_recording(recording, frame=frame)
+    provenance['source_manifest_sha256'] = recording.metadata.manifest_sha256
+    matched = WorldFrame('allen-ccf-2017', provenance=provenance)
+    payload = prepare_bwm_recording(recording, frame=matched)
+    assert payload.provenance['source_validation_status'] == 'unknown'
+    assert payload.provenance['signal_validation'] == 'not_requested'
+
+
+def test_insertion_scoped_frame_evidence_rejects_unreviewed_recording(recording, frame):
+    provenance = dict(frame.provenance)
+    provenance['source_insertion_ids'] = ['another-pid']
+    with pytest.raises(ValueError, match='insertion scope'):
+        prepare_bwm_recording(
+            recording, frame=WorldFrame('allen-ccf-2017', provenance=provenance)
+        )
+    provenance['source_insertion_ids'] = [recording.pid]
+    payload = prepare_bwm_recording(
+        recording, frame=WorldFrame('allen-ccf-2017', provenance=provenance)
+    )
+    assert payload.insertion_id == recording.pid

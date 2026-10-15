@@ -97,9 +97,11 @@ class WorldFrame:
 
     ``ibl-mlapdv-um`` denotes the existing IBL atlas-world ML/AP/DV micrometre
     convention, including its bregma origin and axis orientation. A declaration
-    alone does not establish registration. Verified evidence is an explicit
-    ``verification`` provenance mapping containing nonempty ``method`` and
-    ``evidence`` strings. These are retained assertions, not a validation service.
+    alone does not establish source frame semantics. Reviewed evidence is an
+    explicit ``verification`` provenance mapping containing nonempty ``method``
+    and ``evidence`` strings. This identifies a coordinate frame, independently
+    of insertion alignment quality or scientific source validation. These are
+    retained assertions, not a validation service.
     """
 
     reference_space_id: str

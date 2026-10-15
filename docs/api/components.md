@@ -30,10 +30,12 @@ with AtlasViewer(atlas=verified_assets, mapping="beryl") as app:
 ```
 
 `app.frame` can locate annotations authored in that atlas. It must not be copied
-onto external source coordinates to claim verified registration. Source payloads
-need a `WorldFrame` with recorded verification method/evidence and compatible
-reference-space and coordinate convention. This records caller-supplied evidence;
-it is not a registration validation service.
+onto external source coordinates to claim frame agreement. Source payloads need a
+`WorldFrame` with reviewed evidence for the reference, origin, axes and units. A
+legacy convention declaration can cite authoritative source code and state its
+remaining assumptions. This establishes an explicit coordinate interpretation;
+it does not establish individual insertion alignment quality or scientific source
+validation. The frame records caller-supplied evidence, not a validation service.
 
 `add_recording(recording, show=("channels", "clusters"))` composes supplied
 populations using the same owned registry. `show` sets initial visibility;
@@ -83,10 +85,12 @@ python -m examples.ibl_recordings /path/to/atlas-assets \
 Both support `--frames 3`, `--offscreen PNG` and `--report JSON`. They never
 fetch datasets. Major anatomy requires the prepared context surfaces; otherwise
 they explicitly choose detailed anatomy. The IBL example requires the optional
-shared reader and independent frame evidence. A frame JSON has the fields
+shared reader and reviewed source coordinate-frame evidence. A frame JSON has the fields
 `reference_space_id`, `coordinate_convention` and `provenance`, whose
 `verification` mapping records nonempty `method` and `evidence` strings. Supplying
-that document does not change metadata or signal source-validation status.
+that document does not change metadata or signal source-validation status. If
+`provenance.source_manifest_sha256` or `provenance.source_insertion_ids` scopes a
+BWM declaration, the bridge rejects recordings outside those reviewed identities.
 
 The shared reader owns integrity/validation and codecs; `BwmSource` retains all
 source metadata and `prepare_bwm_recording` snapshots it into core payloads. BWM
