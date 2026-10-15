@@ -284,10 +284,10 @@ def test_numbered_apps_dispatch_one_fixed_layout(tmp_path, monkeypatch, choice, 
     assert len(commands) == 1 and Path(commands[0][1]).name == script
     assert commands[0][-4:] == ['--frames', 3, '--ui-scale', 1.5]
     if choice == '1':
-        position = commands[0].index('--envelope-root')
-        assert commands[0][position + 1] == review.ENVELOPE
+        position = commands[0].index('--context-root')
+        assert commands[0][position + 1] == review.CONTEXT
     else:
-        assert '--envelope-root' not in commands[0]
+        assert '--context-root' not in commands[0]
 
 
 def test_default_review_opens_only_app_one(tmp_path, monkeypatch):

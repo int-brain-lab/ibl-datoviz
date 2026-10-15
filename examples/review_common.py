@@ -13,7 +13,7 @@ from ibl_datoviz.navigator import SLICE_DISPLAY_AXES, AtlasSliceComposer
 from ibl_datoviz.surface_style import RegionStyle
 
 # Named review orientation; visual acceptance is recorded with the review artifacts.
-RECORDING_CAMERA = (1.0, 0.75, -0.25)
+RECORDING_CAMERA = (-0.12, 0.18, 2.50)
 
 
 def add_review_arguments(parser):

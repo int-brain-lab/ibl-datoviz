@@ -82,6 +82,10 @@ def viewer(monkeypatch):
     monkeypatch.setattr(AtlasViewer, '__init__', initialize)
     monkeypatch.setattr(AtlasViewer, 'set_insertion', insertion)
     monkeypatch.setattr(AtlasViewer, 'set_probe_data', probe_data)
+    monkeypatch.setattr(
+        AtlasViewer, '_mapped_probe_region_ids', lambda self, sites: sites.allen_region_ids
+    )
+    monkeypatch.setattr(AtlasViewer, '_upload_probe_sites', lambda self, *args, **kwargs: None)
     monkeypatch.setattr(AtlasViewer, 'set_surface_visible', surface, raising=False)
     monkeypatch.setattr(
         AtlasViewer,
@@ -476,3 +480,16 @@ def test_major_context_loading_delegates_to_hash_verified_shared_catalog(monkeyp
     )
     assert review.load_major_context(tmp_path) == (catalog, geometry)
     assert calls == [(tmp_path, catalog)]
+
+
+def test_recording_caption_tracks_supplied_provenance_without_default_identity():
+    caption, values = review.recording_description({
+        'dataset': {'name': 'other_release', 'version': '2.0'},
+        'insertion': {'subject': 'OtherSubject', 'probe_name': 'probe01'},
+        'derivation': {'value': 'declared prepared site statistic'},
+    })
+    assert caption == 'other_release 2.0 / OtherSubject probe01'
+    assert values == 'declared prepared site statistic'
+    assert review.recording_description(None) == (
+        'Supplied recording', 'prepared recording-site values'
+    )

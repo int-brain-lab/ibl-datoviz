@@ -35,11 +35,27 @@ PRESETS = ('atlas', 'single-probe', 'multiple-insertions', 'mixed')
 PRESET_LABELS = ('Atlas surface', 'Single BWM probe', 'Multiple W39 insertions', 'Points + plane')
 BWM_ID = 'bwm-probe'
 POINT_COLOR = (70, 220, 250, 180)
+# A small nonredundant context cut; the complete verified catalog remains available.
+CONTEXT_LANDMARKS = frozenset((315, 698, 313, 771, 354, 528))
 MISSING_W39 = (
     'Multiple insertions unavailable. Prepare the pinned W39 channels.pqt with '
     'tools/build_w39_insertions.py --channels /path/to/channels.pqt '
     '--output build/w39-insertions, then restart this review.'
 )
+
+
+def recording_description(provenance):
+    """Describe the supplied recording without borrowing another fixture's identity."""
+    provenance = provenance or {}
+    dataset = provenance.get('dataset', {})
+    insertion = provenance.get('insertion', {})
+    source = ' '.join(str(dataset[key]) for key in ('name', 'version') if dataset.get(key))
+    recording = ' '.join(
+        str(insertion[key]) for key in ('subject', 'probe_name') if insertion.get(key)
+    )
+    caption = ' / '.join(part for part in (source, recording) if part) or 'Supplied recording'
+    description = provenance.get('derivation', {}).get('value', 'prepared recording-site values')
+    return caption, description
 
 
 def firing_rate_range(sites):
@@ -97,9 +113,10 @@ class ScientificSceneReview(AtlasViewer):
         kwargs.setdefault('selection_presentation', 'all')
         super().__init__(mesh, **kwargs)
 
-    def configure_review(self, sites, plane, paths=(), *, unavailable_note=''):
+    def configure_review(self, sites, plane, paths=(), *, unavailable_note='', provenance=None):
         """Attach verified data once, borrowing this viewer's scene and atlas panel."""
         self.review_sites, self.base_plane = sites, plane
+        self.recording_caption, self.value_description = recording_description(provenance)
         self.value_range = firing_rate_range(sites)
         self.unavailable_note = unavailable_note
         self._paths = dict(paths)
@@ -128,8 +145,8 @@ class ScientificSceneReview(AtlasViewer):
         self._active_insertions = (BWM_ID,)
         self._preset_control = ctypes.c_int(0)
         self._layer_controls = {name: ctypes.c_bool(value) for name, value in self.layers.items()}
-        self.site_mode = 'scalar'
-        self._site_mode_control = ctypes.c_int(1)
+        self.site_mode = 'uniform'
+        self._site_mode_control = ctypes.c_int(0)
         self._point_mode_control = ctypes.c_int(1)
         self._point_size_control = ctypes.c_float(self.point_size)
         self._point_opacity_control = ctypes.c_float(self.point_opacity)
@@ -139,6 +156,7 @@ class ScientificSceneReview(AtlasViewer):
         self.set_probe_data(
             sites, value_range=self.value_range, radius_um=85, color_scheme='sequential'
         )
+        self.set_site_mode('uniform')
         self.review_points = PointCollectionVisual(
             self.dvz,
             self.scene,
@@ -332,8 +350,8 @@ class ScientificSceneReview(AtlasViewer):
     def reset_review(self):
         """Explicitly restore initial controls, camera, layers and scientific styles."""
         self.review_controls.reset()
-        if self.site_mode != 'scalar':
-            self.set_site_mode('scalar')
+        if self.site_mode != 'uniform':
+            self.set_site_mode('uniform')
         self.set_point_mode('scalar')
         self.set_point_size(6.0)
         self.set_point_opacity(0.7)
@@ -423,7 +441,9 @@ class ScientificSceneReview(AtlasViewer):
                 (1 << 1) | (1 << 2) | (1 << 3) | (1 << 5) | (1 << 8),
             )
             self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
-            unit = {'atlas': 'structures', 'insertions': 'paths', 'sites': 'sites'}[layer]
+            unit = {'atlas': 'structure', 'insertions': 'path', 'sites': 'site'}[layer]
+            if count != 1:
+                unit += 's'
             self.dvz.dvz_gui_text(gui, f'{count} {unit}'.encode())
             if layer == 'sites':
                 self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
@@ -434,15 +454,14 @@ class ScientificSceneReview(AtlasViewer):
             if self.site_mode == 'scalar':
                 self._text(
                     gui,
-                    f'Mean firing rate: {low:.3g} - {high:.3g} Hz (5-95% of finite BWM sites). '
-                    'Good-unit channel-group means. '
-                    'Purple: low; yellow: high; gray: no good units.',
+                    f'Mean firing rate: {low:.3g} - {high:.3g} Hz (5-95% of finite sites). '
+                    'Purple: low; yellow: high; gray: missing.',
                     width=105,
                 )
             else:
                 self._text(
                     gui,
-                    'Uniform site color; all supplied recording locations are shown.',
+                    'Cyan: recording sites; all supplied locations.',
                     width=105,
                 )
         if self.dvz.dvz_gui_collapsing_header(gui, b'Recording details', 0):
@@ -458,9 +477,8 @@ class ScientificSceneReview(AtlasViewer):
                 self._site_mode_control.value = ('uniform', 'scalar').index(self.site_mode)
             self._text(
                 gui,
-                'BWM 1.1.0 / PL030 probe00: mean of good units assigned to each '
-                'co-located channel group. Locations describe recording sites, '
-                'not exact neuron positions.',
+                f'{self.recording_caption}: {self.value_description}. '
+                'Locations describe recording sites, not exact neuron positions.',
                 width=100,
             )
             self._text(
@@ -617,7 +635,7 @@ class ScientificSceneReview(AtlasViewer):
     def _draw_encoding_notes(self, gui):
         self._text(
             gui,
-            f'{len(self.review_sites.values)} real BWM sites. Display clips '
+            f'{len(self.review_sites.values)} supplied recording sites. Display clips '
             'at finite-site 5th/95th percentiles; table values stay unchanged.',
         )
         self._text(
@@ -675,6 +693,10 @@ def main():
         help='prepared hash-verified major Allen surfaces (run just setup to prepare)',
     )
     parser.add_argument('--paths', type=Path, default=DEFAULT_PATHS)
+    parser.add_argument(
+        '--context-detail', choices=('landmarks', 'all'), default='landmarks',
+        help='six orientation landmarks by default; all twelve surfaces for comparison',
+    )
     parser.add_argument('--provenance', type=Path)
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='beryl')
     parser.add_argument('--preset', choices=PRESETS, default='single-probe')
@@ -687,7 +709,7 @@ def main():
     )
     add_review_arguments(parser)
     args = parser.parse_args()
-    sites, _provenance = _load_fixture(args.fixture)
+    sites, provenance = _load_fixture(args.fixture)
     paths, note = optional_insertions(
         args.paths, args.provenance or args.paths.with_suffix('.json')
     )
@@ -708,7 +730,7 @@ def main():
         height=args.height,
         surface_opacity=0.18,
         anatomy_presentation='major',
-        context_opacity=0.12,
+        context_opacity=0.04,
         camera_angles=RECORDING_CAMERA,
         ui_scale=args.ui_scale,
         enable_hover=args.hover,
@@ -724,9 +746,11 @@ def main():
                     name=member.name,
                 )
                 for member, geometry in zip(context_catalog.members, context_geometry, strict=True)
+                if args.context_detail == 'all'
+                or member.asset.source_allen_id in CONTEXT_LANDMARKS
             ]
         )
-        viewer.configure_review(sites, plane, paths, unavailable_note=note)
+        viewer.configure_review(sites, plane, paths, unavailable_note=note, provenance=provenance)
         viewer.apply_preset(args.preset)
         finish_review(viewer, args, 'Where did we record?')
     return 0

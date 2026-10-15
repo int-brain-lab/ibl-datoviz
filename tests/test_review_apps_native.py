@@ -31,6 +31,7 @@ def test_native_scientific_review_changes_layers_in_one_scene_and_view():
             surface_opacity=0.2,
         ) as viewer:
             viewer.configure_review(sites, load_review_slice(source, 'ap'))
+            viewer.apply_preset('atlas')
             viewer._create_view(offscreen=True, title='Scientific review regression')
             handles = (viewer.scene, viewer.figure, viewer.panel, viewer.app, viewer.view)
             baseline = render(viewer)

@@ -223,6 +223,15 @@ class AtlasViewer:
                 interaction_desc.target = self.dvz.DVZ_SCENE_TARGET_FACE
                 interaction_desc.hover_enabled = self.enable_hover
                 interaction_desc.selection_enabled = True
+                # The region browser owns scientific selection details; the
+                # engine's optional raw visual/item/key card is diagnostic UI.
+                selection_desc = self.dvz.dvz_selection_desc()
+                selection_desc.target = self.dvz.DVZ_SCENE_TARGET_FACE
+                selection_desc.selection_flags = self.dvz.DVZ_SELECTION_FLAGS_NO_CARD
+                selection = self.dvz.dvz_selection(self.scene, ctypes.byref(selection_desc))
+                if not selection:
+                    raise RuntimeError('atlas selection creation failed')
+                interaction_desc.selection = selection
                 self.interaction = self.dvz.dvz_item_interaction(
                     self.panel, ctypes.byref(interaction_desc)
                 )

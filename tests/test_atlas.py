@@ -26,6 +26,10 @@ class FakeItemInteractionDesc(ctypes.Structure):
     _fields_ = [('target', ctypes.c_int)]
 
 
+class FakeSelectionDesc(ctypes.Structure):
+    _fields_ = [('target', ctypes.c_int), ('selection_flags', ctypes.c_uint32)]
+
+
 class FakeSelectionItem(ctypes.Structure):
     _fields_ = [('link_key', ctypes.c_uint64)]
 
@@ -85,6 +89,7 @@ class FakeDatoviz:
     DVZ_KEY_HOME, DVZ_KEY_END, DVZ_KEY_ENTER, DVZ_KEY_SPACE = 268, 269, 257, 32
     DVZ_QUERY_CAPABILITY_FACE = 4
     DVZ_SCENE_TARGET_FACE = 4
+    DVZ_SELECTION_FLAGS_NO_CARD = 1
     DVZ_GUI_DATA_EVENT_SELECTION_CHANGED = 1
     DVZ_GUI_DATA_STYLE_FLAGS_FOREGROUND = 1
     DVZ_GUI_DATA_STYLE_FLAGS_DISABLED = 8
@@ -113,6 +118,14 @@ class FakeDatoviz:
         self.mesh_hover = None
         self.tree_selection = []
         self.table_selection = []
+
+    @staticmethod
+    def dvz_selection_desc():
+        return FakeSelectionDesc()
+
+    def dvz_selection(self, _scene, desc):
+        self.calls.append(('selection_policy', desc._obj.target, desc._obj.selection_flags))
+        return self._handle('selection')
 
     def _handle(self, name):
         if name == self.fail_on:
