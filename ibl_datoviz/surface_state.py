@@ -43,14 +43,17 @@ class SurfaceState:
 
     def _mapped_ids(self):
         owner = self.owner
-        if self._mapping != owner.mapping:
+        key = (owner.mapping, getattr(owner, 'selection_presentation', 'legacy') != 'legacy')
+        if self._mapping != key:
             ids = np.zeros(len(self.words), dtype=np.int64)
             for presentation in owner._surface_mesh.presentations:
                 mapped = presentation['mappings'][owner.mapping]
                 if mapped is not None:
-                    ids[int(presentation['presentation_id'])] = abs(int(mapped))
+                    ids[int(presentation['presentation_id'])] = (
+                        int(mapped) if key[1] else abs(int(mapped))
+                    )
             self._region_ids = ids
-            self._mapping = owner.mapping
+            self._mapping = key
         return self._region_ids
 
     def update(self, selected, hovered, *, selection_active):

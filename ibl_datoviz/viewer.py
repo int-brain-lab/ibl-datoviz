@@ -19,6 +19,7 @@ from ibl_anatomy import (
 )
 
 from .atlas import AtlasMesh
+from .envelope import AtlasEnvelope
 from .gui_data import create_probe_table, create_region_table, create_region_tree
 from .insertions import InsertionCollectionVisual
 from .ontology import AtlasTreeModel
@@ -75,7 +76,7 @@ class ProbeUpload(NamedTuple):
 class AtlasViewer:
     """Own one Datoviz scene displaying an immutable atlas mesh pack."""
 
-    def __init__(  # noqa: PLR0915
+    def __init__(  # noqa: PLR0912, PLR0915
         self,
         mesh: AtlasMesh,
         *,
@@ -88,14 +89,19 @@ class AtlasViewer:
         explode: float = 0.0,
         selection_dim_factor: float = 0.42,
         selection_context_opacity: float = 0.18,
+        selection_presentation: str = 'legacy',
+        selection_envelope: AtlasEnvelope | None = None,
         surface_opacity: float = 1.0,
         ui_scale: float = 1.0,
         sidebar_width: float = 400.0,
         tree_root_acronym: str = 'grey',
         enable_interaction: bool = True,
         enable_hover: bool = True,
+        fit_workarea: bool = False,
         datoviz: ModuleType | None = None,
     ) -> None:
+        if selection_presentation not in ('legacy', 'focus', 'isolate', 'all'):
+            raise ValueError('selection presentation must be legacy, focus, isolate or all')
         if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
             raise ValueError('selection_dim_factor must be between zero and one')
         if not np.isfinite(selection_context_opacity) or not 0 <= selection_context_opacity <= 1:
@@ -133,6 +139,11 @@ class AtlasViewer:
         self.width = width
         self.height = height
         self.explode = float(explode)
+        self.selection_presentation = selection_presentation
+        self.selection_envelope = None
+        self._selection_envelope_visual = None
+        self._selection_envelope_visible = False
+        self._selection_face_state = None
         self.selection_dim_factor = selection_dim_factor
         self.selection_context_opacity = selection_context_opacity
         self.surface_opacity = surface_opacity
@@ -142,6 +153,7 @@ class AtlasViewer:
         self.tree_root_acronym = tree_root_acronym
         self.enable_interaction = bool(enable_interaction)
         self.enable_hover = bool(enable_hover)
+        self.fit_workarea = bool(fit_workarea)
         self._closed = False
         self._gui_callback_depth = 0
         self._close_pending = False
@@ -180,7 +192,7 @@ class AtlasViewer:
         self._selected_region_ids: tuple[int, ...] = ()
         self._hovered_region_ids: tuple[int, ...] = ()
         self._highlight_region_ids: tuple[int, ...] = ()
-        self._last_surface_emphasis: tuple[tuple[int, ...], tuple[int, ...]] | None = None
+        self._last_surface_emphasis: tuple[tuple[int, ...], tuple[int, ...], str] | None = None
         self._surface_base_colors_cache: NDArray[np.uint8] | None = None
         self._surface_base_is_translucent = False
         self._surface_alpha_mode: int | None = None
@@ -191,6 +203,8 @@ class AtlasViewer:
                 raise RuntimeError('dvz_scene() failed')
             self._create_layout()
             self._create_surface()
+            if selection_envelope is not None:
+                self.set_selection_envelope(selection_envelope)
             if self.enable_interaction:
                 interaction_desc = self.dvz.dvz_item_interaction_desc()
                 interaction_desc.target = self.dvz.DVZ_SCENE_TARGET_FACE
@@ -384,12 +398,15 @@ class AtlasViewer:
             )
         return colors[:, 3].copy()
 
-    def _visible_surface_faces(self, mapping, palette=None):
+    def _visible_surface_faces(self, mapping, palette=None, *, include_selection=True):
         mask = self._surface_style.visible_faces(mapping)
         alpha = self._authored_surface_alpha(mapping, palette)
         presentation_alpha = np.full(len(self._surface_mesh.presentations), 255, np.uint8)
         np.minimum.at(presentation_alpha, self._surface_mesh.presentation_ids, alpha)
-        return mask & (presentation_alpha[self._surface_mesh.face_presentation_ids] > 0)
+        mask &= presentation_alpha[self._surface_mesh.face_presentation_ids] > 0
+        if include_selection and self._selection_focus_active():
+            mask &= np.isin(self._surface_mesh.face_mapping_ids(mapping), self._signed_focus_ids())
+        return mask
 
     def _upload_surface_faces(self, mask, mapping):
         """Filter render triangle indices and matching signed face keys together."""
@@ -454,6 +471,8 @@ class AtlasViewer:
         """Retain public state, caches and owned native payloads before mutations."""
         names = (
             'mapping',
+            'selection_presentation',
+            '_selection_face_state',
             'palette',
             'tree_model',
             '_selector_model',
@@ -533,6 +552,8 @@ class AtlasViewer:
                     ),
                     'surface transaction probe key rollback',
                 )
+            self._selection_envelope_visible = None
+            self._update_selection_envelope_visibility()
             self._surface_state.invalidate()
             self._last_surface_emphasis = None
             self._update_surface_emphasis()
@@ -571,6 +592,141 @@ class AtlasViewer:
                 self._restore_surface_transaction(snapshot)
             raise
 
+    def _selection_focus_active(self):
+        return self.selection_presentation in ('focus', 'isolate') and bool(
+            self._selected_region_ids
+        )
+
+    def _signed_focus_ids(self, region_ids=None):
+        """Expand ontology descendants on each explicitly selected anatomical side."""
+        selected = self._selected_region_ids if region_ids is None else region_ids
+        included = set()
+        for region_id in selected:
+            descendants = (
+                self.tree_model.expanded_logical_ids((region_id,))
+                if self.tree_model is not None
+                else (abs(region_id),)
+            )
+            included.update((-1 if region_id < 0 else 1) * value for value in descendants)
+        return tuple(sorted(included))
+
+    def set_selection_presentation(self, mode):
+        """Choose signed focus, isolation, full atlas, or legacy bilateral dimming."""
+        self._require_open()
+        if mode not in ('legacy', 'focus', 'isolate', 'all'):
+            raise ValueError('selection presentation must be legacy, focus, isolate or all')
+        if mode == self.selection_presentation:
+            return
+        snapshot = self._surface_transaction_snapshot()
+        try:
+            self.selection_presentation = mode
+            self._surface_state.invalidate()
+            self._last_surface_emphasis = None
+            self._update_surface_emphasis()
+            self._clear_surface_hover()
+        except Exception:
+            if not self._closed:
+                self._restore_surface_transaction(snapshot)
+            raise
+
+    def set_selection_envelope(self, envelope: AtlasEnvelope | None):
+        """Attach a prepared neutral context shell, excluded from scientific picking."""
+        self._require_open()
+        if envelope is not None and (
+            not isinstance(envelope, AtlasEnvelope)
+            or envelope.reference_space != self.mesh_data.reference_space
+        ):
+            raise ValueError('selection envelope must share the atlas reference space')
+        previous = self._selection_envelope_visual
+        old_envelope = self.selection_envelope
+        candidate = None
+        try:
+            if envelope is not None:
+                candidate = self.dvz.dvz_mesh(self.scene, 0)
+                if not candidate:
+                    raise RuntimeError('selection envelope creation failed')
+                self._check(
+                    self.dvz.dvz_visual_set_visible(candidate, False), 'context shell hide'
+                )
+                colors = np.tile(
+                    np.array((170, 180, 192, 15), np.uint8), (len(envelope.positions), 1)
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_data_many(
+                        candidate,
+                        {
+                            'position': envelope.positions,
+                            'normal': envelope.normals,
+                            'color': colors,
+                        },
+                    ),
+                    'context shell geometry',
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_index_data(candidate, envelope.indices),
+                    'context shell indices',
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_query_capabilities(candidate, 0),
+                    'nonpickable context shell',
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_alpha_mode(candidate, self.dvz.DVZ_ALPHA_WBOIT),
+                    'context shell transparency',
+                )
+                self._check(
+                    self.dvz.dvz_panel_add_visual(self.panel, candidate, None),
+                    'context shell attach',
+                )
+            self.selection_envelope = envelope
+            self._selection_envelope_visual = candidate
+            self._selection_envelope_visible = False
+            self._update_selection_envelope_visibility()
+            if previous is not None:
+                self._check(
+                    self.dvz.dvz_visual_set_visible(previous, False), 'previous context shell hide'
+                )
+                self.dvz.dvz_visual_destroy(previous)
+        except Exception:
+            self.selection_envelope = old_envelope
+            self._selection_envelope_visual = previous
+            self._selection_envelope_visible = None
+            try:
+                if candidate is not None:
+                    self._check(
+                        self.dvz.dvz_visual_set_visible(candidate, False),
+                        'failed context shell hide',
+                    )
+                self._update_selection_envelope_visibility()
+                if candidate is not None:
+                    self.dvz.dvz_visual_destroy(candidate)
+            except Exception as error:
+                self.close()
+                raise RuntimeError('context shell rollback failed; viewer closed') from error
+            raise
+
+    def _update_selection_envelope_visibility(self):
+        # A whole reference envelope has no signed presentations. Hide it for
+        # side filtering or explosion rather than show misleading context.
+        visible = (
+            self._surface_visible
+            and self.selection_presentation == 'focus'
+            and bool(self._selected_region_ids)
+            and self.explode == 0
+            and all(self._surface_style.hemispheres.values())
+        )
+        if (
+            self._selection_envelope_visual is not None
+            and bool(visible) != self._selection_envelope_visible
+        ):
+            self._check(
+                self.dvz.dvz_visual_set_visible(self._selection_envelope_visual, visible),
+                'context shell visibility',
+            )
+        self._selection_envelope_visible = bool(
+            visible and self._selection_envelope_visual is not None
+        )
+
     def set_region_visible(self, region_id, visible, *, hemisphere=None):
         """Show/hide signed mapped faces; optional hemisphere expands an absolute ID."""
         self._require_open()
@@ -592,6 +748,7 @@ class AtlasViewer:
                 'surface visibility',
             )
             self._surface_visible = bool(visible)
+            self._update_selection_envelope_visibility()
             if not visible:
                 self._clear_surface_hover()
         except Exception:
@@ -667,16 +824,34 @@ class AtlasViewer:
         if not np.isfinite(amount) or not 0 <= amount <= 1:
             raise ValueError('explode must be between zero and one')
         amount = float(amount)
-        self._explode_control.value = amount
         if amount == self.explode:
+            self._explode_control.value = amount
             return
-        self._check(
-            self.dvz.dvz_visual_set_data(
-                self.mesh, 'position', self._surface_mesh.exploded_positions(amount)
-            ),
-            'mesh explode position update',
-        )
-        self.explode = amount
+        previous = self.explode
+        try:
+            self._check(
+                self.dvz.dvz_visual_set_data(
+                    self.mesh, 'position', self._surface_mesh.exploded_positions(amount)
+                ),
+                'mesh explode position update',
+            )
+            self.explode = self._explode_control.value = amount
+            self._update_selection_envelope_visibility()
+        except Exception as error:
+            self.explode = self._explode_control.value = previous
+            try:
+                self._check(
+                    self.dvz.dvz_visual_set_data(
+                        self.mesh, 'position', self._surface_mesh.exploded_positions(previous)
+                    ),
+                    'mesh explode position rollback',
+                )
+                self._selection_envelope_visible = None
+                self._update_selection_envelope_visibility()
+            except Exception:
+                self.close()
+                raise RuntimeError('explode rollback failed; viewer closed') from error
+            raise
 
     def set_mapping(
         self, mapping: str, palette: Mapping[int, Sequence[int]] | None = None
@@ -688,7 +863,7 @@ class AtlasViewer:
         if model is not None and palette is None:
             effective_palette = model.palette
         surface_colors = self._display_surface_colors(mapping, effective_palette)
-        mask = self._visible_surface_faces(mapping, effective_palette)
+        mask = self._visible_surface_faces(mapping, effective_palette, include_selection=False)
         snapshot = self._surface_transaction_snapshot()
         widgets = []
         try:
@@ -1397,25 +1572,30 @@ class AtlasViewer:
         self._process_gui_frame()
         self.dvz.dvz_gui_dock_window_once(
             gui,
-            b'Allen mouse brain atlas',
+            b'Regions',
             self.dvz.DVZ_GUI_DOCK_SLOT_LEFT,
             self.sidebar_width * self.ui_scale,
         )
         if self.viewport is not None:
             self.dvz.dvz_gui_dock_window_once(
-                gui, b'Atlas views', self.dvz.DVZ_GUI_DOCK_SLOT_CENTER, 0.0
+                gui, b'3D atlas', self.dvz.DVZ_GUI_DOCK_SLOT_CENTER, 0.0
             )
         # Dear ImGui NoScrollbar | NoScrollWithMouse: child panes own scrolling.
-        visible = self.dvz.dvz_gui_begin(
-            gui, b'Allen mouse brain atlas', None, (1 << 3) | (1 << 4)
-        )
+        visible = self.dvz.dvz_gui_begin(gui, b'Regions', None, (1 << 3) | (1 << 4))
         try:
             if visible:
                 self._draw_sidebar_gui(gui)
         finally:
             self.dvz.dvz_gui_end(gui)
         if self.viewport is not None:
-            self.dvz.dvz_gui_viewport_window(self.viewport, b'Atlas views', None, 0)
+            # Reopening the same ImGui window appends the image below this toolbar.
+            visible = self.dvz.dvz_gui_begin(gui, b'3D atlas', None, 0)
+            try:
+                if visible:
+                    self._draw_viewport_toolbar_gui(gui)
+            finally:
+                self.dvz.dvz_gui_end(gui)
+            self.dvz.dvz_gui_viewport_window(self.viewport, b'3D atlas', None, 0)
             hovered = ctypes.c_bool()
             mouse_pos = (ctypes.c_float * 2)()
             viewport_size = (ctypes.c_float * 2)()
@@ -1425,6 +1605,8 @@ class AtlasViewer:
                 self._sync_viewport_hover(bool(hovered.value))
             if hovered.value and getattr(self, '_hovered_region_label', None):
                 self.dvz.dvz_gui_tooltip(gui, self._hovered_region_label.encode())
+
+        self._draw_auxiliary_gui(gui)
 
     def _draw_sidebar_gui(self, gui) -> None:
         """Keep the browser permanent; scene controls live in an ordinary window."""
@@ -1488,13 +1670,31 @@ class AtlasViewer:
 
     def _draw_sidebar_controls_gui(self, gui) -> None:
         """Draw all optional scene controls in the explicit Scene window."""
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Appearance', 0):
-            self.dvz.dvz_gui_text(gui, b'Region separation')
-            if self.dvz.dvz_gui_slider_float(
-                gui, b'##ibl_atlas_explode', ctypes.byref(self._explode_control), 0.0, 1.0
-            ):
-                self.set_explode(self._explode_control.value)
         self._draw_extra_gui(gui)
+
+    def _draw_viewport_toolbar_gui(self, gui) -> None:
+        """Keep frequent 3-D presentation actions beside the atlas."""
+        self.dvz.dvz_gui_set_next_item_width(gui, 160.0)
+        if self.dvz.dvz_gui_slider_float(
+            gui, b'Explode', ctypes.byref(self._explode_control), 0.0, 1.0
+        ):
+            self.set_explode(self._explode_control.value)
+        self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
+        if self.dvz.dvz_gui_button(gui, b'Reset view') and self.arcball is not None:
+            self._check(self.dvz.dvz_arcball_reset(self.arcball), 'camera reset')
+            self.set_camera_angles(self.camera_angles)
+        if self.selection_presentation != 'legacy':
+            modes = ('focus', 'isolate', 'all')
+            current = ctypes.c_int(modes.index(self.selection_presentation))
+            labels = (ctypes.c_char_p * 3)(b'Focus selection', b'Isolate selection', b'Show all')
+            self.dvz.dvz_gui_set_next_item_width(gui, 160.0 * self.ui_scale)
+            if self.dvz.dvz_gui_combo(
+                gui, b'##selection_presentation', ctypes.byref(current), labels, 3
+            ):
+                self.set_selection_presentation(modes[current.value])
+
+    def _draw_auxiliary_gui(self, _gui) -> None:
+        """Draw optional nonmodal windows independently of sidebar visibility."""
 
     def _process_gui_frame(self) -> None:
         """Apply owner-thread work independently of visible controls or windows."""
@@ -1559,24 +1759,47 @@ class AtlasViewer:
         update_table: bool,
         clear_mesh: bool,
     ) -> None:
-        if update_tree:
-            self._set_tree_selection(region_ids)
-        if update_table:
-            self._set_probe_table_selection(region_ids)
-            self._set_region_table_selection(region_ids)
-        self._selected_region_ids = region_ids
-        self._update_surface_emphasis()
-        if clear_mesh and self.interaction is not None:
-            self._check(
-                self.dvz.dvz_selection_clear(
-                    self.dvz.dvz_item_interaction_selection(self.interaction)
-                ),
-                'surface selection clear',
-            )
-            self._last_mesh_region_ids = ()
+        snapshot = (
+            self._surface_transaction_snapshot()
+            if self.selection_presentation != 'legacy'
+            else None
+        )
+        try:
+            if update_tree:
+                self._set_tree_selection(region_ids)
+            if update_table:
+                self._set_probe_table_selection(region_ids)
+                self._set_region_table_selection(region_ids)
+            self._selected_region_ids = region_ids
+            self._update_surface_emphasis()
+            if clear_mesh and self.interaction is not None:
+                self._check(
+                    self.dvz.dvz_selection_clear(
+                        self.dvz.dvz_item_interaction_selection(self.interaction)
+                    ),
+                    'surface selection clear',
+                )
+                self._last_mesh_region_ids = ()
+        except Exception:
+            if snapshot is not None and not self._closed:
+                self._restore_surface_transaction(snapshot)
+                self._set_tree_selection(self._selected_region_ids)
+                self._set_probe_table_selection(self._selected_region_ids)
+                self._set_region_table_selection(self._selected_region_ids)
+            raise
 
     def _update_surface_emphasis(self) -> None:
         """Fade non-selected regions and brighten hover without affecting unrelated regions."""
+        face_state = (self.mapping, self._selected_region_ids, self.selection_presentation)
+        if (
+            self.selection_presentation != 'legacy' or self._selection_face_state is not None
+        ) and face_state != self._selection_face_state:
+            mask = self._visible_surface_faces(self.mapping)
+            if not np.array_equal(mask, self._surface_face_mask):
+                self._upload_surface_faces(mask, self.mapping)
+                self._surface_face_mask = mask
+            self._selection_face_state = face_state
+        self._update_selection_envelope_visibility()
         selected_ids = (
             self.tree_model.expanded_logical_ids(self._selected_region_ids)
             if self.tree_model is not None
@@ -1591,12 +1814,24 @@ class AtlasViewer:
                 sorted({abs(region_id) for region_id in self._hovered_region_ids if region_id})
             )
         )
-        state = (selected_ids, hovered_ids)
+        if self.selection_presentation != 'legacy':
+            selected_ids = self._signed_focus_ids()
+            hovered_ids = self._signed_focus_ids(self._hovered_region_ids)
+        state = (selected_ids, hovered_ids, self.selection_presentation)
         if state == self._last_surface_emphasis:
             return
-        self._update_surface_alpha_mode()
+        if (
+            self._last_surface_emphasis is None
+            or self._last_surface_emphasis[0] != selected_ids
+            or self._last_surface_emphasis[2] != self.selection_presentation
+        ):
+            self._update_surface_alpha_mode()
         self._surface_state.update(
-            selected_ids, hovered_ids, selection_active=bool(self._selected_region_ids)
+            selected_ids,
+            hovered_ids,
+            selection_active=(
+                bool(self._selected_region_ids) and self.selection_presentation == 'legacy'
+            ),
         )
         self._highlight_region_ids = selected_ids
         self._last_surface_emphasis = state
@@ -1619,6 +1854,11 @@ class AtlasViewer:
     def _surface_is_translucent(self):
         if self._surface_base_colors_cache is None:
             self._invalidate_surface_emphasis_cache(self._display_surface_colors())
+        if self.selection_presentation != 'legacy':
+            vertices = np.unique(
+                self._surface_mesh.indices.reshape(-1, 3)[self._surface_face_mask]
+            )
+            return bool(np.any(self._surface_base_colors_cache[vertices, 3] < 255))
         return (
             self.surface_opacity < 1
             or bool(self._selected_region_ids)
@@ -1745,6 +1985,19 @@ class AtlasViewer:
         self._surface_state.invalidate()
         self._update_surface_emphasis()
 
+    def _create_window_view(self, figure, title):
+        if not self.fit_workarea:
+            return self.dvz.dvz_view_window(
+                self.app, figure, self.width, self.height, title.encode()
+            )
+        descriptor = self.dvz.dvz_view_desc(self.dvz.DVZ_VIEW_WINDOW)
+        descriptor.size_policy = self.dvz.DVZ_VIEW_SIZE_HOST_LOGICAL_PX
+        descriptor.size_width = self.width
+        descriptor.size_height = self.height
+        descriptor.title = title.encode()
+        descriptor.fit_workarea = True
+        return self.dvz.dvz_view(self.app, figure, ctypes.byref(descriptor))
+
     def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0912, PLR0915
         if self.app is not None:
             raise RuntimeError('viewer already has an active app')
@@ -1762,9 +2015,7 @@ class AtlasViewer:
                 raise RuntimeError('Datoviz view creation failed')
             self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, None)
         elif self.catalog is None:
-            self.view = self.dvz.dvz_view_window(
-                self.app, self.figure, self.width, self.height, title.encode()
-            )
+            self.view = self._create_window_view(self.figure, title)
             if not self.view:
                 raise RuntimeError('Datoviz view creation failed')
             self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, None)
@@ -1776,9 +2027,7 @@ class AtlasViewer:
             if not host_panel:
                 raise RuntimeError('Datoviz host panel creation failed')
             self.dvz.dvz_panel_set_background_color(host_panel, self.dvz.DvzColor(24, 27, 32, 255))
-            self.view = self.dvz.dvz_view_window(
-                self.app, self.host_figure, self.width, self.height, title.encode()
-            )
+            self.view = self._create_window_view(self.host_figure, title)
         if not self.view:
             raise RuntimeError('Datoviz view creation failed')
         self._check(
