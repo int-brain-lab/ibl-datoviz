@@ -35,7 +35,7 @@ PRESETS = ('atlas', 'single-probe', 'multiple-insertions', 'mixed')
 PRESET_LABELS = ('Atlas surface', 'Single BWM probe', 'Multiple W39 insertions', 'Points + plane')
 BWM_ID = 'bwm-probe'
 POINT_COLOR = (70, 220, 250, 180)
-SITE_RADIUS_UM = 8.0
+SITE_RADIUS_UM = 20.0
 # A small nonredundant context cut; the complete verified catalog remains available.
 CONTEXT_LANDMARKS = frozenset((315, 698, 313, 771, 354, 528))
 MISSING_W39 = (

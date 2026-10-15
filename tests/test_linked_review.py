@@ -365,8 +365,8 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
         {
             'preset': 'labels',
             'mapping': 'allen',
-            'width': 2800,
-            'height': 2000,
+            'width': 2240,
+            'height': 1600,
             'ui_scale': 1.5,
             'enable_interaction': True,
             'fit_workarea': True,
