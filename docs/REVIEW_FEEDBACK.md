@@ -38,16 +38,17 @@ in dated implementation handoffs.
 
 This follow-up supersedes the earlier size, camera and docking preferences. The
 Regions browser is improving; the 3D presentation and insertion controls still
-need review. No production rendering or GUI changes were made during this audit.
+need review. The audit below was followed by the authorized correction batch;
+automated evidence does not replace manual acceptance.
 
 | Point | Observation or request | Proposed correction and acceptance |
 | --- | --- | --- |
-| Smaller initial window | Reduce the initial window by 20%. | Request 2240 × 1600 instead of 2800 × 2000, retaining the chosen UI scale and monitor-work-area fitting. A monitor-clamped window may need its actual starting dimensions considered during physical review. |
-| Revised initial camera | Use the new reference image: a more lateral view, olfactory bulbs lower left and recording nearly vertical at the right. | Calibrate the named initial camera and Reset view against this reference; do not change scientific coordinates. Exact angles remain to be determined. |
-| Layers on the right | Start Layers on the right, rather than below the viewport. | Use the existing right-docking API with a compact width; retain user docking and the reserved Regions tree space. |
-| Uniform blue sites | All 192 sites are cyan and appear to form a tube. Is that correct? | Current color intentionally identifies the layer rather than a measured quantity. Radius 85 µm versus roughly 20 µm adjacent spacing produces heavy overlap. Expose an explicit Uniform / Mean firing rate color choice and its legend in the primary site controls; reduce glyph overlap while retaining visibility at overview scale. Preserve the fixture's 192 co-located channel groups and missing values. |
-| Compact insertion controls | Color and width do not visibly belong to the identifier above them; the controls take too much space. | Group each active insertion into one compact row with visibility, color swatch, short identifier and width. Full identity, recording/session metadata and provenance belong in expandable details. These IDs are insertion IDs, not session IDs. Inactive example insertions must not appear enabled in the current example. |
-| Spiky insertion paths | W39 paths generate long triangles, possibly from repeated or unusual points. | Reproduced without anatomy using the real arrays. Fix generic Datoviz round-join geometry and render/query agreement before accepting the multi-insertion demo. Source coordinates must remain intact. |
+| Smaller initial window | Reduce the initial window by 20%. | Implemented 2240 × 1600 instead of 2800 × 2000, retaining the chosen UI scale and monitor-work-area fitting. A monitor-clamped window may need its actual starting dimensions considered during physical review. |
+| Revised initial camera | Use the new reference image: a more lateral view, olfactory bulbs lower left and recording nearly vertical at the right. | Implemented lateral-oblique `RECORDING_CAMERA = (-1.15, -0.20, 2.50)` after isolated comparisons, shared with Reset view. Scientific coordinates are unchanged. Exact visual agreement awaits manual acceptance. |
+| Layers on the right | Start Layers on the right, rather than below the viewport. | Implemented with the existing right-docking API. Labels precede controls, whose widths adapt to the remaining space. User docking and reserved Regions tree space remain available; manual layout acceptance is open. |
+| Uniform blue sites | All 192 sites are cyan and appear to form a tube. Is that correct? | Current color intentionally identifies the layer rather than a measured quantity. Radius 85 µm versus roughly 20 µm adjacent spacing produces heavy overlap. Implemented primary Uniform / Mean firing rate controls and an explicit legend. Default glyph radius is 20 µm, adjustable from 3–40 µm: isolated comparisons found 8 µm too small at overview scale. The fixture's 192 co-located channel groups and missing values are preserved; readability awaits manual review. |
+| Compact insertion controls | Color and width do not visibly belong to the identifier above them; the controls take too much space. | Implemented one row per active insertion: visibility, short identifier, editable color swatch and width in pixels. Expandable details show full identities and available session metadata/provenance. These are insertion IDs. Inactive example insertions are omitted; controls remain subject to manual review. |
+| Spiky insertion paths | W39 paths generate long triangles, possibly from repeated or unusual points. | Fixed in Datoviz `b3014e111` and `0840010b8`: preserve styles through alpha changes, bound round geometry, partition ordinary joints, skip only derived zero-length edges and retain source query identities. All three original W39 arrays now render byte-identically to adjacent-deduplicated diagnostic references; source coordinates remain intact. Orbit/zoom acceptance remains manual. |
 
 ### Path investigation and implementation proposal
 
@@ -73,6 +74,27 @@ shader already bounds non-miter joins, so visible and queried coverage can
 disagree. The WGSL path shader also needs corresponding treatment. This is an
 engine robustness defect exposed by valid repeated channel locations; scientific
 coordinates should not need smoothing to make it render safely.
+
+Implementation testing also found that generic material synchronization overwrote
+stroke caps/join parameters when changing alpha mode. The insertion adapter sets
+opaque mode before requesting the already-default round styles, whose setters
+then return without repairing the shader payload. Stroke-specific material
+synchronization must therefore accompany the bounded-geometry correction. Round
+capsules also need complementary joint ownership to avoid applying translucent
+alpha twice at ordinary adjacent joins; genuine retracing/self-intersections
+remain overlapping geometry.
+
+The approved implementation is now complete: the two engine commits above are
+pinned by native `b2f2e1d`; native GUI, camera, size, filtering and responsive
+corrections are committed separately. Package validation reports 660 passes and
+zero skips; engine path 19/19, segment 5/5 and vector 5/5 pass, with an additional
+Vulkan-validated path run. Isolated live captures and mouse checks confirm the
+layout, visibility/encoding/radius actions and independently styled W39 rows.
+Nearest/linear plane comparisons identify the pale stairs as magnified texture
+samples and visibly improve grayscale anatomy without modifying source pixels.
+Source/wheel, lint, strict doctor/docs and bounded review startups pass. Manual
+composition and physical-platform acceptance remain open; commits are local and
+unpublished. The sequence below records the approved implementation plan.
 
 Proposed implementation sequence:
 

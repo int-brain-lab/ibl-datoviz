@@ -9,6 +9,58 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Recording-context corrections ready for review — October 15 2026
+
+The authorized feedback batch is implemented and committed locally. App 1 starts
+with Layers on the right, compact active-insertion controls, explicit uniform or
+firing-rate site colors, and a 20 µm adjustable glyph radius. Narrow docks wrap
+insertion widths onto a clearly associated second row rather than clipping them.
+Both apps request 2240 × 1600, retaining the chosen UI scale and work-area fitting.
+The named initial/reset camera is now `(-1.15, -0.20, 2.50)` after comparison with
+the newer lateral reference. Anatomy planes interpolate grayscale; discrete
+annotation planes retain nearest filtering. Exact visual acceptance remains open.
+
+Datoviz `rc4/scientific-3d` contains `b3014e111` (preserve stroke styles across
+alpha/material changes) and `0840010b8` (bounded round joins, joint ownership,
+duplicate derived-edge handling and original query identities). Native source and
+lock now pin `0840010b8a901b5e5f5540b979827e25ea48d5b2`; library SHA256 is
+`b3a7525208f71065cac57a78a2908f4105d3eaf1dd33b53bad211ff9a713e36f`.
+There is no public API change or anatomy asset update. Scientific arrays and
+the W39 fixture hashes remain unchanged. True retracing/self-intersections retain
+overlapping-stroke semantics; ordinary adjacent round joins partition coverage.
+
+Validation: 660 package tests pass with zero skips using the real asset roots and
+Vulkan validation. Strict doctor, lint, strict docs and source/wheel builds pass.
+Engine path 19/19, segment 5/5 and vector 5/5 pass; shader ABI/boundary checks and
+expanded WGSL Naga validation pass. The engine path suite also passes separately
+under the configured Vulkan validation layer. In the original 800 × 800 W39
+diagnostic, all three unmodified paths now match their adjacent-deduplicated
+reference captures byte-for-byte, with no pixels beyond the conservative 6-pixel
+envelope (previously spikes reached 47–61 pixels).
+
+Isolated live captures at 1800 × 1200 and 1300 × 900, UI scale 1.5, cover initial
+and scalar states, selection, W39 and nearest/linear plane comparisons. Real
+mouse actions verify all primary visibility controls, site encoding and radius,
+and independent W39 insertion visibility/width without moving the region tree.
+At very narrow viewport aspect ratios the reference camera may need zooming out
+or Layers redocked; exact composition and physical-screen/Mac acceptance remain
+manual. Both apps pass bounded startup checks. Evidence is ignored under
+`build/path-audit/`. No branches were pushed during this correction batch.
+
+Review from the configured workspace:
+
+```bash
+just doctor --strict
+just review 1 --strict --ui-scale 1.5
+just review 1 --strict --ui-scale 1.5 --preset multiple-insertions
+```
+
+Check initial size/orientation, Layers placement and compact grouping first, then
+uniform versus firing-rate colors and site radius. Orbit/zoom the three W39 paths
+and adjust one row's visibility, color and width independently. Follow the
+[updated checklist](review-apps.md#app-1-where-did-we-record). Stop at this visual
+gate before the broader scientific layer API refactor.
+
 ## Recording-context review findings — October 15 2026
 
 The next manual pass requests a 20% smaller initial window, the newer lateral
@@ -17,7 +69,7 @@ compact controls grouped by insertion. The W39 path spikes were reproduced in
 an isolated offscreen diagnostic: repeated source coordinates expose unbounded
 round-join extrusion in Datoviz, with different rendering/query bounds. The
 diagnosis, measurements and proposed engine-first correction are recorded in
-[the feedback log](REVIEW_FEEDBACK.md#recording-context-follow-up--october-15-2026).
+[the feedback log](REVIEW_FEEDBACK.md#recording-context-follow-up-october-15-2026).
 No production fix or engine pin upgrade has been made during this investigation.
 The previous startup/test results do not establish acceptance of these paths.
 
