@@ -1,5 +1,14 @@
 # Manual review feedback
 
+## Generic annotations accepted — October 15 2026
+
+The user validates the interactive annotation workflow. The supplied close-up
+shows a small depth/overlap issue where the path reaches a pink point marker;
+resolve that remaining rendering detail without changing scientific geometry or
+making markers visible through nearer anatomy. Linked tables and native exact
+observation picking remain the next stage, with their own acceptance evidence.
+
+
 App 1 review began on October 14, 2026, at UI scale 1.5. This log preserves the
 reviewer's observations and requested behavior. Implemented corrections remain
 subject to manual acceptance. Add subsequent feedback here rather than losing it

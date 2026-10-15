@@ -9,6 +9,22 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Generic annotation workflow accepted — October 15 2026
+
+The user interactively reviewed `just review annotations` and accepts the
+workflow. One small rendering issue remains: the path stroke intersects the
+pixel-point marker at their shared endpoint. Track this as a narrow overlap/depth
+correction; preserve scientific positions and normal 3D occlusion. This acceptance
+is for generic annotation interaction, not the separate BWM geometry/alignment or
+native exact-picking gates.
+
+The next implementation stage is linked observation tables using the existing
+attachment/source identities, followed by exact native picking for a demonstrated
+supported glyph/query route. Tables must retain missing/hidden observations and
+original IDs, with bidirectional selection through the existing controller. Styled
+pixel points remain outside the pinned engine's scientific query profile until
+explicit support and native acceptance exist.
+
 ## Reviewed BWM coordinate declaration and two-recording run — October 15 2026
 
 The follow-up GPT-6.1 Sol high-reasoning audit separates coordinate interpretation
