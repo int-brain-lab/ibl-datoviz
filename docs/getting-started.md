@@ -51,7 +51,8 @@ Otherwise it inherits your already working runtime environment. For these recipe
 `PYTHONPATH`, `DATOVIZ_LIBRARY`, adjacent anatomy checkout, or Fractal connection is required.
 
 Setup also fetches the pinned anatomy builders and synthetic fixtures into `build/review/anatomy`,
-materializes verified D070 assets in `build/atlas-d070`, and downloads the two hash-pinned Allen
+materializes verified D070 assets in `build/atlas-d070`, prepares the hash-verified companion Allen root envelope in `build/allen-root`,
+and downloads the two hash-pinned Allen
 50 um NRRDs to build `build/allen-ccf-2017-50um`. The builder's `pynrrd` dependency is installed in an
 isolated `uv --with` environment; your project lock is unchanged. The initial setup needs network
 access and takes longer than subsequent runs. Repeating it verifies and reuses cached assets.
@@ -69,8 +70,8 @@ it also enables that real-asset test. The optional registered-asset test remains
 `IBL_REGISTERED_ASSET_SET_ROOT` is set. GPU/runtime skips are reported by pytest; they are not proof
 of native validation.
 
-The review command opens app 1, a fixed 3D scientific workspace with a persistent
-data area. App 2 keeps three anatomical slices and a 3D view. Presets and layer
+The review command opens app 1, a 3D atlas with a permanent region browser and
+optional data layers/table. App 2 keeps three anatomical slices and a 3D view. Presets and layer
 toggles update existing views; they do not rebuild or rearrange the visualization.
 See the [review guide](review-apps.md) for the two short review checklists.
 

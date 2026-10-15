@@ -24,37 +24,28 @@ click selection; its existing default remains enabled for compatibility.
 The sidebar is a compact region browser: mapping and visible hemispheres, search,
 and a small action toolbar sit above the tree. The hierarchy fills the remaining
 height with its own scrollbar; a fixed two-row selection summary sits below it.
-The settings icon opens **Scene** over the visualization and the info
+The settings icon opens **Display settings** over the visualization and the info
 icon opens **Selection details**. Both are ordinary in-app windows: the uncovered
 tree stays usable while they are open. Opening settings or selecting many regions
 must not move the search box or resize the tree. Icon buttons provide tooltips.
 
-Hover and selection now use GPU state while retaining the authored region colors
-and global opacity. Hover adds a white tint; selection dims the surrounding brain
-without making selected regions more opaque. This decoration does not change
-picking coverage: even fully dimmed context remains selectable. Explicitly hidden
-regions and regions with authored zero opacity remain unavailable to surface picks.
+App 1 uses **Focus selection** by default: selecting a region shows its selected hemisphere and descendants in their authored colors, against one faint neutral brain envelope. **Isolate** hides the envelope; **Show all** restores whole-brain browsing while retaining the selection. Clear selection to return to the ordinary atlas. In focus/isolate mode, only visible selected surfaces are picking targets; use the tree or Show all to choose another target. Explicitly hidden or zero-opacity regions remain hidden. Authored translucency remains intentional and is preserved.
+
+The reference envelope uses the verified companion Allen root asset, prepared by `just setup`. It is hidden during explosion and when either hemisphere is hidden, to avoid displaying misleading context. If the asset is absent, selected geometry remains visible and Display settings explains that the outline is unavailable. No substitute geometry is generated.
+
+App 2 and library callers retain the existing selection-context rendering unless they explicitly opt into focus presentation. Hover uses sparse GPU state in both apps; it does not rebuild geometry or upload dense colors.
 
 Check branch folding and leaf selection separately. Search for a parent acronym, open a retained descendant branch, then clear search and verify that ordinary folding returns. Select multiple leaves with Ctrl/Cmd and the multiple-selection icon; use Shift-click for visible siblings. Use the arrow keys and Enter/Space without moving focus back to the search box. A search with no matches should leave an empty browser and remain editable.
 
 When regional values are supplied, switch between anatomical and value order. Search temporarily uses anatomical order and clearing it restores the requested ordering. Verify that surface/table selections preserve the browser's focus and folding, and that mapping changes clear selection. Hiding a selected surface region still preserves committed selection.
 
-## App 1: 3D scientific viewer
+## App 1: 3D atlas
 
-The workspace contains one 3D viewport and a control/ontology sidebar. The atlas
-starts opaque. The retained scientific-data area starts hidden for the current
-review; open **Scene** and enable **Show scientific data** to restore it. Its presets are **Atlas surface**, **Single BWM probe**,
-**Multiple W39 insertions** and **Points + plane**. Orbit with left-drag and zoom
-with the wheel. Use the common mapping selector for Allen, Beryl and Cosmos.
+The workspace keeps a **Regions** browser beside the **3D atlas**. The atlas starts opaque, with optional scientific layers hidden. **Explode** is always available above the viewport, alongside **Reset view** and the selection display choice. Reset view restores only the camera. Orbit with left-drag and zoom with the wheel; choose Allen, Beryl or Cosmos in the browser.
 
-**Scientific layers** lets you combine the atlas, recording-site points, analytic
-sites, insertion paths and an anatomical plane. **Point encoding** changes uniform
-or firing-rate colors, pixel diameter and opacity on the recording-site point
-layer. The optional analytic-site layer retains its firing-rate coloring.
-**Physical plane** switches transparent blending and depth-writing cutout, with
-opacity and cutoff controls. **Independent insertion styles** controls each path's
-visibility, color and width. **Atlas appearance and region styles** controls global
-opacity, hemispheres and the first selected signed region's visibility/RGBA/opacity.
+The initial review window requests 2800 × 2000 logical pixels and fits within its monitor's usable area. Explicit `--width` and `--height` overrides remain available when running the example directly. The larger window does not change the selected UI scale.
+
+**Display settings** contains atlas appearance and selected-region styles. **Data layers** opens a separate optional panel with recording sites, insertion paths and an anatomical plane. Controls appear beside the enabled layer. The data table is optional; examples/presets and rendering comparisons are secondary controls. These changes preserve one scene and its scientific inputs rather than rebuilding the workspace.
 
 The BWM inputs are hash-verified real recording sites. Firing-rate colors run from
 purple through teal to yellow, clipped at the finite-site 5th/95th percentiles in
@@ -70,7 +61,7 @@ channel coordinates without fitted or extrapolated points.
 Prepare optional W39 trajectories using the instructions in the
 [real-data roadmap](REAL_DATA_EXAMPLE_ROADMAP.md#october-13-runnable-examples).
 When those inputs are absent, the multiple-insertion preset is unavailable and the
-sidebar explains preparation. Present files with invalid hashes/provenance fail
+examples section explains preparation. Present files with invalid hashes/provenance fail
 explicitly. The persistent data area continues to show the pinned BWM recording-site
 fixture; it does not claim W39 firing-rate data.
 
@@ -85,7 +76,7 @@ Review these scenarios within the same window:
 3. If W39 is prepared, load multiple insertions and style/hide each path independently.
 4. Load points + plane. Orbit to judge depth and overlap, compare blending/cutout,
    vary cutoff and isolate individual layers. Check that toggles retain the camera,
-   table state and layout. Use reset to return to the starting state.
+   table state and layout. Use Restore all example defaults to reset data settings; Reset view restores only the camera.
 
 ## App 2: linked atlas navigator
 

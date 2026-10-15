@@ -9,6 +9,60 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## App 1 clarity and selection focus — October 15 2026
+
+The primary workflow is now Regions beside a 3D atlas, with permanently visible
+Explode, camera-only Reset view, selection display choice and Data layers.
+Display settings and optional data controls no longer share the demo/settings
+mixture. Data controls follow enabled layers; examples and alternative point
+rendering are secondary. Collapse/expand form a tight pair separated from
+multi-select. The displayed region total is stable under folding, keeping those
+buttons stationary. Both review apps request 2800 × 2000 logical pixels with
+opt-in fitting to one monitor's decorated usable area, independently of UI scale.
+Offscreen sizes retain their exact requested dimensions.
+
+App 1 defaults to signed selection focus: selected regions and their descendants
+retain authored colors/alpha, drawn separately from a faint neutral Allen root
+envelope. The root asset is hash-verified, cached by setup under `build/allen-root`,
+and loaded offline. Isolate removes the shell; Show all restores whole-brain
+picking without clearing selection. Clear selection restores the normal opaque
+atlas. The shell is nonpickable and hidden for explosion or hemisphere filtering;
+missing shell assets are reported rather than replaced with generated geometry.
+Library callers and app 2 retain legacy bilateral dimming by default. Hover stays
+disabled initially and uses sparse GPU flags when enabled. Committed focus changes
+replace indices/face keys without reuploading retained vertices or dense colors.
+
+Datoviz is pinned locally to `0ae953d3f9e07695d99722eaf9cbcc6a46dbbffa`
+on `rc4/scientific-3d`; native library SHA256 is
+`3379eee2ad5d4e3d537d9018db33624a116e8c9a1797e7054899e57aec451688`.
+The engine adds a persistent selected icon indicator, retaining native hover,
+held, keyboard focus and disabled states, plus an explicit default-off work-area
+fitting flag. No mesh-part API or anatomy-specific engine behavior was needed.
+
+Validation passes 631 tests with zero skips and both real asset roots, strict
+doctor, lint, strict docs, wheel/source builds, and bounded scale-1.5 startups of
+both apps. The new native regression compares focused pixels with an opaque
+single-hemisphere reference and checks signed FACE picking through a nonpickable
+shell. Failure injection covers selection/style/mapping/mode, explosion and shell
+replacement rollback; an independent high-reasoning audit reviewed these paths.
+Engine build, GUI 25/25, window filter 32/32, binding/ABI/API references and strict
+engine documentation checks pass. Isolated fitting checks distinguish fitted
+interactive windows from exact-size windows and offscreen views.
+
+Live isolated captures cover app 1 at 1600 × 1200 and 1100 × 720, scale 1.5,
+including FRP, deep thalamus, bilateral selection, isolate/all and optional panels;
+app 2 has a small-window regression capture. Real mouse checks cover tree click,
+multiple-selection mode, collapse/expand, Data layers, explosion and Reset view.
+Tree bounds remain stable. Evidence stays ignored under `build/atlas-ux-review/`.
+These are Linux checks; physical multi-monitor/macOS behavior and appearance
+acceptance remain manual review gates.
+
+All commits are local only; neither main branch nor anatomy/web source or binary
+assets changed. The unpublished engine revision is seeded into the local Git
+cache for locked review; fresh remote installs await publication. Restart with
+`just review 1 --ui-scale 1.5`. Further implementation should wait for manual
+feedback; see the updated [feedback log](REVIEW_FEEDBACK.md).
+
 ## Expand/collapse icon refinement — October 15 2026
 
 The reviewer found minus/plus ambiguous. Collapse now uses inward-pointing

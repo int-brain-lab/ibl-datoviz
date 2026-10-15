@@ -21,6 +21,14 @@ Search matches names and acronyms, retains ancestor paths and matching subtrees,
 
 A mapping change clears committed selection and transient hover while retaining query, ordinary folding and requested order. Tree, region table, probe table and surface updates preserve the documented source precedence and signed hemisphere identities. Selection does not move the linked navigator's cursor. Generic Datoviz tree rendering is controlled by an internal adapter; callers continue using the existing viewer API.
 
+## Selection presentation
+
+`AtlasViewer` defaults to `selection_presentation='legacy'`, preserving bilateral context dimming. Opt into `'focus'` to draw only selected signed regions and their descendants, with an optional neutral reference envelope; `'isolate'` omits the envelope and `'all'` restores the full visible atlas while retaining selection. `set_selection_presentation()` switches these modes without rewriting authored styles. Clear selection restores ordinary atlas coverage. Focus uses the selected hemisphere; selecting a left parent does not select its right homologue. Hidden regions and authored opacity still apply.
+
+Pass a prepared `AtlasEnvelope` through `selection_envelope=` or `set_selection_envelope()`. The shell is not a picking target and is hidden during explosion, isolation or hemisphere filtering. In focus/isolate mode, hidden context cannot receive surface picks; use the tree or the all-regions mode to select another region. Geometry remains retained: committed selections update draw indices and matching face keys, while hover only updates sparse GPU state. See [reference envelope preparation](../getting-started.md#shared-reference-envelope).
+
+`fit_workarea=True` opts interactive windows into initial fitting within one monitor's usable area. It leaves offscreen dimensions unchanged; the library default is `False`.
+
 ## Linked atlas navigator
 
 ::: ibl_datoviz.linked_atlas.LinkedAtlasNavigator
@@ -94,6 +102,8 @@ limited by the current 64-entry GPU categorical palette.
         - from_asset_set
         - set_mapping
         - set_camera_angles
+        - set_selection_presentation
+        - set_selection_envelope
         - set_probe
         - set_probe_sites
         - set_probe_data
