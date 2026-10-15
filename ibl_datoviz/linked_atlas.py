@@ -1524,8 +1524,6 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def close(self) -> None:
         """Guard and defer shutdown before releasing slice subscriptions or workers."""
-        if not hasattr(self, '_closed'):
-            return  # Base validation failed before creating native state or workers.
         if getattr(self, '_closed', False):
             return
         # A failed constructor may have created a scheduler before base viewer

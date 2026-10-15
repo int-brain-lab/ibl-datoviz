@@ -2504,6 +2504,8 @@ class AtlasViewer:
 
     def close(self) -> None:  # noqa: PLR0912 - explicit native teardown order.
         """Release scientific layers, then destroy app and scene."""
+        if not hasattr(self, '_closed'):
+            return  # Base validation has not created native state.
         if getattr(self, '_closed', False):
             return
         self._require_open()
