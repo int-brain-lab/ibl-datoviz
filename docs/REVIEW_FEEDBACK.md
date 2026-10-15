@@ -26,6 +26,44 @@ in dated implementation handoffs.
 | Larger initial window | Start the window twice as large on the current screen. | Both review apps request 2800 × 2000 logical pixels and opt into Datoviz fitting within one monitor's decorated work area. Offscreen sizes remain exact and UI scale remains independent. Isolated fitting/exact-size checks pass; physical screen placement remains for manual review. |
 | Toolbar grouping | Multi-select is a different action; collapse and expand are opposites and should sit much closer together. | Implemented a tight collapse/expand pair separated from multi-select. Folding preserves the total region count and button positions. Real mouse checks cover both actions and mode toggling; manual acceptance remains open. |
 | Distinct button states | Hover and pressed states appear identical and are confusing. | Datoviz audit finds persistent ACTIVE reuses the pressed background. Datoviz now retains native hover/held/focus backgrounds and adds a persistent on-state underline that survives hover and respects disabled styling. Native GUI tests pass; manual acceptance remains open. |
+| Initial anatomical view | Initial camera/trackball should match the supplied oblique dorsal reference, with the olfactory bulbs toward the lower left and cerebellum toward the upper right. | Recorded for a named reproducible camera preset and visual review; exact angles cannot be inferred reliably from the screenshot alone. Not implemented. |
+| Opacity discontinuity | Changing opacity from 0.9 to 1.0 causes an abrupt visual change. | Source audit confirms approximate transparency averages overlapping fragments below 1, while the opaque path uses frontmost depth at 1. This needs explicit composition review, not just slider adjustment. No fix claimed. |
+| Coarse colored anatomy | All fine Allen regions and individual cortical layers overwhelm the view. Prefer a light shell with a few colored major structures. | A mapping/color change does not simplify the existing dense geometry. Audit is evaluating verified shared coarse context assets separately from fine regional selection and scalar maps. Not implemented. |
+| Preserve context on selection | The entire regional brain disappears on selection. Highlight the selected region while keeping the rest intact. | Current app-1 focus default is rejected for this workflow. Existing implementation and tests establish mechanics only, not product acceptance. Replacement should preserve anatomical context and layer visibility; isolation/filtering must be explicit. |
+| Show internal scientific layers | Opaque anatomy hides enabled insertion paths and recording sites, making toggles appear ineffective. | Default composition must make enabled internal layers visible without additional opacity tuning. Selected-region fill must also be assessed for occluding those observations. Not implemented. |
+| Clear dockable layer controls | The floating, non-dockable Data layers window is confusing. Need simple, clearly labeled visibility controls, with useful icons/colors and immediately visible results. | Recorded for a stable dockable scientific-layer panel and a shared Python/GUI visibility model. Avoid exposing renderer variants as scientific layer types. Not implemented. |
+| Scientific API foundations | Need modular, well-delimited Python constructs for scientific IBL visualization, rather than a demo settings mixture. | Architecture audit in progress across native, Datoviz, web and IBL scientific workflows. The package is early and unused; the reviewer explicitly authorizes breaking/refactoring its API when needed. No implementation changes in this audit. |
+
+## Scientific workflow direction from the October 15 review
+
+The current app-1 visualization and Data layers experience are not accepted. The
+reviewer requests a step back to scientific workflows before further UI patches.
+The reference camera image is review evidence, not a new canonical gallery asset.
+
+The initial goal is readable, lightly transparent coarse anatomical context with
+distinct major-structure colors; simple toggles should immediately reveal or hide
+scientific observations. Selecting a region should highlight it in that context
+and help inspect its relationship to the scientific layers. Selection must not
+silently isolate anatomy, hide data or change the scientific population.
+
+Requested scientific objects include neurons/units, insertion paths, recording
+sites, and data from one or multiple sessions. Alignment results may be shown
+when real inputs and their coordinate/provenance contracts are available. Unit
+localizations must not be presented as exact neuron soma positions without that
+evidence. Source session, insertion, channel and cluster identities should remain
+distinct and stable.
+
+Longer term, support ephys-atlas-style quantities on channels, clusters, regions
+and voxels, with explicit colormaps, region aggregation, data coverage and slices.
+Use the existing web application as a source of refined behavior and data
+semantics, and `ibl-ai-agent` as evidence of scientific questions and workflows.
+Rendering, data preparation and analysis responsibilities must stay clear.
+
+The reviewer explicitly permits aggressive refactoring and compatibility breaks
+in this early, unused package to establish a coherent API. Earlier API-freeze
+language in roadmaps is not a constraint on this newly requested design work.
+The immediate task is an audited vision, API and staged demo plan; implementation
+and visual acceptance follow a separate decision.
 
 ## Shared asset and hemisphere audit
 

@@ -1,7 +1,97 @@
 # Real-data interactive example roadmap
 
-Status: two fixed-layout review apps on the `0.2.0.dev0` Datoviz v0.4 branch;
-earlier focused-example planning and evidence are retained below.
+Status: the October 15 scientific-user review rejects the current app-1 visualization and floating Data layers experience. The following proposal supersedes earlier product acceptance and API-freeze assumptions; earlier implementation evidence remains historical evidence, not UX acceptance.
+
+## Proposed scientific workflow reset — October 15 2026
+
+This is an audited proposal, awaiting adoption and manual visual acceptance. This audit makes no implementation changes. It draws on the native source, Datoviz's RC4 capabilities and release lanes, the web application's data/presentation semantics, and scientific workflows documented in `ibl-ai-agent`.
+
+The first goal is a scientist understanding where a recording lies in anatomy within seconds. The current renderer/settings demonstration is not that experience. Preserve the validated low-level identity, ownership, sparse interaction and failure-recovery work; reconsider the composition and public API. The reviewer explicitly permits breaking this early, unused package's API. Earlier instructions to preserve every export do not constrain this proposal.
+
+### Recommended default experience
+
+- Use a named oblique dorsal camera matching the review reference, with olfactory bulbs toward the lower left and cerebellum toward the upper right. Determine actual camera parameters through visual comparison, not guessed Euler angles.
+- Start the recording demo with one real BWM recording's sites and supplied path already visible, inside lightly transparent, muted, colored major anatomical structures. An explicit anatomy-only preset can be opaque.
+- Keep the Regions browser dominant. Provide a compact persistent, dockable Layers panel with clearly named rows, visibility state, color swatch and useful count. Ordinary visibility should not require opening a floating settings window. Keep style details secondary and the viewport unobstructed.
+- Highlight selection without removing or restyling the rest of the context. Accent an already displayed context structure at its authored opacity; reveal a fine selected region as a separate restrained translucent overlay. Do not make selected anatomy an opaque obstacle to its recording sites.
+- Keep camera, context opacity, layer styles and selection stable when toggling data. Restore the same appearance when a layer returns. Selection, cursor movement, visibility, scientific filtering and aggregation remain distinct actions.
+- Retain hover as an efficient explicit opt-in. It must not rebuild dense geometry or upload dense colors.
+
+### Separate the scientific and visual meanings
+
+| Concern | Contract |
+| --- | --- |
+| Anatomical mapping | Resolve Allen identities into the chosen labels and selection membership. |
+| Context granularity | Choose which actual surfaces are drawn; remapping colors does not simplify geometry. |
+| Scientific aggregation | Declare the source population, reduction, missingness, weights and hemisphere policy. |
+| Selection | Emphasize regions or exact observations without silently changing population, context or values. |
+| Alignment | Display supplied alignment results and provenance; do not infer alignment inside the renderer. |
+
+Channel observations, cluster observations and voxel samples are different populations. Session and insertion identity scope local channel/cluster IDs. Cluster locations are estimates from recordings, not demonstrated exact neuron soma positions. Mapping or bilateral folding must not silently introduce a new scientific reduction or mean of means. The viewer consumes prepared scientific outputs; discovery, loading and analysis remain outside it.
+
+### Anatomy and transparency prerequisites
+
+The D070 asset has 486,674 vertices, 966,645 triangles and 1,140 components. Allen/Beryl/Cosmos presentations reuse this fine geometry. A coarser color mapping therefore does not create the requested clean context shell.
+
+The verified source-native root-997 envelope is available now, but is neutral whole-brain context, not individually colored major structures. Its documented six open boundaries also prevent describing it as a closed anatomical volume. Inventory actual major-region source surfaces and choose a catalog-declared ontology cut without redundant ancestor/descendant surfaces. Intended categories such as cortex, hippocampus, basal ganglia, thalamus, brainstem and cerebellum describe the desired readability, not an already verified asset inventory.
+
+If needed, extend `ibl-anatomy`'s currently root-only surface descriptor into a narrow hash-verified coarse-surface catalog, with Allen identity, reference space, source provenance and hemisphere policy. Shared assets stay there for native and web consumption. Do not concatenate fine meshes or recolor internal layers and call the result a cleaned external shell. An honest neutral envelope can support an early camera/composition study, but does not complete the colored-context acceptance gate.
+
+The opacity discontinuity comes from switching approximate WBOIT mixing below opacity one to opaque frontmost-depth rendering at one. Reducing irrelevant contributors helps clutter; it does not prove correct transparent composition. Sweep representative coarse and dense scenes, diagnose generic engine defects separately, and keep remaining approximation explicit. Depth peeling is not a drop-in replacement for the current indexed-state/fragment-coverage profiles. The scientific API should expose anatomy presentation intent; renderer comparisons belong in diagnostics.
+
+### Proposed Python boundary
+
+Names are provisional and should be reviewed through two short runnable scripts before a broad refactor:
+
+```python
+with AtlasViewer.from_assets(atlas_assets, context="major") as view:
+    paths = view.add_insertions(insertion_paths, name="Insertions")
+    sites = view.add_sites(recording_sites, name="Recording sites")
+    sites.set_coloring(values, name="Mean firing rate", units="Hz",
+                       cmap="viridis", limits=(low, high))
+    view.set_selected_region_ids([signed_region_id])
+    sites.set_visible(True)
+    view.show()
+```
+
+Each addition returns a reusable viewer-owned layer handle supporting visibility, styling, replacement and removal. Multiple independent recording layers must coexist; the current singleton probe-sites route is insufficient. A small retained layer list is enough; do not build a plugin graph or application framework.
+
+Use focused modules for insertion paths, recording sites, cluster observations, prepared regional fields and compatible slices/grids. Reuse current immutable payloads and native component adapters where suitable. Ordinary scientist scripts should not require raw Datoviz scene/panel handles; advanced caller-owned adapters can remain in a components namespace.
+
+Payloads own immutable retained arrays and declare coordinate units/reference space. Engine query tokens are internal encodings of scoped scientific identities. Viewer shutdown closes owned layers, subscriptions and workers before destroying the scene; advanced borrowed-scene components retain their documented closure ordering. Replacement and error recovery remain transactional. GUI and Python controls operate on the same layer state. Region association and exact observation selection must not collapse into one identity.
+
+### Two task demos first
+
+1. **Where did we record?** One verified BWM recording's sites and supplied path inside coarse context. Demonstrate independent visibility, uniform versus firing-rate coloring, context-preserving region selection and a small optional site table. Optional verified W39 paths extend the same workflow to multiple insertions; they do not inherit BWM firing-rate measurements. Paths joining channel locations are not automatically independent histology or alignment truth.
+2. **Which anatomy surrounds this recording?** Reuse the complete prepared 50 µm source for linked AP/ML/DV plus 3D, with the same recording geometry. Inspect coordinates, move the cursor and explicitly select anatomy. Preserve cursor/selection separation and the volume-free route.
+3. **Later: how does a measured feature vary?** Use an actual compatible channel, cluster, regional or voxel release. Show feature, units, population, transform, reduction, missingness and color range. Add this after the first two demos and payload contracts are accepted.
+
+Alignment comparison becomes a targeted extension when real planned/traced/aligned inputs exist. Raster/PSTH dashboards, alignment computation, unrestricted dataset discovery and advanced volume composition are not prerequisites for these first demos.
+
+### Implementation checkpoints, if adopted
+
+| Checkpoint / focused commits | Repository / branch | Gate and agent allocation |
+| --- | --- | --- |
+| Record rejected review and this proposal | `ibl-datoviz` / `feature/datoviz-v04` | Lead; documentation only. |
+| Inventory major-region geometry | Read-only anatomy/web/native | Low-cost agent at medium effort; list available sources and gaps. |
+| Add verified coarse-surface catalog if needed | `ibl-anatomy` / `main` | Narrow descriptor/catalog and integrity tests; medium implementer, high independent contract audit. Preserve source geometry and publication boundaries. |
+| Camera/context prototype, then recording/selection controls | `ibl-datoviz` / `feature/datoviz-v04` | Medium native implementer, high audit. Reuse internals. **Manual visual acceptance before broad API refactoring.** |
+| Review one- and multiple-recording API scripts | Same native branch | High API lead; medium scientific-user review. Decide breaks explicitly. |
+| Extract semantic payloads and owned multi-layer handles | Same native branch | Focused data/lifetime commit, then viewer integration commit; medium implementation, high lifetime/identity/rollback audit. |
+| Make dockable controls consume layer state | Same native branch | Separate GUI commit; medium implementation. Remove duplicated demo state and default focus/isolation behavior. |
+| Replace the two review compositions and document API changes | Same native branch | Separate demo/docs commits; medium integration, high end-to-end audit. Keep diagnostic examples outside primary review. |
+| Add real scalar/cluster/voxel workflows later | Native plus relevant preparation/shared-contract repositories | Decide after prior acceptance; medium domain work and high scientific audit. |
+| Reproduce/fix a generic engine defect only if demonstrated | Datoviz / `rc4/scientific-3d` | Separate minimal engine commit, generated bindings/docs when needed, medium graphics implementation and high audit. |
+
+Web and AI-agent repositories are read-only design references in this plan. A future web consumer update for the shared coarse catalog would be scoped separately. Continue native work on its existing feature branch; retain the engine RC4 lane and anatomy's permitted main lane. Prepare local commits only; publication remains a separate decision.
+
+### Acceptance and release boundaries
+
+First visually accept the named orientation, readable colored coarse context, visible recording geometry, understandable layer toggles and context-preserving superficial/deep selection. Then review multiple insertions, signed sides and descendants, exact object identities, missing values and units, opacity sweeps including 0/low/0.9/1, linked slice orientation, small windows/HiDPI, transactional replacement/empty/restore and clean shutdown. Automated startup and inspected captures do not replace scientific manual review or actual platform evidence.
+
+Datoviz already has docking; the current app helper explicitly applies NoDocking. Fixing this does not require a new engine docking system. The RC4 engine also already supplies the principal non-volume composition, retained-state and query primitives. An arbitrary native point adapter does not automatically provide all the scientific picking/linking semantics needed by a new layer API.
+
+Keep RC3 scoped to existing correctness/capability work. RC4 owns required scientific composition and package acceptance; RC5 is contingency for unresolved acceptance gaps; final v0.4 closes exact-candidate validation without new semantics. Full mesh parts and asynchronous queries remain early-v0.5 work. Advanced OIT/volume composition and broad WebGPU parity remain separately scoped.
 
 ## Current review workflow — October 14 2026
 

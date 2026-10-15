@@ -9,6 +9,18 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Scientific-user review reset — October 15 2026
+
+The latest manual review rejects app 1's focus/isolation default, dense anatomy,
+opaque occlusion of data and floating Data layers controls. Earlier automated
+validation below establishes mechanics, not product acceptance. New camera,
+coarse-context, data-layer and long-term API feedback is recorded in
+[the feedback log](REVIEW_FEEDBACK.md). The high-reasoning cross-repository audit
+and staged proposal are in [the revised roadmap](REAL_DATA_EXAMPLE_ROADMAP.md#proposed-scientific-workflow-reset-october-15-2026).
+No application/engine changes were made during this audit. Review a small visual
+prototype before undertaking the proposed broad API refactor; the user explicitly
+permits compatibility breaks in this early, unused package.
+
 ## App 1 clarity and selection focus — October 15 2026
 
 The primary workflow is now Regions beside a 3D atlas, with permanently visible
