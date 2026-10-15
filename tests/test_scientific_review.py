@@ -57,6 +57,7 @@ def viewer(monkeypatch):
         self.native_visibility, self.path_styles = {}, {}
         self._closed = False
         self.ui_scale = 1.0
+        self._sidebar = SimpleNamespace(available=lambda _: (300.0, 600.0))
         self.dvz = SimpleNamespace(
             dvz_visual_set_visible=lambda handle, visible: (
                 self.native_visibility.__setitem__(handle, visible) or 0
@@ -508,6 +509,7 @@ def test_insertion_rows_change_only_active_path_and_preserve_other_styles(viewer
     labels = []
     viewer.dvz.dvz_gui_same_line = lambda *_: None
     viewer.dvz.dvz_gui_set_next_item_width = lambda *_: None
+    viewer.dvz.dvz_gui_text = lambda *_: None
     viewer.dvz.dvz_gui_collapsing_header = lambda *_: False
 
     def checkbox(_gui, label, pointer):
@@ -524,7 +526,7 @@ def test_insertion_rows_change_only_active_path_and_preserve_other_styles(viewer
         return False
 
     def width(_gui, label, pointer, _low, _high):
-        if label == b'px##real-path-two':
+        if label == b'##width_px_real-path-two':
             ctypes.cast(pointer, ctypes.POINTER(ctypes.c_float))[0] = 6.0
             return True
         return False

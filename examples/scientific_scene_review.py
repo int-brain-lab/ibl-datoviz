@@ -486,15 +486,21 @@ class ScientificSceneReview(AtlasViewer):
             self._draw_plane_gui(gui)
 
     def _draw_site_controls(self, gui):
-        self.dvz.dvz_gui_set_next_item_width(gui, 205.0 * self.ui_scale)
+        self.dvz.dvz_gui_text(gui, b'Color')
+        self.dvz.dvz_gui_same_line(gui, 0.0, 6.0 * self.ui_scale)
+        width, _ = self._sidebar.available(gui)
+        self.dvz.dvz_gui_set_next_item_width(gui, max(1.0, width - 1.0))
         if self._combo(
-            gui, 'Color', self._site_mode_control, ('Uniform', 'Mean firing rate (Hz)')
+            gui, '##site_color', self._site_mode_control, ('Uniform', 'Mean firing rate (Hz)')
         ):
             self._action(self.set_site_mode, ('uniform', 'scalar')[self._site_mode_control.value])
             self._site_mode_control.value = ('uniform', 'scalar').index(self.site_mode)
-        self.dvz.dvz_gui_set_next_item_width(gui, 160.0 * self.ui_scale)
+        self.dvz.dvz_gui_text(gui, 'Radius (µm)'.encode())
+        self.dvz.dvz_gui_same_line(gui, 0.0, 6.0 * self.ui_scale)
+        width, _ = self._sidebar.available(gui)
+        self.dvz.dvz_gui_set_next_item_width(gui, max(1.0, width - 1.0))
         if self.dvz.dvz_gui_slider_float(
-            gui, b'Radius (um)', ctypes.byref(self._site_radius_control), 3.0, 40.0
+            gui, b'##site_radius_um', ctypes.byref(self._site_radius_control), 3.0, 40.0
         ):
             self._action(self.set_site_radius, self._site_radius_control.value)
             self._site_radius_control.value = self.site_radius_um
@@ -623,10 +629,13 @@ class ScientificSceneReview(AtlasViewer):
                 color = tuple(int(round(float(value) * 255)) for value in rgba[:3]) + (255,)
                 self._action(self.style_insertion, insertion_id, color=color)
             self.dvz.dvz_gui_same_line(gui, 0.0, 5.0 * self.ui_scale)
-            self.dvz.dvz_gui_set_next_item_width(gui, 80.0 * self.ui_scale)
+            self.dvz.dvz_gui_text(gui, b'px')
+            self.dvz.dvz_gui_same_line(gui, 0.0, 4.0 * self.ui_scale)
+            available_width, _ = self._sidebar.available(gui)
+            self.dvz.dvz_gui_set_next_item_width(gui, max(1.0, available_width - 1.0))
             width = ctypes.c_float(style['width'])
             if self.dvz.dvz_gui_slider_float(
-                gui, f'px##{insertion_id}'.encode(), ctypes.byref(width), 1.0, 12.0
+                gui, f'##width_px_{insertion_id}'.encode(), ctypes.byref(width), 1.0, 12.0
             ):
                 self._action(self.style_insertion, insertion_id, width=width.value)
         if self.dvz.dvz_gui_collapsing_header(gui, b'Insertion identities and source', 0):
