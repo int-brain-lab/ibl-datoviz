@@ -130,7 +130,32 @@ class SliceInputAdapter:
             return axis, float(data_pos[0]), float(data_pos[1])
         return None
 
-    def on_input(self, _router, event_ptr, _user_data) -> None:  # noqa: PLR0911, PLR0912
+    def on_input(self, _router, event_ptr, _user_data) -> None:
+        """Contain native callback failures and defer teardown until dispatch unwinds."""
+        owner = self.owner
+        if getattr(owner, '_closed', False) or getattr(owner, '_close_pending', False):
+            return
+        owner._gui_callback_depth = getattr(owner, '_gui_callback_depth', 0) + 1
+        try:
+            self._dispatch_input(event_ptr)
+        except Exception as error:
+            if getattr(owner, 'app', None) is not None:
+                owner._gui_callback_error = error
+                if not getattr(owner, '_close_pending', False):
+                    owner.close()
+                return
+            raise
+        finally:
+            owner._gui_callback_depth -= 1
+            if (
+                getattr(owner, '_close_pending', False)
+                and owner._gui_callback_depth == 0
+                and getattr(owner, 'app', None) is None
+            ):
+                # Direct test/script dispatch has no native app frame to resume.
+                owner.close()
+
+    def _dispatch_input(self, event_ptr) -> None:  # noqa: PLR0911, PLR0912
         """Dispatch keyboard and pointer interactions without changing selection policy."""
         owner, dvz = self.owner, self.owner.dvz
         event = event_ptr.contents
@@ -174,7 +199,8 @@ class SliceInputAdapter:
                 return
             if amount:
                 step, remainder = wheel_step(
-                    owner._slice_wheel_accumulator[axis], amount,
+                    owner._slice_wheel_accumulator[axis],
+                    amount,
                     shift=bool(pointer.mods & dvz.DVZ_KEY_MODIFIER_SHIFT),
                 )
                 owner._slice_wheel_accumulator[axis] = remainder

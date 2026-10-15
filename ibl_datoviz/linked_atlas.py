@@ -1067,6 +1067,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._apply_selected_region_ids(
                 ids, update_tree=True, update_table=True, clear_mesh=True
             )
+            self.selection._publish('regions')
         else:
             changed_axes = tuple(
                 axis
@@ -1170,24 +1171,77 @@ class LinkedAtlasNavigator(AtlasViewer):
         if ids == self._selected_region_ids:
             ids = ()
         self._apply_selected_region_ids(ids, update_tree=True, update_table=True, clear_mesh=True)
+        self.selection._publish('regions')
 
     def select_cursor_region(self) -> None:
         """Toggle the cursor region; retained as the public convenience name."""
         self._require_open()
         self.toggle_cursor_region_selection()
 
+    def _restore_linked_transaction(self, snapshot, *, composer_mapping=None, widgets=()):
+        """Restore both presentation domains, superseding rejected slice requests."""
+        if self._closed:
+            return
+        try:
+            self._restore_surface_transaction(snapshot, widgets)
+            if composer_mapping is not None:
+                self.slice_composer.set_mapping(composer_mapping)
+            self._set_tree_selection(self._selected_region_ids)
+            self._set_probe_table_selection(self._selected_region_ids)
+            self._set_region_table_selection(self._selected_region_ids)
+            # Mapping/selection setters may already have cleared native picks.
+            # Acknowledge that native state without dropping restored host IDs on
+            # the next frame; programmatic selection remains authoritative.
+            self._last_mesh_region_ids = self._mesh_selected_region_ids()
+            if hasattr(self, '_slice_fields'):
+                # Revisions advance again so workers cannot apply rejected state.
+                self._refresh_slices()
+                self._refresh_hover_overlays()
+        except Exception as rollback_error:
+            self.close()
+            raise RuntimeError(
+                'linked transaction rollback failed; viewer closed'
+            ) from rollback_error
+
     def set_mapping(self, mapping: str, palette=None) -> None:
         """Switch all mesh, slice, cursor, and ontology identities together."""
+        self._require_open()
         if palette is not None:
             raise ValueError('linked atlas slices require the verified catalog palette')
-        super().set_mapping(mapping)
-        self.slice_composer.set_mapping(mapping)
-        self._refresh_slices()
+        snapshot = self._surface_transaction_snapshot()
+        previous_mapping = self.slice_composer.mapping
+        widgets = tuple(
+            name
+            for name in ('region_tree', 'probe_table', 'region_table')
+            if getattr(self, name) is not None
+        )
+        self.selection._hold_events += 1
+        try:
+            super().set_mapping(mapping)
+            self.slice_composer.set_mapping(mapping)
+            self._refresh_slices()
+        except Exception:
+            self._restore_linked_transaction(
+                snapshot, composer_mapping=previous_mapping, widgets=widgets
+            )
+            raise
+        finally:
+            self.selection._hold_events -= 1
+        self.selection._publish('mapping')
 
     def _apply_selected_region_ids(self, region_ids, **kwargs) -> None:
-        super()._apply_selected_region_ids(region_ids, **kwargs)
-        if hasattr(self, '_slice_fields'):
-            self._refresh_slices()
+        snapshot = self._surface_transaction_snapshot()
+        self.selection._hold_events += 1
+        try:
+            super()._apply_selected_region_ids(region_ids, **kwargs)
+            if hasattr(self, '_slice_fields'):
+                self._refresh_slices()
+        except Exception:
+            self._restore_linked_transaction(snapshot)
+            raise
+        finally:
+            self.selection._hold_events -= 1
+        # The outer public setter/gesture publishes after its remaining work.
 
     def _restore_selection_feedback(self):
         """Replace rejected slice revisions and restore every transient hover layer."""
@@ -1403,7 +1457,16 @@ class LinkedAtlasNavigator(AtlasViewer):
         return adapter.pointer_figure_position(pointer)
 
     def close(self) -> None:
-        """Unsubscribe slice input before releasing the base viewer."""
+        """Guard and defer shutdown before releasing slice subscriptions or workers."""
+        if getattr(self, '_closed', False):
+            return
+        # A failed constructor may have created a scheduler before base viewer
+        # state exists. Fully initialized viewers must pass all mutation guards.
+        if hasattr(self, '_closed'):
+            self._require_open()
+        if getattr(self, '_gui_callback_depth', 0):
+            super().close()
+            return
         if getattr(self, '_slice_loader', None) is not None:
             self._slice_loader.close()
             self._slice_loader = None
