@@ -21,11 +21,13 @@ performance, launch with `just review 1 --ui-scale 1.5 --hover` (or app `2`).
 The library constructor also accepts `enable_hover=False` without disabling
 click selection; its existing default remains enabled for compatibility.
 
-Scene controls have their own scrolling pane above the fixed selection summary.
-The region browser remains below those panes, with a scrollbar for the hierarchy
-alone. Expanding controls or selecting many regions must not move the search box
-or require scrolling the surrounding sidebar. At smaller window heights, the
-controls and summary panes shrink to retain space for browsing.
+The sidebar is a compact region browser: mapping and visible hemispheres, search,
+and a small action toolbar sit above the tree. The hierarchy fills the remaining
+height with its own scrollbar; a fixed two-row selection summary sits below it.
+The settings icon opens **Scene** over the visualization and the info
+icon opens **Selection details**. Both are ordinary in-app windows: the uncovered
+tree stays usable while they are open. Opening settings or selecting many regions
+must not move the search box or resize the tree. Icon buttons provide tooltips.
 
 Hover and selection now use GPU state while retaining the authored region colors
 and global opacity. Hover adds a white tint; selection dims the surrounding brain
@@ -33,7 +35,7 @@ without making selected regions more opaque. This decoration does not change
 picking coverage: even fully dimmed context remains selectable. Explicitly hidden
 regions and regions with authored zero opacity remain unavailable to surface picks.
 
-Check branch folding and leaf selection separately. Search for a parent acronym, open a retained descendant branch, then clear search and verify that ordinary folding returns. Select multiple leaves with Ctrl/Cmd and the Multiple selection checkbox; use Shift-click for visible siblings. Use the arrow keys and Enter/Space without moving focus back to the search box. A search with no matches should leave an empty browser and remain editable.
+Check branch folding and leaf selection separately. Search for a parent acronym, open a retained descendant branch, then clear search and verify that ordinary folding returns. Select multiple leaves with Ctrl/Cmd and the multiple-selection icon; use Shift-click for visible siblings. Use the arrow keys and Enter/Space without moving focus back to the search box. A search with no matches should leave an empty browser and remain editable.
 
 When regional values are supplied, switch between anatomical and value order. Search temporarily uses anatomical order and clearing it restores the requested ordering. Verify that surface/table selections preserve the browser's focus and folding, and that mapping changes clear selection. Hiding a selected surface region still preserves committed selection.
 
@@ -41,7 +43,7 @@ When regional values are supplied, switch between anatomical and value order. Se
 
 The workspace contains one 3D viewport and a control/ontology sidebar. The atlas
 starts opaque. The retained scientific-data area starts hidden for the current
-review; enable **Show scientific data** to restore it. Its presets are **Atlas surface**, **Single BWM probe**,
+review; open **Scene** and enable **Show scientific data** to restore it. Its presets are **Atlas surface**, **Single BWM probe**,
 **Multiple W39 insertions** and **Points + plane**. Orbit with left-drag and zoom
 with the wheel. Use the common mapping selector for Allen, Beryl and Cosmos.
 

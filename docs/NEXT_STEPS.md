@@ -9,6 +9,57 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Compact region browser: local review snapshot — October 15 2026
+
+The latest sidebar review rejected the earlier reserved-pane layout: it stopped
+movement but left the hierarchy in the bottom third of the panel. The replacement
+has three compact header rows, a remaining-height tree with its own scrollbar,
+and a fixed two-row selection footer. Mapping and visible hemispheres remain
+text choices; small vector buttons provide settings, search clearing, multiple
+selection, expansion/collapse, sorting when values exist, and selection actions.
+Full names and ancestry are available in **Selection details**. **Scene** and
+scientific-data controls use ordinary non-docking windows inside the same host;
+they do not consume hierarchy height or block the uncovered browser.
+
+Linked slice completion is processed before controls are drawn, including when
+settings or the sidebar are closed. Selection transactions, rollback, signed
+identities, keyboard/range navigation and deferred fatal GUI cleanup retain their
+contracts. Auxiliary windows initially use the actual sidebar edge and live
+host size; a host/sidebar resize reapplies bounds, while unchanged layouts retain
+user window placement. Hover stays off and scientific data hidden initially.
+
+The local Datoviz pin is `78855559edd5ebfc7eace5228935754f37228b7e` on
+`rc4/scientific-3d`. The rebuilt Linux library SHA256 is
+`d61b45334531afc6ad491621804a3772d7af09643dc1e249f91826c87c6356b9`.
+The additive engine changes supply logical sizing/placement, hinted search,
+vector icon buttons, explicit keyboard navigation and opt-in exact tree spacing
+and readable secondary labels. Existing tree defaults remain unchanged. Native
+icon tests cover coordinate scale 1/2 and user scale 1/1.5, keyboard activation,
+disabled activation suppression and transient hover/focus help. The actual GUI
+suite passes 25 tests. Bindings, generated API references, documentation status
+and strict hermetic engine documentation checks pass.
+
+Consumer validation passes 605 tests with zero skips and both real asset roots,
+strict doctor, lint, strict docs and both scale-1.5 bounded app startups. Wheel
+and source builds pass; installed-wheel checks pass on Python 3.10 and 3.13 and
+include the new private browser module without loading native bindings on import.
+Isolated Xvfb/XTest checks pass both apps at 1600 × 1200 and 1100 × 720, scale
+1.5, plus app 1 at 1600 × 1200, scale 1.0. They exercise empty/one/twelve
+selections, no-result search and clearing, wheel scrolling, real tree clicks with
+Details open, closing auxiliary windows, keyboard focus movement, and Scene
+clicks that leave brain selection, arcball angles and linked cursor unchanged.
+Tree height is 929 pixels at 1200 and 449 at 720, scale 1.5; app 1 has 1,016
+pixels at scale 1.0/1200. Selected captures were inspected. Evidence is ignored
+under `build/compact-sidebar/`; it is scripted Linux evidence, not human or Mac
+acceptance.
+
+All changes in this batch are local commits only. Both `main` branches, anatomy,
+web source, binary assets and the engine data gitlink remain unchanged. The local
+Git cache contains the unpublished engine revision for locked local review;
+fresh remote resolution awaits publication. Restart with
+`just review 1 --ui-scale 1.5` (or app `2`) for the next manual review. No further
+feature work is planned before that review.
+
 ## Review readiness: unmapped surface visibility — October 15 2026
 
 Unmapped presentations are now omitted from native surface rendering and FACE
