@@ -126,6 +126,8 @@ class RegionBrowserSidebar:
             active=self.details_open.value,
         ):
             self.details_open.value = not self.details_open.value
+        if getattr(viewer, 'anatomy_presentation', None) == 'major':
+            hint = 'Tree: fine anatomy; brain: major anatomy'
         dvz.dvz_gui_text(gui, self._short(hint, limit + 10).encode())
         return clear
 
@@ -159,7 +161,7 @@ class RegionBrowserSidebar:
             'browser auxiliary window bounds',
         )
         visible = dvz.dvz_gui_begin(
-            gui, title, ctypes.byref(opened) if opened is not None else None, 1 << 19
+            gui, title, ctypes.byref(opened) if opened is not None else None, 0
         )
         self._window_layouts[title] = signature
         return visible

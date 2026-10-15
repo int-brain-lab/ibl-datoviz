@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Review real atlas, probe, point and physical-plane layers in one fixed scene."""
+"""Where did we record? Explore a verified BWM recording inside anatomical context."""
 
 from __future__ import annotations
 
@@ -11,22 +11,24 @@ from pathlib import Path
 
 import numpy as np
 
+import ibl_anatomy
 from examples.bwm_multiple_insertions import COLORS, DEFAULT_PATHS, WIDTHS, _load_paths
 from examples.bwm_probe import FIXTURE, _load_fixture
 from examples.review_common import (
+    RECORDING_CAMERA,
     ReviewControls,
     add_review_arguments,
     finish_review,
     load_review_slice,
 )
 from ibl_datoviz import (
-    AtlasEnvelope,
     AtlasViewer,
     PointCollection,
     PointCollectionVisual,
     SampledPlane,
     SampledPlaneVisual,
 )
+from ibl_datoviz.context import AtlasContextSurface
 from ibl_datoviz.presentation import scalar_colors
 
 PRESETS = ('atlas', 'single-probe', 'multiple-insertions', 'mixed')
@@ -87,12 +89,12 @@ class ScientificSceneReview(AtlasViewer):
     def __init__(self, mesh, **kwargs):
         self.review_controls = None
         self._show_scientific_data = ctypes.c_bool(False)
-        self._show_data_layers = ctypes.c_bool(False)
+        self.layers_rect = None
         self.envelope_note = ''
         self.review_points = self.review_plane = None
         self._review_error = ''
         kwargs.setdefault('enable_hover', False)
-        kwargs.setdefault('selection_presentation', 'focus')
+        kwargs.setdefault('selection_presentation', 'all')
         super().__init__(mesh, **kwargs)
 
     def configure_review(self, sites, plane, paths=(), *, unavailable_note=''):
@@ -126,6 +128,8 @@ class ScientificSceneReview(AtlasViewer):
         self._active_insertions = (BWM_ID,)
         self._preset_control = ctypes.c_int(0)
         self._layer_controls = {name: ctypes.c_bool(value) for name, value in self.layers.items()}
+        self.site_mode = 'scalar'
+        self._site_mode_control = ctypes.c_int(1)
         self._point_mode_control = ctypes.c_int(1)
         self._point_size_control = ctypes.c_float(self.point_size)
         self._point_opacity_control = ctypes.c_float(self.point_opacity)
@@ -154,7 +158,7 @@ class ScientificSceneReview(AtlasViewer):
             color, width = self._initial_styles[insertion_id]
             self.set_insertion(insertion_id, points, color=color, width_px=width)
         self.review_controls = ReviewControls(self)
-        self.apply_preset('atlas')
+        self.apply_preset('single-probe')
 
     def _plane_data(self, opacity=None):
         pixels = self.base_plane.rgba.copy()
@@ -236,7 +240,7 @@ class ScientificSceneReview(AtlasViewer):
         )
         enabled = {'atlas'}
         if preset == 'single-probe':
-            enabled.update(('points', 'insertions'))
+            enabled.update(('sites', 'insertions'))
         elif preset == 'multiple-insertions':
             enabled.add('insertions')
         elif preset == 'mixed':
@@ -328,6 +332,8 @@ class ScientificSceneReview(AtlasViewer):
     def reset_review(self):
         """Explicitly restore initial controls, camera, layers and scientific styles."""
         self.review_controls.reset()
+        if self.site_mode != 'scalar':
+            self.set_site_mode('scalar')
         self.set_point_mode('scalar')
         self.set_point_size(6.0)
         self.set_point_opacity(0.7)
@@ -335,7 +341,7 @@ class ScientificSceneReview(AtlasViewer):
         self.set_plane_mode('wboit', cutoff=0.5)
         for insertion_id, (color, width) in self._initial_styles.items():
             self.style_insertion(insertion_id, visible=True, color=color, width=width)
-        self.apply_preset('atlas')
+        self.apply_preset('single-probe')
         self._review_error = ''
 
     def _action(self, action, *args, **kwargs):
@@ -366,58 +372,143 @@ class ScientificSceneReview(AtlasViewer):
             self._text(gui, self.envelope_note)
 
     def _draw_viewport_toolbar_gui(self, gui):
-        super()._draw_viewport_toolbar_gui(gui)
+        """Keep the primary viewport focused on recording location."""
+        self.dvz.dvz_gui_text(gui, b'Where did we record?')
         self.dvz.dvz_gui_same_line(gui, 0.0, 16.0 * self.ui_scale)
-        if self.dvz.dvz_gui_button(gui, b'Data layers'):
-            self._show_data_layers.value = not self._show_data_layers.value
+        if self.dvz.dvz_gui_button(gui, b'Reset view'):
+            self.set_camera_angles(self.review_controls.initial_camera)
 
     def _draw_auxiliary_gui(self, gui):
-        """Draw optional layer controls without consuming region tree height."""
-        if self.review_controls is None or not self._show_data_layers.value:
+        """Keep Layers docked below the viewport, outside the Regions browser."""
+        if self.review_controls is None:
             return
-        visible = self._sidebar._window(gui, b'Data layers', self._show_data_layers)
+        self._check(
+            self.dvz.dvz_gui_dock_window_once(
+                gui, b'Layers', self.dvz.DVZ_GUI_DOCK_SLOT_BOTTOM, 170.0 * self.ui_scale
+            ),
+            'recording layers dock',
+        )
+        visible = self.dvz.dvz_gui_begin(gui, b'Layers', None, 0)
         try:
+            self.layers_rect = self._sidebar.rect(gui)
             if visible:
                 self._draw_layer_controls(gui)
         finally:
             self.dvz.dvz_gui_end(gui)
 
     def _draw_layer_controls(self, gui):
-        if self.dvz.dvz_gui_button(gui, b'Close##ibl_data_layers'):
-            self._show_data_layers.value = False
-        self.dvz.dvz_gui_checkbox(
-            gui, b'Show data table', ctypes.byref(self._show_scientific_data)
+        rows = (
+            (
+                'atlas',
+                'Anatomical context',
+                (150, 170, 190, 255),
+                len(getattr(getattr(self, '_anatomical_context', None), 'surfaces', ())),
+            ),
+            ('insertions', 'Insertion paths', COLORS[0], len(self._active_insertions)),
+            ('sites', 'Recording sites', POINT_COLOR, len(self.review_sites.values)),
         )
-        for layer, label in (
-            ('sites', 'Recording sites'),
-            ('plane', 'Anatomical plane'),
-            ('insertions', 'Insertion paths'),
-        ):
+        for layer, label, color, count in rows:
             control = self._layer_controls[layer]
+            control.value = self.layers[layer]
             if self.dvz.dvz_gui_checkbox(gui, label.encode(), ctypes.byref(control)):
                 self._action(self.set_layer_visible, layer, control.value)
                 control.value = self.layers[layer]
-            if not self.layers[layer]:
-                continue
+            self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
+            rgba = (ctypes.c_float * 4)(*(np.asarray(color) / 255))
+            # Display a swatch without exposing an editing widget in the primary rows.
+            self.dvz.dvz_gui_color_edit4(
+                gui,
+                f'##swatch_{layer}'.encode(),
+                rgba,
+                (1 << 1) | (1 << 2) | (1 << 3) | (1 << 5) | (1 << 8),
+            )
+            self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
+            unit = {'atlas': 'structures', 'insertions': 'paths', 'sites': 'sites'}[layer]
+            self.dvz.dvz_gui_text(gui, f'{count} {unit}'.encode())
             if layer == 'sites':
-                low, high = self.value_range
-                self._text(gui, f'Mean firing rate (Hz): {low:.3g} - {high:.3g}.')
-                self._text(gui, 'Purple=low; teal=mid; yellow=high. Missing values are gray.')
-            elif layer == 'plane':
-                self._draw_plane_gui(gui)
-            elif layer == 'insertions':
-                self._draw_insertion_gui(gui)
+                self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
+                if self.dvz.dvz_gui_button(gui, b'Site table'):
+                    self._show_scientific_data.value = not self._show_scientific_data.value
+        if self.layers['sites']:
+            low, high = self.value_range
+            if self.site_mode == 'scalar':
+                self._text(
+                    gui,
+                    f'Mean firing rate: {low:.3g} - {high:.3g} Hz (5-95% of finite BWM sites). '
+                    'Good-unit channel-group means. '
+                    'Purple: low; yellow: high; gray: no good units.',
+                    width=105,
+                )
+            else:
+                self._text(
+                    gui,
+                    'Uniform site color; all supplied recording locations are shown.',
+                    width=105,
+                )
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Recording details', 0):
+            if self._combo(
+                gui,
+                'Site color',
+                self._site_mode_control,
+                ('Uniform color', 'Mean firing rate (Hz)'),
+            ):
+                self._action(
+                    self.set_site_mode, ('uniform', 'scalar')[self._site_mode_control.value]
+                )
+                self._site_mode_control.value = ('uniform', 'scalar').index(self.site_mode)
+            self._text(
+                gui,
+                'BWM 1.1.0 / PL030 probe00: mean of good units assigned to each '
+                'co-located channel group. Locations describe recording sites, '
+                'not exact neuron positions.',
+                width=100,
+            )
+            self._text(
+                gui,
+                'The supplied path joins channel coordinates; '
+                'it is not an independent histology trace.',
+                width=100,
+            )
         if self._review_error:
             self._text(gui, f'Change failed: {self._review_error}')
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Examples and presets', 0):
-            self._draw_examples_gui(gui)
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Advanced renderer comparison', 0):
-            control = self._layer_controls['points']
-            if self.dvz.dvz_gui_checkbox(gui, b'Comparison points', ctypes.byref(control)):
-                self._action(self.set_layer_visible, 'points', control.value)
-                control.value = self.layers['points']
-            if self.layers['points']:
-                self._draw_point_gui(gui)
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Advanced diagnostics', 0):
+            self._draw_diagnostics_gui(gui)
+
+    def _draw_diagnostics_gui(self, gui):
+        self._draw_examples_gui(gui)
+        for layer, label in (('points', 'Comparison points'), ('plane', 'Anatomical plane')):
+            control = self._layer_controls[layer]
+            control.value = self.layers[layer]
+            if self.dvz.dvz_gui_checkbox(gui, label.encode(), ctypes.byref(control)):
+                self._action(self.set_layer_visible, layer, control.value)
+                control.value = self.layers[layer]
+        if self.layers['points']:
+            self._draw_point_gui(gui)
+        if self.layers['plane']:
+            self._draw_plane_gui(gui)
+        self._draw_insertion_gui(gui)
+
+    def set_site_mode(self, mode):
+        """Color the retained recording sites without changing identities or visibility."""
+        if mode not in ('uniform', 'scalar'):
+            raise ValueError('site color mode must be uniform or scalar')
+        colors = (
+            scalar_colors(self.review_sites.values, self.value_range, 'sequential')
+            if mode == 'scalar'
+            else np.tile(
+                np.array((*POINT_COLOR[:3], 255), dtype=np.uint8),
+                (len(self.review_sites.values), 1),
+            )
+        )
+        self._upload_probe_sites(
+            self.review_sites.positions_um,
+            colors=colors,
+            radius_um=85,
+            mapped_ids=self._mapped_probe_region_ids(self.review_sites),
+        )
+        self._probe_colors = colors
+        self.site_mode = mode
+        self._site_mode_control.value = ('uniform', 'scalar').index(mode)
 
     def _draw_examples_gui(self, gui):
         labels = tuple(PRESET_LABELS[PRESETS.index(name)] for name in self._available_presets)
@@ -565,6 +656,12 @@ class ScientificSceneReview(AtlasViewer):
             self.close()
 
 
+def load_major_context(path):
+    """Read the declared coarse cut offline, verifying each original source mesh."""
+    catalog = ibl_anatomy.bundled_surface_catalog()
+    return catalog, ibl_anatomy.load_surface_catalog(path, catalog)
+
+
 def main():
     """Start the fixed-layout native review over verified D070/BWM/Allen inputs."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -572,14 +669,15 @@ def main():
     parser.add_argument('volume_root', type=Path)
     parser.add_argument('--fixture', type=Path, default=FIXTURE)
     parser.add_argument(
-        '--envelope-root', type=Path,
-        default=Path(__file__).resolve().parents[1] / 'build' / 'allen-root',
-        help='prepared Allen root source for the neutral selection outline',
+        '--context-root',
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / 'build' / 'allen-major-context',
+        help='prepared hash-verified major Allen surfaces (run just setup to prepare)',
     )
     parser.add_argument('--paths', type=Path, default=DEFAULT_PATHS)
     parser.add_argument('--provenance', type=Path)
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='beryl')
-    parser.add_argument('--preset', choices=PRESETS, default='atlas')
+    parser.add_argument('--preset', choices=PRESETS, default='single-probe')
     parser.add_argument('--axis', choices=('ap', 'ml', 'dv'), default='ap')
     parser.add_argument('--index', type=int)
     parser.add_argument(
@@ -595,28 +693,42 @@ def main():
     )
     if args.preset == 'multiple-insertions' and not paths:
         parser.error(note)
+    try:
+        context_catalog, context_geometry = load_major_context(args.context_root)
+    except (AttributeError, ImportError, FileNotFoundError, ValueError) as error:
+        parser.error(
+            f'Major anatomical context unavailable: {error}. '
+            'Run just setup /path/to/datoviz to prepare the verified surfaces.'
+        )
     plane = load_review_slice(args.volume_root, args.axis, args.index, args.mapping)
     with ScientificSceneReview.from_asset_set(
         args.asset_root,
         mapping=args.mapping,
         width=args.width,
         height=args.height,
-        surface_opacity=1.0,
-        camera_angles=(1.0, 0.75, -0.25),
+        surface_opacity=0.18,
+        anatomy_presentation='major',
+        context_opacity=0.12,
+        camera_angles=RECORDING_CAMERA,
         ui_scale=args.ui_scale,
         enable_hover=args.hover,
         enable_interaction=True,
         fit_workarea=args.offscreen is None,
     ) as viewer:
-        if args.envelope_root.is_dir():
-            viewer.set_selection_envelope(
-                AtlasEnvelope.from_source(args.envelope_root, viewer.mesh_data)
-            )
-        else:
-            viewer.envelope_note = 'Selection outline unavailable: prepare the Allen root source.'
+        viewer.set_anatomical_context(
+            [
+                AtlasContextSurface.from_geometry(
+                    geometry,
+                    viewer.mesh_data,
+                    color=tuple(bytes.fromhex(member.color_hex.removeprefix('#'))),
+                    name=member.name,
+                )
+                for member, geometry in zip(context_catalog.members, context_geometry, strict=True)
+            ]
+        )
         viewer.configure_review(sites, plane, paths, unavailable_note=note)
         viewer.apply_preset(args.preset)
-        finish_review(viewer, args, 'IBL scientific scene review')
+        finish_review(viewer, args, 'Where did we record?')
     return 0
 
 

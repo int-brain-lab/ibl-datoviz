@@ -12,6 +12,9 @@ from ibl_datoviz import SampledPlane
 from ibl_datoviz.navigator import SLICE_DISPLAY_AXES, AtlasSliceComposer
 from ibl_datoviz.surface_style import RegionStyle
 
+# Named review orientation; visual acceptance is recorded with the review artifacts.
+RECORDING_CAMERA = (1.0, 0.75, -0.25)
+
 
 def add_review_arguments(parser):
     """Add consistent review options without changing native discovery."""
@@ -93,6 +96,7 @@ class ReviewControls:
         self.initial_mapping = viewer.mapping
         self.initial_camera = viewer.camera_angles
         self.initial_opacity = viewer.surface_opacity
+        self.initial_context_opacity = getattr(viewer, 'context_opacity', None)
         self.error = None
         self._region_key = None
         self._available_regions = {}
@@ -108,6 +112,8 @@ class ReviewControls:
         viewer.reset_surface_style()
         viewer.set_surface_visible(True)
         viewer.set_surface_opacity(self.initial_opacity)
+        if self.initial_context_opacity is not None:
+            viewer.set_context_opacity(self.initial_context_opacity)
         viewer.set_explode(0)
         viewer.set_camera_angles(self.initial_camera)
         self._region_key = None
@@ -124,6 +130,13 @@ class ReviewControls:
     def draw(self, gui):
         """Draw stable control IDs and read state back from the authoritative model."""
         dvz = self.viewer.dvz
+        if getattr(self.viewer, 'anatomy_presentation', None) == 'major':
+            opacity = ctypes.c_float(self.viewer.context_opacity)
+            if dvz.dvz_gui_slider_float(gui, b'Context opacity', ctypes.byref(opacity), 0, 1):
+                self._attempt(self.viewer.set_context_opacity, opacity.value)
+            if self.error:
+                dvz.dvz_gui_text(gui, f'Change failed: {self.error}'.encode())
+            return
         if dvz.dvz_gui_collapsing_header(gui, b'3D atlas', 1 << 5):
             visible = ctypes.c_bool(self.viewer._surface_visible)
             if dvz.dvz_gui_checkbox(gui, b'Atlas visible', ctypes.byref(visible)):

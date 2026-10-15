@@ -232,7 +232,7 @@ def test_failed_preset_restores_layers_and_current_preset(viewer):
     viewer.review_plane.fail_visibility = True
     assert not viewer._action(viewer.apply_preset, 'mixed')
     assert viewer.layers == before
-    assert viewer.preset == 'atlas'
+    assert viewer.preset == 'single-probe'
     assert not viewer.review_points.visible and not viewer.review_plane.visible
     assert not viewer._closed
 
@@ -249,7 +249,7 @@ def test_missing_optional_w39_is_disabled_without_substitute(tmp_path, viewer):
     assert 'multiple-insertions' not in single._available_presets
     with pytest.raises(ValueError, match='Multiple insertions unavailable'):
         single.apply_preset('multiple-insertions')
-    assert single.preset == 'atlas'
+    assert single.preset == 'single-probe'
     assert set(single._paths) == {review.BWM_ID}
     single.close()
 
@@ -272,7 +272,7 @@ def test_explicit_reset_restores_styles_layers_and_camera(viewer):
     viewer.set_plane_opacity(0.2)
     viewer.style_insertion('real-path-one', visible=False, width=11)
     viewer.reset_review()
-    assert viewer.preset == 'atlas'
+    assert viewer.preset == 'single-probe'
     assert viewer.camera_angles == (0.1, 0.2, 0.3)
     assert viewer.point_mode == 'scalar' and viewer.point_size == 6
     assert viewer.point_opacity == 0.7
@@ -292,8 +292,8 @@ def test_close_releases_components_before_scene_and_is_idempotent(viewer):
 
 def test_single_probe_encoding_changes_visible_points_and_preserves_table_camera(viewer):
     viewer.apply_preset('single-probe')
-    assert viewer.review_points.visible
-    assert not viewer.native_visibility[viewer.probe_sites]
+    assert not viewer.review_points.visible
+    assert viewer.native_visibility[viewer.probe_sites]
     assert viewer.path_styles[review.BWM_ID]['visible']
     resources = viewer.scene, viewer.panel, viewer.app, viewer.view, viewer.probe_table
     viewer.camera_angles = (1.0, 2.0, 3.0)
@@ -369,29 +369,33 @@ def test_scientific_data_failure_balances_separate_window(viewer, result, droppe
     assert viewer._show_scientific_data.value
 
 
-def test_data_layer_controls_only_draw_for_enabled_layers(viewer):
+def test_primary_layers_read_authoritative_state_and_hide_diagnostics(viewer):
     drawn = []
+    labels = []
     viewer.dvz.dvz_gui_button = lambda *_: False
-    viewer.dvz.dvz_gui_checkbox = lambda *_: False
+    viewer.dvz.dvz_gui_checkbox = lambda _gui, label, pointer: labels.append(label) or False
     viewer.dvz.dvz_gui_collapsing_header = lambda *_: False
+    viewer.dvz.dvz_gui_same_line = lambda *_: None
+    viewer.dvz.dvz_gui_text = lambda *_: None
+    viewer.dvz.dvz_gui_color_edit4 = lambda *_: None
     viewer._draw_point_gui = lambda _gui: drawn.append('points')
     viewer._draw_plane_gui = lambda _gui: drawn.append('plane')
     viewer._draw_insertion_gui = lambda _gui: drawn.append('insertions')
+    viewer._layer_controls['sites'].value = False
     viewer._draw_layer_controls(None)
     assert drawn == []
-    viewer.set_layer_visible('points', True)
-    viewer.set_layer_visible('plane', True)
-    viewer._draw_layer_controls(None)
-    assert drawn == ['plane']
+    assert labels == [b'Anatomical context', b'Insertion paths', b'Recording sites']
+    assert viewer._layer_controls['sites'].value
     assert viewer.camera_angles == (0.1, 0.2, 0.3)
 
 
 @pytest.mark.parametrize('fail', [False, True])
-def test_data_layers_window_is_optional_and_balances_gui_scope(viewer, fail):
+def test_layers_window_is_persistent_dockable_and_balances_scope(viewer, fail):
     calls = []
-    viewer._sidebar = SimpleNamespace(
-        _window=lambda _gui, title, opened: calls.append((title, opened.value)) or True
-    )
+    viewer._sidebar = SimpleNamespace(rect=lambda _: (0, 500, 1100, 170))
+    viewer.dvz.DVZ_GUI_DOCK_SLOT_BOTTOM = 3
+    viewer.dvz.dvz_gui_dock_window_once = lambda *args: calls.append(('dock', args[1:])) or 0
+    viewer.dvz.dvz_gui_begin = lambda *args: calls.append(('begin', args[1:])) or True
     viewer.dvz.dvz_gui_end = lambda *_: calls.append('end')
 
     def draw(_gui):
@@ -400,15 +404,50 @@ def test_data_layers_window_is_optional_and_balances_gui_scope(viewer, fail):
             raise RuntimeError('layer draw failed')
 
     viewer._draw_layer_controls = draw
-    viewer._draw_auxiliary_gui(None)
-    assert calls == []
-    viewer._show_data_layers.value = True
     if fail:
         with pytest.raises(RuntimeError, match='layer draw failed'):
             viewer._draw_auxiliary_gui(None)
     else:
         viewer._draw_auxiliary_gui(None)
-    assert calls == [(b'Data layers', True), 'controls', 'end']
+    assert calls == [
+        ('dock', (b'Layers', 3, 170.0)),
+        ('begin', (b'Layers', None, 0)),
+        'controls',
+        'end',
+    ]
+    assert viewer.layers_rect == (0, 500, 1100, 170)
+
+
+def test_recording_is_visible_at_start_and_layer_toggles_preserve_styles(viewer):
+    assert viewer.preset == 'single-probe'
+    assert viewer.layers == dict(
+        atlas=True, sites=True, points=False, plane=False, insertions=True
+    )
+    assert viewer.native_visibility[viewer.probe_sites]
+    before = viewer.path_styles[review.BWM_ID].copy()
+    for name in ('sites', 'insertions', 'atlas'):
+        viewer.set_layer_visible(name, False)
+        viewer.set_layer_visible(name, True)
+    assert viewer.path_styles[review.BWM_ID] == before
+    assert viewer.camera_angles == (0.1, 0.2, 0.3)
+
+
+def test_site_color_changes_preserve_population_identities_and_visibility(viewer):
+    uploads = []
+    viewer._mapped_probe_region_ids = lambda sites: sites.allen_region_ids
+    viewer._upload_probe_sites = lambda positions, **kwargs: uploads.append((positions, kwargs))
+    for mode in ('uniform', 'scalar'):
+        viewer.set_site_mode(mode)
+        assert viewer.site_mode == mode
+        assert viewer.layers['sites']
+        positions, options = uploads[-1]
+        np.testing.assert_array_equal(positions, viewer.review_sites.positions_um)
+        np.testing.assert_array_equal(options['mapped_ids'], viewer.review_sites.allen_region_ids)
+        assert np.all(options['colors'][:, 3] == 255)
+    missing = ~np.isfinite(viewer.review_sites.values)
+    np.testing.assert_array_equal(
+        uploads[-1][1]['colors'][missing, :3], np.tile([110, 116, 126], (missing.sum(), 1))
+    )
 
 
 def test_atlas_display_visibility_is_preserved_by_failed_preset(viewer):
@@ -421,3 +460,19 @@ def test_atlas_display_visibility_is_preserved_by_failed_preset(viewer):
     assert not viewer.surface_visible
     assert not viewer.layers['atlas']
     assert not viewer._layer_controls['atlas'].value
+
+
+def test_major_context_loading_delegates_to_hash_verified_shared_catalog(monkeypatch, tmp_path):
+    catalog, geometry = object(), (object(), object())
+    calls = []
+    monkeypatch.setattr(
+        review.ibl_anatomy, 'bundled_surface_catalog', lambda: catalog, raising=False
+    )
+    monkeypatch.setattr(
+        review.ibl_anatomy,
+        'load_surface_catalog',
+        lambda path, source: calls.append((path, source)) or geometry,
+        raising=False,
+    )
+    assert review.load_major_context(tmp_path) == (catalog, geometry)
+    assert calls == [(tmp_path, catalog)]

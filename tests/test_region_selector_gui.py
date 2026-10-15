@@ -675,7 +675,7 @@ def test_scene_and_details_are_explicit_nonmodal_windows(viewer):
     for title, opened, flags in fake.window_flags:
         if title in (b'Display settings', b'Selection details'):
             assert opened._obj.value
-            assert flags == 1 << 19  # Vendored ImGuiWindowFlags_NoDocking.
+            assert flags == 0  # Auxiliary windows remain dockable.
     fake.buttons = {b'Close##ibl_scene', b'Close##ibl_details'}
     viewer._gui_callback(None, None, None)
     assert not viewer._sidebar.scene_open.value
