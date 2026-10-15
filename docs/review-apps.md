@@ -61,7 +61,7 @@ Review in this order:
 1. Judge the initial camera against the reference. The recording should be findable immediately, and major anatomical context should be understandable without individual cortical layers.
 2. Turn Recording sites off: the amber path should remain. Turn Insertion paths off too: both data layers disappear. Restore each independently; camera, region selection and styles must stay fixed.
 3. Turn Anatomical context off/on. Sites and paths remain visible; restoring context restores its previous appearance.
-4. Select FRP, then TH (Thalamus) through the tree. Context and data must remain. Clear selection, then click a large visible cortex surface: select the shown parent/side without exposing all cortical layers. Try Allen/Beryl/Cosmos and left/right visibility.
+4. Search and select the FRP leaf, then the VPL leaf (in the thalamus). Context and data must remain. Clear selection, then click a large visible cortex surface: select the shown parent/side without exposing all cortical layers. Try Allen/Beryl/Cosmos and left/right visibility.
 5. Open Recording details, switch Site color to Mean firing rate (Hz), and inspect the range/missing-value legend. Open Site table and check linked selection. Restore uniform color to compare geometry readability.
 6. Resize or dock Layers elsewhere. At UI scale 1.5, the three primary toggles must remain readable and accessible; the tree should not jump when selection changes. Orbit/zoom and verify Reset view; inspect Explode selection with a fine region selected.
 7. In Display settings, compare low opacity, 0.9 and 1.0. Check the endpoint transition and judge the transparency approximation separately from anatomical clutter.
