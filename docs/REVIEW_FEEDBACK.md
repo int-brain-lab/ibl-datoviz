@@ -34,6 +34,71 @@ in dated implementation handoffs.
 | Clear dockable layer controls | The floating, non-dockable Data layers window is confusing. Need simple, clearly labeled visibility controls, with useful icons/colors and immediately visible results. | Implemented persistent dockable Layers with three visibility rows, source counts and color swatches. Toggles use the same retained layer state as programmatic visibility. Advanced renderer comparisons remain secondary. Real mouse and small-window checks pass; manual acceptance remains open. |
 | Scientific API foundations | Need modular, well-delimited Python constructs for scientific IBL visualization, rather than a demo settings mixture. | Cross-repository architecture audit is complete; first visual prototype implemented. The broader API scripts/refactor await this gate. The reviewer explicitly authorizes compatibility breaks in this early, unused package. |
 
+## Recording-context follow-up — October 15, 2026
+
+This follow-up supersedes the earlier size, camera and docking preferences. The
+Regions browser is improving; the 3D presentation and insertion controls still
+need review. No production rendering or GUI changes were made during this audit.
+
+| Point | Observation or request | Proposed correction and acceptance |
+| --- | --- | --- |
+| Smaller initial window | Reduce the initial window by 20%. | Request 2240 × 1600 instead of 2800 × 2000, retaining the chosen UI scale and monitor-work-area fitting. A monitor-clamped window may need its actual starting dimensions considered during physical review. |
+| Revised initial camera | Use the new reference image: a more lateral view, olfactory bulbs lower left and recording nearly vertical at the right. | Calibrate the named initial camera and Reset view against this reference; do not change scientific coordinates. Exact angles remain to be determined. |
+| Layers on the right | Start Layers on the right, rather than below the viewport. | Use the existing right-docking API with a compact width; retain user docking and the reserved Regions tree space. |
+| Uniform blue sites | All 192 sites are cyan and appear to form a tube. Is that correct? | Current color intentionally identifies the layer rather than a measured quantity. Radius 85 µm versus roughly 20 µm adjacent spacing produces heavy overlap. Expose an explicit Uniform / Mean firing rate color choice and its legend in the primary site controls; reduce glyph overlap while retaining visibility at overview scale. Preserve the fixture's 192 co-located channel groups and missing values. |
+| Compact insertion controls | Color and width do not visibly belong to the identifier above them; the controls take too much space. | Group each active insertion into one compact row with visibility, color swatch, short identifier and width. Full identity, recording/session metadata and provenance belong in expandable details. These IDs are insertion IDs, not session IDs. Inactive example insertions must not appear enabled in the current example. |
+| Spiky insertion paths | W39 paths generate long triangles, possibly from repeated or unusual points. | Reproduced without anatomy using the real arrays. Fix generic Datoviz round-join geometry and render/query agreement before accepting the multi-insertion demo. Source coordinates must remain intact. |
+
+### Path investigation and implementation proposal
+
+All three pinned W39 arrays contain 384 channel-derived points. Respectively,
+195, 192 and 192 consecutive edges have exactly zero length, already in the
+original float64 arrays. These repeated coordinates are not introduced by the
+float32 adapter. The BWM fixture has 192 distinct locations and no zero-length
+edges. The W39 preparation sorts source channels by axial then lateral position;
+it does not provide an independently fitted histology trajectory.
+
+An isolated 800 × 800 offscreen diagnostic projected each W39 array into a plane
+and requested a 7-pixel round path. Colored pixels extended approximately 47, 61
+and 56 pixels from the nearest authored segment. Removing only consecutive exact
+duplicates in a temporary diagnostic copy reduced the maximum to below 3 pixels
+for all three paths, with no pixels beyond the conservative 6-pixel envelope.
+The source archives and production implementation were unchanged. Script,
+captures and measurements are ignored artifacts under `build/path-audit/`.
+
+At Datoviz `efbef43b`, `src/scene/shaders/glsl/path.vert` computes miter-based
+extrusion for round joins without a round-join length bound. Zero-length edges
+retain immediate neighbors and fallback directions. The integer query vertex
+shader already bounds non-miter joins, so visible and queried coverage can
+disagree. The WGSL path shader also needs corresponding treatment. This is an
+engine robustness defect exposed by valid repeated channel locations; scientific
+coordinates should not need smoothing to make it render safely.
+
+Proposed implementation sequence:
+
+1. In Datoviz `rc4/scientific-3d`, add failing pixel-envelope regressions for
+   adjacent duplicates, tiny segments, near reversals and perspective. Cover
+   widths, endpoint caps, clipping and query coverage. Replace round joins'
+   unbounded miter extrusion with bounded segment rectangles and round endpoint
+   coverage; use consistent semantics in display, query and WGSL shaders. Verify
+   joins remain continuous and overlap does not introduce alpha/color seams.
+   A simple miter-length clamp alone is insufficient evidence of correct width.
+   No public API break is expected for this correction.
+2. In `ibl-datoviz` `feature/datoviz-v04`, retain source arrays and their verified
+   hashes; add a real W39 integration regression with rotation/zoom and independent
+   styles. Upgrade the immutable engine pin only after the engine correction and
+   compatibility checks pass. Coalescing consecutive identical display control
+   points is an optional optimization, not the correctness fix or permission to
+   remove channel observations.
+3. In a separate native-package UI commit, apply the revised size, camera and
+   right dock; compact the insertion controls and expose site-color semantics.
+   Existing docking and item-width APIs support the layout; the identified
+   required engine work is the path correction. Inspect the pale anatomical
+   plane artifact separately rather than assuming it has the same cause.
+4. Run bounded isolated GPU checks and fresh review captures, then present the
+   updated review commands and remaining manual acceptance items. The broad
+   scientific layer API refactor remains behind visual acceptance.
+
 ## Scientific workflow direction from the October 15 review
 
 The current app-1 visualization and Data layers experience are not accepted. The

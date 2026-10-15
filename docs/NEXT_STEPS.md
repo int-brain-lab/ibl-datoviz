@@ -9,6 +9,18 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Recording-context review findings — October 15 2026
+
+The next manual pass requests a 20% smaller initial window, the newer lateral
+camera reference, Layers docked on the right, explicit site-color meaning and
+compact controls grouped by insertion. The W39 path spikes were reproduced in
+an isolated offscreen diagnostic: repeated source coordinates expose unbounded
+round-join extrusion in Datoviz, with different rendering/query bounds. The
+diagnosis, measurements and proposed engine-first correction are recorded in
+[the feedback log](REVIEW_FEEDBACK.md#recording-context-follow-up--october-15-2026).
+No production fix or engine pin upgrade has been made during this investigation.
+The previous startup/test results do not establish acceptance of these paths.
+
 ## First recording-context visual gate — October 15 2026
 
 The approved implementation now reaches the first visual review gate; the broader
