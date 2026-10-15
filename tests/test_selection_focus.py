@@ -312,6 +312,11 @@ def test_reset_view_keeps_selection_styles_and_explode(monkeypatch):
         monkeypatch.setattr(
             native, 'dvz_arcball_reset', lambda arcball: reset.append(arcball) or 0, raising=False
         )
+        monkeypatch.setattr(
+            viewer,
+            'set_camera_angles',
+            lambda *_: pytest.fail('Reset must use the native initial pose, not a later pose'),
+        )
         viewer._draw_viewport_toolbar_gui(None)
         assert reset == [viewer.arcball]
         assert viewer.selected_region_ids() == (-315,)

@@ -304,7 +304,7 @@ class AtlasViewer:
         return tuple(float(value) for value in values)
 
     def set_camera_angles(self, angles: Sequence[float]) -> None:
-        """Set stored arcball Euler angles and update an active view immediately."""
+        """Set Euler angles; an active view retains its original reset pose."""
         self._require_open()
         self.camera_angles = self._validated_camera_angles(angles)
         if self.arcball is not None:
@@ -1805,7 +1805,6 @@ class AtlasViewer:
         self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
         if self.dvz.dvz_gui_button(gui, b'Reset view') and self.arcball is not None:
             self._check(self.dvz.dvz_arcball_reset(self.arcball), 'camera reset')
-            self.set_camera_angles(self.camera_angles)
         if self.anatomy_presentation == 'detailed' and self.selection_presentation != 'legacy':
             modes = ('focus', 'isolate', 'all')
             current = ctypes.c_int(modes.index(self.selection_presentation))
@@ -2227,7 +2226,7 @@ class AtlasViewer:
         if not self.arcball:
             raise RuntimeError('dvz arcball creation failed')
         angles = (ctypes.c_float * 3)(*self.camera_angles)
-        self._check(self.dvz.dvz_arcball_set(self.arcball, angles), 'arcball setup')
+        self._check(self.dvz.dvz_arcball_initial(self.arcball, angles), 'arcball setup')
 
     def render_offscreen(self, output: str | Path | None = None) -> NDArray[np.uint8]:
         """Render exactly one frame and return a copied RGBA image."""

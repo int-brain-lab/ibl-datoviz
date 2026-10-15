@@ -9,6 +9,35 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Consistent reset and panned rotation — October 15 2026
+
+The viewer registers its startup orientation with `dvz_arcball_initial`, so native
+double-click and the Reset view button restore the actual initial orientation,
+zero pan and unit zoom. The button no longer reapplies the last programmatically
+requested orientation after resetting. Subsequent `set_camera_angles()` changes
+the current pose without redefining the view's startup baseline. A native pixel
+regression checks exact startup-frame restoration through both reset entry
+points, after orientation/pan/zoom changes, while retaining selection/explosion.
+
+The geometric rotation pivot already followed view-plane pan, but pointer motion
+was interpreted around the old viewport center. Datoviz `f77b5d05f` centers the
+virtual trackball on the projected panned/dollied pivot. Equivalent relative
+gestures around the original and moved pivot now yield the same rotation at both
+tested zoom levels. The engine arcball suite passes 34/34 with zero skips under
+Vulkan validation. The immutable source/lock pin is
+`f77b5d05f914149858d56c374e7cb69ee23a72b3`; library SHA256 is
+`6d8a59ace2bf44d014da92e67cb7457b38767ed8ab5286fc7ee6e3a040ea4d40`.
+
+Manual review should pan, rotate around the moved brain, zoom and double-click:
+the configured startup view should return, matching Reset view. Use the existing
+isolated Python 3.11 review command below. These corrections remain local commits.
+
+Package tests pass 661/661 with zero skips under Vulkan validation; strict doctor,
+lint and strict docs pass. Actual XTest double-click and toolbar clicks restore
+the same initial native camera state in the isolated live review app. Its receipt
+is ignored at `build/path-audit/reset-gesture-receipt.json`. Native pixel tests
+also prove exact initial-frame restoration, rather than only comparing angles.
+
 ## Python minimum raised to 3.11 — October 15 2026
 
 Package metadata now requires Python 3.11 or newer; CI tests 3.11 and 3.13.
