@@ -9,6 +9,32 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Zoom-aware panning correction — October 15 2026
+
+The reviewer reports excessive right-drag translation when zoomed in. Datoviz
+`53f162f93e53fd21cd5e2deaf0947aa26bc8f724` now converts drag pixels to view-plane
+translation using camera projection and current dolly depth at the rotation
+center. Previously it applied a fixed view-space translation, which perspective
+amplified as the camera approached the brain. Both right and middle drag use the
+correction. Scene input supplies the current camera independently of rendering;
+temporarily bound controller camera state is restored for shared controllers.
+No public API or scientific geometry changed.
+
+The native source/lock pin this engine revision. Built library SHA256 is
+`69a77246700f7c475d300f8c9475f5fbf966b799c1d9542247ea41b0755b7ef0`.
+Engine arcball checks pass 33/33 with zero skips, including projected pixel motion
+through real panel input at three zoom levels, two aspect/FOV settings, and both
+perspective and orthographic cameras. Manual pan sensitivity acceptance remains
+open. Review with `just review 1 --strict --ui-scale 1.5`, zoom in and right-drag
+the brain; zoom out and compare. Evidence is ignored under `build/path-audit/`.
+
+Package validation passes 660/660 with zero skips on Python 3.11 and Vulkan
+validation, plus strict doctor, lint/docs and bounded app-1 startup. Concurrent
+Python-floor/CI/documentation edits are outside this correction and remain
+unstaged. Validation uses the separate ignored `build/path-audit/venv311`
+environment, preserving the existing environment. Its direct review command is
+`build/path-audit/venv311/bin/python tools/review.py run 1 --strict --ui-scale 1.5`.
+
 ## Recording-context corrections ready for review — October 15 2026
 
 The authorized feedback batch is implemented and committed locally. App 1 starts
