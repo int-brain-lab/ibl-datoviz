@@ -187,6 +187,13 @@ class ScientificSceneReview(AtlasViewer):
                 ),
             )
 
+    def set_surface_visible(self, visible):
+        """Keep atlas display controls and preset rollback on one visibility state."""
+        super().set_surface_visible(visible)
+        if hasattr(self, 'layers'):
+            self.layers['atlas'] = bool(visible)
+            self._layer_controls['atlas'].value = bool(visible)
+
     def set_layer_visible(self, layer, visible):
         """Change a retained layer without changing camera or authored region styles."""
         if layer not in self.layers:

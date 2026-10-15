@@ -23,6 +23,7 @@ CACHE = REPOSITORY / 'build' / 'review'
 CONFIG = CACHE / 'config.json'
 ASSETS = REPOSITORY / 'build' / 'atlas-d070'
 VOLUME = REPOSITORY / 'build' / 'allen-ccf-2017-50um'
+ENVELOPE = REPOSITORY / 'build' / 'allen-root'
 ANATOMY = CACHE / 'anatomy'
 EXAMPLES = {
     '1': ('scientific_scene_review.py', (ASSETS, VOLUME)),
@@ -213,7 +214,9 @@ def prepare_assets():
     """Verify or materialize D070 and build the bounded 50 um pack."""
     from ibl_anatomy import (  # noqa: PLC0415
         bundled_asset_set,
+        load_surface_asset,
         materialize_asset_set,
+        materialize_surface_asset,
         open_volume_pack,
         verify_materialized_asset_set,
     )
@@ -224,6 +227,11 @@ def prepare_assets():
     else:
         print('Materializing verified D070 surface assets', flush=True)
         materialize_asset_set(lock, ASSETS)
+    if ENVELOPE.exists():
+        load_surface_asset(ENVELOPE)
+    else:
+        print('Materializing verified Allen reference envelope', flush=True)
+        materialize_surface_asset(ENVELOPE)
     builder = ANATOMY / 'tools' / 'build_allen_volume_pack.py'
     constants = builder_constants(builder)
     if not VOLUME.exists():
@@ -342,6 +350,7 @@ def run_examples(args, prefix, environment):
                 REPOSITORY / 'examples' / script,
                 *arguments,
                 *(['--preset', preset] if preset is not None else []),
+                *(['--envelope-root', ENVELOPE] if name == '1' else []),
                 '--frames',
                 args.frames,
                 '--ui-scale',

@@ -409,3 +409,15 @@ def test_data_layers_window_is_optional_and_balances_gui_scope(viewer, fail):
     else:
         viewer._draw_auxiliary_gui(None)
     assert calls == [(b'Data layers', True), 'controls', 'end']
+
+
+def test_atlas_display_visibility_is_preserved_by_failed_preset(viewer):
+    viewer.set_surface_visible(False)
+    assert not viewer.layers['atlas']
+    assert not viewer._layer_controls['atlas'].value
+    viewer.review_plane.fail_visibility = True
+    with pytest.raises(RuntimeError, match='visibility failure'):
+        viewer.apply_preset('mixed')
+    assert not viewer.surface_visible
+    assert not viewer.layers['atlas']
+    assert not viewer._layer_controls['atlas'].value
