@@ -9,6 +9,75 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Hemisphere coverage and reserved browsing — October 15 2026
+
+Datoviz is pinned to `bf9794f7ba658c7c6256bab054948661d26db403` on `rc4/scientific-3d`. The rebuilt
+Linux library SHA256 is `122cca62420db6c0bc85094c8f403e28b1f8f0153d519848d17974b34244d92f`; the anatomy pin remains
+`81bd7d79044e4dc3a528abe50a0296381143f03e`. No anatomy/web source, binary assets,
+engine data gitlink or canonical gallery media changed in this batch.
+
+Hemisphere rendering and picking now use the verified pack's original-world ML
+classifier, including its exact on-plane side, threshold and single-presentation
+fallback. A private `SurfaceGeometry` adapter duplicates complete crossing source
+triangles into side-specific copies with matching colors, state slots and signed
+FACE keys. A generic copied Datoviz fragment-clip input applies complementary
+half-space predicates in ordinary lit/unlit opaque, blended and WBOIT meshes and
+their queries. There is no atlas-specific engine API, vertex adjustment, triangle
+cut/cap, mesh-part API or new query target. Public canonical `mesh_data`, world
+normalization and source provenance remain unchanged. Private D070 geometry grows
+by 5,937 triangles, approximately 0.6%, and is prepared once in about 0.20 seconds
+on this host. Hover/selection retain sparse state updates.
+
+The sidebar now reserves browser space independently of scene controls and
+selection details. Each pane scrolls independently; the outer sidebar does not.
+Real XTest mouse, wheel and keyboard checks cover both apps at 1600 × 1200 and
+app 1 at 1100 × 720, scale 1.5. Search remains reachable and its vertical anchor
+does not move after scrolling controls or selecting twelve regions. The tree has
+its own scrollbar. New window-height allocation replaces the old fixed tree
+height; failed frame updates retain widget rollback and balanced GUI scopes.
+The final audit also found a fatal rollback cleanup hazard: callback-triggered
+closure now stops the app and defers native destruction until the GUI scopes
+and native run loop have returned. `show()` then reports the saved fatal error.
+
+Validation passes 591 consumer tests with zero skips and both real asset roots;
+new native regressions cover true-zero coplanar ownership, crossing samples under
+camera rotation, hemisphere hiding and all three mappings through explosion and
+interaction decoration. Real D070 checks cover eighteen mapping/hemisphere/explode
+states, signed picks, and equality between the combined silhouette and the union
+of the isolated sides. Captures were inspected. Engine proofs cover twenty-four
+shader-emission profiles, twelve native clip coverage profiles, native FACE/ITEM
+queries, multi-figure ownership/retry, clip replacement/clear and a deterministic
+live WebGPU transition. The final engine scene count is 793/793 with zero failures/skips.
+
+Repeated real-app XTest profiling measures 24.8–25.0 ms tree-hover frames and
+36.7–38.1 ms brain-hover frames, compared with the earlier 23–24/30–31 ms indexed
+state-only measurements and the original 151/91–101 ms diagnosis. The added
+fragment-query work has a measured cost. After warmup, all forty brain queries
+complete with zero static uploads/bytes; each forty-frame tree/brain phase
+requests 1,600/2,000 flag-payload bytes and uploads no dense vertex colors. These
+are bounded NVIDIA/Xvfb diagnostics, not portable frame-rate guarantees. Hover
+remains disabled by default in both review apps; click selection remains active.
+
+The real-data repeat caught a temporary clipping-cache regression before push:
+a twelve-word cache tuple was copied into an eleven-word executor array. One
+shared capacity and a compile-time check now prevent that mismatch; native tests
+assert actual warm upload counters through state/style changes and authored clip
+replacement/clear. The failed profile is retained separately under ignored
+`build/hemisphere-review/cache-regression-before/`. Other evidence stays in
+`build/hemisphere-review/` and engine `build/fragment-clip-*` outputs.
+
+The previous CI failure was a separate eager native-binding import in the
+benchmark helper module. The import is now deferred to benchmark execution, so
+CPU-only helper tests can collect without a native library. Benchmark reports
+distinguish canonical asset counts from private render counts and use the actual
+render position payload size for explosion updates. Clean wheel/source builds
+and isolated installed-wheel checks pass on Python 3.10.17 and 3.13.3 with the
+exact locked revision. Strict doctor, full tests, lint, documentation and bounded
+three-frame startup checks pass for both apps at scale 1.5. Manual review and
+physical platform acceptance remain open. A separate native/web difference for
+unmapped Beryl presentations is recorded in [the feedback log](REVIEW_FEEDBACK.md);
+this batch does not claim complete rendering-visibility parity.
+
 ## GPU interaction state — October 14 2026
 
 The immutable Datoviz baseline is now `a9d943aae9292d40e79ed30c2f8f227259f5053c`

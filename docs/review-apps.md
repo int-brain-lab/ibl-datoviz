@@ -21,6 +21,12 @@ performance, launch with `just review 1 --ui-scale 1.5 --hover` (or app `2`).
 The library constructor also accepts `enable_hover=False` without disabling
 click selection; its existing default remains enabled for compatibility.
 
+Scene controls have their own scrolling pane above the fixed selection summary.
+The region browser remains below those panes, with a scrollbar for the hierarchy
+alone. Expanding controls or selecting many regions must not move the search box
+or require scrolling the surrounding sidebar. At smaller window heights, the
+controls and summary panes shrink to retain space for browsing.
+
 Hover and selection now use GPU state while retaining the authored region colors
 and global opacity. Hover adds a white tint; selection dims the surrounding brain
 without making selected regions more opaque. This decoration does not change

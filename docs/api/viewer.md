@@ -141,12 +141,17 @@ viewer.set_hemisphere("left")
 viewer.set_hemisphere_visible("right", True)
 ```
 
-Visibility filters canonical triangle indices and their matching face link keys,
+Visibility filters private render triangle indices and their matching face link keys,
 preserving atlas identity arrays, normalization and framing. Hidden faces and
 faces with zero authored alpha are absent from picking as well as shading; an empty surface suppresses
-drawing without unsupported zero-count uploads. Hemisphere controls select the
-pack's canonical face partition. They do not reclip geometry, generate cut caps,
-or replace the scientific annotation with a mesh.
+drawing without unsupported zero-count uploads. Hemisphere controls use the
+pack's original-world ML classifier, including its exact on-plane side and
+single-presentation fallback. Private copies of crossing source triangles carry
+side-specific colors, GPU state slots and signed pick keys, with the same fragment
+coverage in shading and queries. Explosion does not change the classifier.
+Canonical `mesh_data` arrays, world-point normalization and binary assets remain
+unchanged; no vertices are cut, capped or nudged. Native FACE ordinals address the
+filtered private draw mesh; signed link keys remain the regional identity.
 
 RGB overrides retain source alpha; RGBA overrides replace authored region alpha,
 scaled by global surface opacity. Regional opacity multiplies authored alpha.

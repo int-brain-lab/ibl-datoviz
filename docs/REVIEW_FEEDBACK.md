@@ -12,12 +12,12 @@ in dated implementation handoffs.
 | Larger controls | Increase UI scale for manual review. | Available through `--ui-scale 1.5`; retain the chosen scale while reviewing. |
 | Opaque default brain | The default brain is entirely translucent. | Changed in `e5f0e0f`: app 1 starts at opacity 1.0 rather than 0.16. Restart and confirm the default appearance. Transparency remains an explicit control. |
 | Stable selection area | Clicking a tree region grows the selection summary and suddenly pushes the tree downward. | Changed in `e5f0e0f`: fixed-height scrolling summary. Scripted captures confirm a stable heading; manual acceptance remains open. |
-| Slow hover in both views | Hovering tree rows and the 3D brain is very slow. Transparency was suggested as a possible cause. | GPU state implemented. Isolated real-mouse sweeps now measure 23–24 ms tree and 30–31 ms brain frames, with no dense color uploads or static query rebuilds. Manual responsiveness acceptance remains open. |
+| Slow hover in both views | Hovering tree rows and the 3D brain is very slow. Transparency was suggested as a possible cause. | GPU state implemented. After the hemisphere correction, isolated real-mouse sweeps measure about 25 ms tree and 37–38 ms brain frames, with no dense color uploads or static query rebuilds. Manual responsiveness acceptance remains open. |
 | Hide scientific data | Hide the scientific-data area for the current review. | Changed in `e5f0e0f`: hidden by default; **Show scientific data** restores the retained table. |
-| Clean hemisphere boundary | Turning off one hemisphere exposes spiky triangles at the interhemispheric boundary. Web v2's reviewed splitting and explode behavior should be reused. | Open. Shared binary geometry already matches; native whole-face hiding differs from web's per-fragment boundary classification. Match the web behavior before accepting hemisphere visibility. |
+| Clean hemisphere boundary | Turning off one hemisphere exposes spiky triangles at the interhemispheric boundary. Web v2's reviewed splitting and explode behavior should be reused. | Correction uses the same binary geometry with private presentation copies of crossing triangles and complementary fragment coverage shared by shading and picking. Original ML determines the side after explosion; zero belongs to the right. Validation and manual acceptance are recorded below. |
 | GPU highlight state | Highlight should use a small shader-state update, with geometry retained on the GPU, rather than uploading vertex colors or triangles on hover. | Implemented through Datoviz's fixed-size u32 item-state buffer and copied per-vertex slot indices. Sparse flags use existing generic styles; no Allen semantics or full mesh-part API in the engine. |
 | Opt-in hover | After completing the benchmark, disable hover by default and retain 3D click selection. Keep hover available and improve its efficiency. | Both review apps disable tree/brain hover feedback and native hover queries by default. Click selection remains enabled. `--hover` restores the improved GPU path; library callers can use `enable_hover=False`. |
-| Reserved region browser | Brain-region browsing must occupy a dedicated, always-visible part of the left GUI. Reaching it must not require scrolling the surrounding sidebar; the tree itself needs its own scrollbar. | Open. Reserve browser space independently of scene controls and selection details. Check at scale 1.5 and the reviewer's window size, including long and multiple selections. |
+| Reserved region browser | Brain-region browsing must occupy a dedicated, always-visible part of the left GUI. Reaching it must not require scrolling the surrounding sidebar; the tree itself needs its own scrollbar. | Implemented in `bc1d9ba`. Scene controls, selection details and hierarchy scroll independently; the surrounding sidebar does not scroll. Real mouse/keyboard checks cover both apps at 1600 × 1200 and app 1 at 1100 × 720, scale 1.5, including twelve selected regions. Manual acceptance remains open. |
 
 ## Shared asset and hemisphere audit
 
@@ -35,11 +35,12 @@ production manifest. App 1 loads that verified materialization. Both apply the
 component's authored `explode_displacement_um`; the original world ML coordinate
 must continue to determine hemisphere membership after displacement.
 
-The current web D070 renderer does not cut/cap the binary triangles. It retains
+The web D070 renderer does not cut/cap the binary triangles. It retains
 left/right presentation IDs and classifies each fragment by interpolated original
 ML, with ML=0 assigned to the right. The native renderer classifies each face once
 and removes whole triangles. A face crossing ML=0 can therefore extend across the
-hidden hemisphere. The reported spikes are consistent with this behavior gap.
+hidden hemisphere. The reported spikes are consistent with this behavior gap;
+this describes the native implementation before the correction below.
 The older carefully cut/capped D042 geometry is a historical rollback route.
 
 Source references:
@@ -59,10 +60,36 @@ parity was found in the available refs. Web's donor
 `experiment/brain-mesh-3d-lab` (`ba1e2d1`) is frozen by its repository instructions;
 its asset work should be understood from integrated code rather than resumed.
 
-The correction should preserve the shared immutable pack. Prefer native
-fragment-boundary classification matching the web, or an explicitly derived
-render mesh from those same bytes if the engine requires it. Rendering and picking
-must agree at the boundary, including after explosion and mapping/style changes.
+The correction preserves the shared immutable pack. A private `SurfaceGeometry`
+adapter keeps the original source triangles, duplicating only crossing/zero-touch
+faces into side-specific presentation copies. It copies positions, normals and
+authored explosion vectors without cutting, capping or nudging vertices. D070's
+private draw mesh has 492,607 vertices and 972,582 triangles: 5,937 additional
+triangles, approximately 0.6%. Public `mesh_data` and world-point normalization
+continue to use the original canonical arrays and bounds.
+
+Each copy carries a generic signed fragment-clip distance and an explicit
+include-zero flag. The engine applies the same predicate in color/transparency
+and scientific query passes. Left uses original ML < 0; right uses ML >= 0.
+The policy comes from the verified pack, including its axis, threshold and
+single-presentation fallback. The classifier is independent of display/explode
+positions. Presentation colors, state-buffer slots and signed face keys all use
+the same private draw identities.
+
+Initial isolated probes at a nominal central framebuffer coordinate changed side
+under rotation. Those probes were not proof of exact-zero ownership: that pixel
+need not interpolate exactly to original ML=0. Exact-zero validation instead uses
+known zero clip values or coplanar source coordinates. The correction encodes the
+required half-open rule explicitly and keeps the complete source-triangle
+footprint in both copies, avoiding dependence on shared-edge raster ownership.
+
+This batch targets hemisphere coverage, signed picking and explosion parity.
+An adjacent audit found a separate difference: web hides presentations whose
+active mapping is null, whereas native currently renders its existing gray
+missing-ID context. D070 has eighteen such Beryl presentations. This behavior
+is recorded for follow-up rather than described as full rendering parity.
+
+Ignored evidence is in `build/hemisphere-audit/` and `build/hemisphere-review/`.
 
 ## Hover profiling
 
@@ -107,7 +134,8 @@ retain query caches. Hover and selection preserve authored/global alpha rather
 than raising hovered/selected opacity as the previous CPU recoloring did. Fully
 dimmed context remains selectable; authored zero-alpha regions remain unpickable.
 
-Three repeated real-mouse sweeps on the same D070/Beryl workload measure 22.8–24.1 ms
+The October 14 indexed-state-only baseline used three repeated real-mouse sweeps
+on the same D070/Beryl workload, measuring 22.8–24.1 ms
 tree-hover frames and 30.4–31.1 ms brain-hover frames. Idle frames are 17.4–17.7 ms.
 Each 40-frame tree phase requests 1,600 state-payload bytes; each brain phase
 requests 2,000 bytes. Both paths retain visible transitions and upload no dense
@@ -116,7 +144,15 @@ bytes after warmup, with all 40 brain queries completing. A real brain click als
 selects a region after each sweep. These bounded Linux timings are diagnostic
 evidence, not portable performance guarantees or manual acceptance.
 
-The full IBL suite passes 553 tests with zero skips and Vulkan validation enabled.
+The hemisphere-corrected October 15 repeat measures 24.8–25.0 ms tree-hover frames
+and 36.7–38.1 ms brain-hover frames. The extra fragment-query work has a measurable
+cost. All forty brain queries complete with zero static uploads/bytes after
+warmup; sparse state payloads and zero dense color uploads match the earlier
+baseline. A temporary cache-layout mismatch was caught by this repeat before
+publication, fixed with a shared capacity/compile-time guard, and covered by
+native tests that assert actual warm upload counters.
+
+The updated IBL suite passes 590 tests with zero skips and Vulkan validation enabled.
 Independent engine proofs cover sparse emitted writes, shared consumers, ownership,
 failure recovery, unchanged query revisions, six native render profiles and a
 deterministic browser WGSL transition. Full mesh parts and asynchronous picking
