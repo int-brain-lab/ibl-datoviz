@@ -9,6 +9,18 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Expand/collapse icon refinement — October 15 2026
+
+The reviewer found minus/plus ambiguous. Collapse now uses inward-pointing
+chevrons and expand uses outward-pointing chevrons, retaining the existing
+buttons, tooltips and tree actions. The local Datoviz pin is
+`45c82fa4ca60855dc525e80a6e7fe4cc5dbb2cbb`; library SHA256 is
+`0da025f107efac630adb86a2e06b8f08e638de04967f219f2278506a6d9cb7b1`.
+The engine build and 25 GUI tests pass with zero failures/skips. A live isolated
+scale-1.5 capture was inspected under `build/chevron-review/`. This is a glyph-only
+refinement of the validated compact layout below; all commits remain local and
+manual acceptance remains open.
+
 ## Compact region browser: local review snapshot — October 15 2026
 
 The latest sidebar review rejected the earlier reserved-pane layout: it stopped
