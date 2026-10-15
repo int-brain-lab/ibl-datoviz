@@ -12,6 +12,9 @@ from .envelope import AtlasEnvelope
 from .surface_geometry import SurfaceGeometry
 from .surface_state import SurfaceState
 
+# The source-native cut accepted for the recording-context default.
+DEFAULT_CONTEXT_LANDMARKS = frozenset((315, 698, 313, 771, 354, 528))
+
 
 @dataclass(frozen=True)
 class AtlasContextSurface:

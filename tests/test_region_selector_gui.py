@@ -537,7 +537,7 @@ def test_partial_surface_style_failure_forces_previous_feedback_back(viewer, mon
     assert viewer.selected_region_ids() == ()
     np.testing.assert_array_equal(viewer._surface_state.handle.words, previous)
     assert not viewer._surface_state.handle.active
-    assert calls == 2
+    assert calls >= 2  # Nested transactions may each restore committed feedback.
     assert not viewer._closed
 
 

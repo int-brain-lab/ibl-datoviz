@@ -234,10 +234,10 @@ def test_failed_plane_rebuild_preserves_live_previous_component(viewer, monkeypa
 
 
 def test_failed_preset_restores_layers_and_current_preset(viewer):
-    before = viewer.layers.copy()
+    before = viewer.review_layers.copy()
     viewer.review_plane.fail_visibility = True
     assert not viewer._action(viewer.apply_preset, 'mixed')
-    assert viewer.layers == before
+    assert viewer.review_layers == before
     assert viewer.preset == 'single-probe'
     assert not viewer.review_points.visible and not viewer.review_plane.visible
     assert not viewer._closed
@@ -429,7 +429,7 @@ def test_layers_window_is_persistent_dockable_and_balances_scope(viewer, fail):
 
 def test_recording_is_visible_at_start_and_layer_toggles_preserve_styles(viewer):
     assert viewer.preset == 'single-probe'
-    assert viewer.layers == dict(
+    assert viewer.review_layers == dict(
         atlas=True, sites=True, points=False, plane=False, insertions=True
     )
     assert viewer.native_visibility[viewer.probe_sites]
@@ -448,7 +448,7 @@ def test_site_color_changes_preserve_population_identities_and_visibility(viewer
     for mode in ('uniform', 'scalar'):
         viewer.set_site_mode(mode)
         assert viewer.site_mode == mode
-        assert viewer.layers['sites']
+        assert viewer.review_layers['sites']
         positions, options = uploads[-1]
         np.testing.assert_array_equal(positions, viewer.review_sites.positions_um)
         np.testing.assert_array_equal(options['mapped_ids'], viewer.review_sites.allen_region_ids)
@@ -461,13 +461,13 @@ def test_site_color_changes_preserve_population_identities_and_visibility(viewer
 
 def test_atlas_display_visibility_is_preserved_by_failed_preset(viewer):
     viewer.set_surface_visible(False)
-    assert not viewer.layers['atlas']
+    assert not viewer.review_layers['atlas']
     assert not viewer._layer_controls['atlas'].value
     viewer.review_plane.fail_visibility = True
     with pytest.raises(RuntimeError, match='visibility failure'):
         viewer.apply_preset('mixed')
     assert not viewer.surface_visible
-    assert not viewer.layers['atlas']
+    assert not viewer.review_layers['atlas']
     assert not viewer._layer_controls['atlas'].value
 
 

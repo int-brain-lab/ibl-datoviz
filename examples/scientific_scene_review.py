@@ -28,7 +28,7 @@ from ibl_datoviz import (
     SampledPlane,
     SampledPlaneVisual,
 )
-from ibl_datoviz.context import AtlasContextSurface
+from ibl_datoviz.context import DEFAULT_CONTEXT_LANDMARKS, AtlasContextSurface
 from ibl_datoviz.presentation import scalar_colors
 
 PRESETS = ('atlas', 'single-probe', 'multiple-insertions', 'mixed')
@@ -37,7 +37,7 @@ BWM_ID = 'bwm-probe'
 POINT_COLOR = (70, 220, 250, 180)
 SITE_RADIUS_UM = 20.0
 # A small nonredundant context cut; the complete verified catalog remains available.
-CONTEXT_LANDMARKS = frozenset((315, 698, 313, 771, 354, 528))
+CONTEXT_LANDMARKS = DEFAULT_CONTEXT_LANDMARKS
 MISSING_W39 = (
     'Multiple insertions unavailable. Prepare the pinned W39 channels.pqt with '
     'tools/build_w39_insertions.py --channels /path/to/channels.pqt '
@@ -134,7 +134,7 @@ class ScientificSceneReview(AtlasViewer):
             key: {'visible': True, 'color': color, 'width': width}
             for key, (color, width) in self._initial_styles.items()
         }
-        self.layers = {
+        self.review_layers = {
             'atlas': True,
             'sites': False,
             'points': False,
@@ -146,7 +146,9 @@ class ScientificSceneReview(AtlasViewer):
         self.preset = 'atlas'
         self._active_insertions = (BWM_ID,)
         self._preset_control = ctypes.c_int(0)
-        self._layer_controls = {name: ctypes.c_bool(value) for name, value in self.layers.items()}
+        self._layer_controls = {
+            name: ctypes.c_bool(value) for name, value in self.review_layers.items()
+        }
         self.site_mode = 'uniform'
         self.site_radius_um = SITE_RADIUS_UM
         self._site_radius_control = ctypes.c_float(self.site_radius_um)
@@ -210,7 +212,7 @@ class ScientificSceneReview(AtlasViewer):
             self.set_insertion_visible(
                 insertion_id,
                 bool(
-                    self.layers['insertions']
+                    self.review_layers['insertions']
                     and style['visible']
                     and insertion_id in self._active_insertions
                 ),
@@ -219,13 +221,13 @@ class ScientificSceneReview(AtlasViewer):
     def set_surface_visible(self, visible):
         """Keep atlas display controls and preset rollback on one visibility state."""
         super().set_surface_visible(visible)
-        if hasattr(self, 'layers'):
-            self.layers['atlas'] = bool(visible)
+        if hasattr(self, 'review_layers'):
+            self.review_layers['atlas'] = bool(visible)
             self._layer_controls['atlas'].value = bool(visible)
 
     def set_layer_visible(self, layer, visible):
         """Change a retained layer without changing camera or authored region styles."""
-        if layer not in self.layers:
+        if layer not in self.review_layers:
             raise ValueError(f'unknown scientific layer: {layer}')
         visible = bool(visible)
         if layer == 'atlas':
@@ -239,13 +241,13 @@ class ScientificSceneReview(AtlasViewer):
             self.review_points.set_visible(visible)
         elif layer == 'plane':
             self.review_plane.set_visible(visible)
-        old = self.layers[layer]
-        self.layers[layer] = visible
+        old = self.review_layers[layer]
+        self.review_layers[layer] = visible
         try:
             if layer == 'insertions':
                 self._sync_insertions()
         except Exception:
-            self.layers[layer] = old
+            self.review_layers[layer] = old
             self._sync_insertions()
             raise
         self._layer_controls[layer].value = visible
@@ -256,7 +258,7 @@ class ScientificSceneReview(AtlasViewer):
             raise ValueError(f'unknown scene preset: {preset}')
         if preset == 'multiple-insertions' and len(self._paths) == 1:
             raise ValueError(self.unavailable_note or MISSING_W39)
-        previous_layers = self.layers.copy()
+        previous_layers = self.review_layers.copy()
         previous_active = self._active_insertions
         self._active_insertions = (
             tuple(key for key in self._paths if key != BWM_ID)
@@ -271,7 +273,7 @@ class ScientificSceneReview(AtlasViewer):
         elif preset == 'mixed':
             enabled.update(('points', 'plane', 'insertions'))
         try:
-            for layer in self.layers:
+            for layer in self.review_layers:
                 self.set_layer_visible(layer, layer in enabled)
         except Exception as error:
             self._active_insertions = previous_active
@@ -328,7 +330,7 @@ class ScientificSceneReview(AtlasViewer):
             return
         replacement = self._new_plane(mode, cutoff)
         try:
-            replacement.set_visible(self.layers['plane'])
+            replacement.set_visible(self.review_layers['plane'])
         except Exception:
             replacement.close()
             raise
@@ -349,7 +351,8 @@ class ScientificSceneReview(AtlasViewer):
             style['width'] = float(width)
         if visible is not None:
             effective = bool(
-                visible and self.layers['insertions'] and insertion_id in self._active_insertions
+                visible and self.review_layers['insertions']
+                and insertion_id in self._active_insertions
             )
             self.set_insertion_visible(insertion_id, effective)
             style['visible'] = bool(visible)
@@ -433,10 +436,10 @@ class ScientificSceneReview(AtlasViewer):
         )
         for layer, label, color, count in rows:
             control = self._layer_controls[layer]
-            control.value = self.layers[layer]
+            control.value = self.review_layers[layer]
             if self.dvz.dvz_gui_checkbox(gui, label.encode(), ctypes.byref(control)):
                 self._action(self.set_layer_visible, layer, control.value)
-                control.value = self.layers[layer]
+                control.value = self.review_layers[layer]
             self.dvz.dvz_gui_same_line(gui, 0.0, 6.0 * self.ui_scale)
             rgba = (ctypes.c_float * 4)(*(np.asarray(color) / 255))
             # Read-only layer swatch; insertion rows below have editable swatches.
@@ -448,9 +451,9 @@ class ScientificSceneReview(AtlasViewer):
             )
             self.dvz.dvz_gui_same_line(gui, 0.0, 6.0 * self.ui_scale)
             self.dvz.dvz_gui_text(gui, str(count).encode())
-            if layer == 'insertions' and self.layers['insertions']:
+            if layer == 'insertions' and self.review_layers['insertions']:
                 self._draw_insertion_gui(gui)
-            if layer == 'sites' and self.layers['sites']:
+            if layer == 'sites' and self.review_layers['sites']:
                 self._draw_site_controls(gui)
         if self.dvz.dvz_gui_collapsing_header(gui, b'Recording details', 0):
             if self.dvz.dvz_gui_button(gui, b'Site table'):
@@ -476,13 +479,13 @@ class ScientificSceneReview(AtlasViewer):
         self._draw_examples_gui(gui)
         for layer, label in (('points', 'Comparison points'), ('plane', 'Anatomical plane')):
             control = self._layer_controls[layer]
-            control.value = self.layers[layer]
+            control.value = self.review_layers[layer]
             if self.dvz.dvz_gui_checkbox(gui, label.encode(), ctypes.byref(control)):
                 self._action(self.set_layer_visible, layer, control.value)
-                control.value = self.layers[layer]
-        if self.layers['points']:
+                control.value = self.review_layers[layer]
+        if self.review_layers['points']:
             self._draw_point_gui(gui)
-        if self.layers['plane']:
+        if self.review_layers['plane']:
             self._draw_plane_gui(gui)
 
     def _draw_site_controls(self, gui):

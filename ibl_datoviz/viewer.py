@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 from contextlib import suppress
 from pathlib import Path
+from threading import get_ident
 from typing import TYPE_CHECKING, NamedTuple
 
 import datoviz as dvz
@@ -20,10 +21,13 @@ from ibl_anatomy import (
 
 from .atlas import AtlasMesh
 from .context import AnatomicalContext, AtlasContextSurface
+from .controllers import AnatomyController, CameraController, SelectionController
 from .envelope import AtlasEnvelope
 from .gui_data import create_probe_table, create_region_table, create_region_tree
 from .insertions import InsertionCollectionVisual
+from .layers import LayerRegistry
 from .ontology import AtlasTreeModel
+from .payloads import WorldFrame
 from .presentation import region_presentation, scalar_colors
 from .region_browser import RegionBrowserSidebar
 from .region_selector_gui import RegionSelectorGui, selector_from_tree, signed_selection
@@ -79,8 +83,11 @@ class AtlasViewer:
 
     def __init__(  # noqa: PLR0912, PLR0915
         self,
-        mesh: AtlasMesh,
+        mesh: AtlasMesh | None = None,
         *,
+        atlas=None,
+        anatomy: str | None = None,
+        layout: str = '3d',
         mapping: str = 'allen',
         palette: Mapping[int, Sequence[int]] | None = None,
         catalog: AtlasRegionCatalog | None = None,
@@ -104,6 +111,27 @@ class AtlasViewer:
         fit_workarea: bool = False,
         datoviz: ModuleType | None = None,
     ) -> None:
+        if layout != '3d':
+            raise ValueError(
+                'scientific layers currently support layout="3d"; linked layout is later'
+            )
+        if atlas is not None:
+            if mesh is not None:
+                raise TypeError('provide either mesh or atlas, not both')
+            if isinstance(atlas, AtlasMesh):
+                mesh = atlas
+            elif isinstance(atlas, MaterializedAtlasAssets):
+                mesh = AtlasMesh.from_geometry(atlas.geometry)
+                if catalog is None:
+                    catalog = atlas.regions
+            else:
+                raise TypeError('atlas must be AtlasMesh or verified MaterializedAtlasAssets')
+        if not isinstance(mesh, AtlasMesh):
+            raise TypeError('viewer requires an AtlasMesh or verified atlas assets')
+        if anatomy is not None:
+            anatomy_presentation = anatomy
+            if anatomy == 'major' and not anatomical_context:
+                raise ValueError('major anatomy requires prepared anatomical_context surfaces')
         if anatomy_presentation not in ('major', 'detailed'):
             raise ValueError('anatomy presentation must be major or detailed')
         if not np.isfinite(context_opacity) or not 0 <= context_opacity <= 1:
@@ -126,6 +154,7 @@ class AtlasViewer:
             raise ValueError('tree_root_acronym must not be empty')
         if mapping not in mesh.mapping_names:
             raise ValueError(f'unknown atlas mapping: {mapping}')
+        self._owner_thread = get_ident()
         self.camera_angles = self._validated_camera_angles(camera_angles)
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
@@ -208,6 +237,19 @@ class AtlasViewer:
         self._surface_base_is_translucent = False
         self._surface_alpha_mode: int | None = None
         self._last_mesh_region_ids: tuple[int, ...] = ()
+        self.frame = WorldFrame(mesh.reference_space, provenance={
+            'verification': {
+                'method': 'prepared-atlas-mesh',
+                'evidence': 'AtlasMesh atlas-world reference contract: ' + mesh.reference_space,
+            },
+        })
+        self.selection = SelectionController(self)
+        self.anatomy = AnatomyController(self)
+        self.camera = CameraController(self)
+        self._layer_registry = LayerRegistry(
+            self, before_mutation=self.selection._check_mutation,
+            on_remove=self.selection._removed, validate_frame=self._validate_layer_frame,
+        )
         try:
             self.scene = self.dvz.dvz_scene()
             if not self.scene:
@@ -241,6 +283,43 @@ class AtlasViewer:
             # Avoid virtual dispatch into a partially initialized subclass.
             AtlasViewer.close(self)
             raise
+
+    def _validate_layer_frame(self, frame):
+        frame.require_verified()
+        if frame != self.frame:
+            raise ValueError('layer frame does not match the viewer atlas-world frame')
+
+    @property
+    def layers(self):
+        """Return attached scientific layer handles in creation order."""
+        registry = getattr(self, '_layer_registry', None)
+        return registry.layers if registry is not None else ()
+
+    @property
+    def recordings(self):
+        """Return independently owned recording groups."""
+        registry = getattr(self, '_layer_registry', None)
+        return registry.recordings if registry is not None else ()
+
+    def add_points(self, payload, *, name='', glyph='point'):
+        """Attach generic points without requiring IBL recording metadata."""
+        return self._layer_registry.add_points(payload, name=name, glyph=glyph)
+
+    def add_paths(self, payload, *, name=''):
+        """Attach independently identified generic polylines."""
+        return self._layer_registry.add_paths(payload, name=name)
+
+    def add_recording(self, recording, *, name='', show=('path', 'channels')):
+        """Compose supplied scientific populations into an owned recording group."""
+        return self._layer_registry.add_recording(recording, name=name, show=show)
+
+    def remove_layer(self, layer):
+        """Remove a generic layer and prune only its selected attachments."""
+        self._layer_registry.remove_layer(layer)
+
+    def remove_recording(self, recording):
+        """Remove a recording and its owned layers before selection notification."""
+        self._layer_registry.remove_recording(recording)
 
     def _create_layout(self) -> None:
         """Create the figure and primary 3-D panel."""
@@ -1029,6 +1108,8 @@ class AtlasViewer:
             if not self._closed:
                 self._restore_surface_transaction(snapshot, widgets)
             raise
+        if hasattr(self, 'selection'):
+            self.selection._publish('mapping')
 
     def _display_surface_colors(
         self,
@@ -1530,6 +1611,8 @@ class AtlasViewer:
         self._apply_selected_region_ids(
             selected, update_tree=True, update_table=True, clear_mesh=True
         )
+        if hasattr(self, 'selection'):
+            self.selection._publish('regions')
 
     def clear_selection(self) -> None:
         """Clear tree, surface, and highlight selection state."""
@@ -1675,9 +1758,11 @@ class AtlasViewer:
         try:
             self._draw_gui_frame(gui)
         except Exception as error:
-            if self._close_pending and self.app is not None:
+            if self.app is not None:
                 # ctypes cannot propagate callback exceptions to app_run's caller.
                 self._gui_callback_error = error
+                if not self._close_pending:
+                    self.close()
                 return
             raise
         finally:
@@ -1726,6 +1811,7 @@ class AtlasViewer:
                 self.dvz.dvz_gui_tooltip(gui, self._hovered_region_label.encode())
 
         self._draw_auxiliary_gui(gui)
+        self._draw_scientific_layers_gui(gui)
 
     def _draw_sidebar_gui(self, gui) -> None:
         """Keep the browser permanent; scene controls live in an ordinary window."""
@@ -1815,6 +1901,11 @@ class AtlasViewer:
             ):
                 self.set_selection_presentation(modes[current.value])
 
+    def _draw_scientific_layers_gui(self, gui):
+        from .layer_gui import draw_layers_gui  # noqa: PLC0415 - independent GUI adapter.
+
+        draw_layers_gui(self, gui)
+
     def _draw_auxiliary_gui(self, _gui) -> None:
         """Draw optional nonmodal windows independently of sidebar visibility."""
 
@@ -1881,11 +1972,7 @@ class AtlasViewer:
         update_table: bool,
         clear_mesh: bool,
     ) -> None:
-        snapshot = (
-            self._surface_transaction_snapshot()
-            if self.selection_presentation != 'legacy' or self.anatomy_presentation == 'major'
-            else None
-        )
+        snapshot = self._surface_transaction_snapshot()
         try:
             if update_tree:
                 self._set_tree_selection(region_ids)
@@ -1903,11 +1990,17 @@ class AtlasViewer:
                 )
                 self._last_mesh_region_ids = ()
         except Exception:
-            if snapshot is not None and not self._closed:
-                self._restore_surface_transaction(snapshot)
-                self._set_tree_selection(self._selected_region_ids)
-                self._set_probe_table_selection(self._selected_region_ids)
-                self._set_region_table_selection(self._selected_region_ids)
+            if not self._closed:
+                try:
+                    self._restore_surface_transaction(snapshot)
+                    self._set_tree_selection(self._selected_region_ids)
+                    self._set_probe_table_selection(self._selected_region_ids)
+                    self._set_region_table_selection(self._selected_region_ids)
+                except Exception as rollback_error:
+                    self.close()
+                    raise RuntimeError(
+                        'region selection rollback failed; viewer closed'
+                    ) from rollback_error
             raise
 
     def _update_surface_emphasis(self) -> None:
@@ -2056,6 +2149,8 @@ class AtlasViewer:
             self._set_probe_table_selection(self._selected_region_ids)
         if decision.sync_region_table:
             self._set_region_table_selection(self._selected_region_ids)
+        if hasattr(self, 'selection'):
+            self.selection._publish('regions')
 
     def _commit_selector_frame(self, candidate, region_ids, decision):
         """Commit navigation and the winning host selection as one recoverable batch."""
@@ -2109,6 +2204,9 @@ class AtlasViewer:
                     'region selector frame rollback failed; viewer closed'
                 ) from rollback_error
             raise
+
+        if hasattr(self, 'selection'):
+            self.selection._publish('regions')
 
     def _restore_selection_feedback(self):
         """Force restored physical selection and hover back into presentation."""
@@ -2264,17 +2362,26 @@ class AtlasViewer:
         """Reject operations that require live native viewer state."""
         if self._closed:
             raise RuntimeError('viewer is closed')
+        if hasattr(self, '_owner_thread') and get_ident() != self._owner_thread:
+            raise RuntimeError('viewer operations require its owning thread')
+        if getattr(getattr(self, 'selection', None), '_notifying', False):
+            raise RuntimeError('selection callbacks cannot mutate the viewer reentrantly')
 
-    def close(self) -> None:
-        """Destroy app before scene; scene owns all remaining handles."""
+    def close(self) -> None:  # noqa: PLR0912 - explicit native teardown order.
+        """Release scientific layers, then destroy app and scene."""
         if getattr(self, '_closed', False):
             return
+        self._require_open()
         if getattr(self, '_gui_callback_depth', 0):
             self._close_pending = True
             if getattr(self, 'app', None) is not None:
                 self.dvz.dvz_app_stop(self.app)
             return
         datoviz = getattr(self, 'dvz', None)
+        if getattr(self, '_layer_registry', None) is not None:
+            self._layer_registry.close()
+        if getattr(self, 'selection', None) is not None:
+            self.selection._close()
         if getattr(self, '_insertions', None) is not None:
             self._insertions.close()
             self._insertions = None
