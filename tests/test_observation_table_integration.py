@@ -1,5 +1,7 @@
 """Tables, highlights and scientific notifications commit as one operation."""
 
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 import pytest
 
@@ -80,6 +82,8 @@ def test_removal_closes_owned_tables_before_the_selection_notification(app):
     app.selection.on_changed(lambda event: seen.append((event, table.widget.handle)))
     app.remove_layer(layer)
     assert table.widget.handle is None and seen[-1][1] is None
+    with pytest.raises(RuntimeError, match='removed or closed'):
+        table.selected_refs()
     assert app.selection.observations == (second,) and other.selected_refs() == (second,)
     empty = app.add_points(Points((), np.empty((0, 3)), app.frame, {}))
     empty_table = app.tables.show(empty)
@@ -104,3 +108,12 @@ def test_gui_table_shutdown_waits_for_native_frame_return(app, monkeypatch):
     monkeypatch.setattr(app.tables, 'draw', close_in_frame)
     app.show(frame_count=3)
     assert reached and app._closed and table.widget.handle is None
+
+
+def test_native_table_reads_reject_foreign_thread_before_native_access(app):
+    table = app.tables.show(add_points(app))
+    with (
+        ThreadPoolExecutor(max_workers=1) as pool,
+        pytest.raises(RuntimeError, match='owning thread'),
+    ):
+        pool.submit(table.selected_refs).result()

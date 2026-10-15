@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 from dataclasses import dataclass
+from threading import get_ident
 
 import numpy as np
 
@@ -46,6 +47,12 @@ class ObservationTable:
 
     def selected_refs(self):
         """Reject unknown native keys rather than interpreting them as IDs."""
+        if self.widget.handle is None:
+            raise RuntimeError('observation table is removed or closed')
+        registry = getattr(self.layer, '_registry', None)
+        owner = getattr(getattr(registry, 'viewer', None), '_owner_thread', None)
+        if owner is not None and get_ident() != owner:
+            raise RuntimeError('observation table reads require the viewer owning thread')
         lookup = dict(zip(map(int, self.keys), self.refs, strict=True))
         keys = self.widget.selected_keys()
         if any(int(key) not in lookup for key in keys):
