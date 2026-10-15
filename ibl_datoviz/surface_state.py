@@ -13,8 +13,8 @@ class SurfaceState:
     def __init__(self, owner):
         self.owner = owner
         self.handle = None
-        self.words = np.zeros(len(owner.mesh_data.presentations), dtype=np.uint32)
-        self.indices = np.array(owner.mesh_data.presentation_ids, dtype=np.uint32, copy=True)
+        self.words = np.zeros(len(owner._surface_mesh.presentations), dtype=np.uint32)
+        self.indices = np.array(owner._surface_mesh.presentation_ids, dtype=np.uint32, copy=True)
         self._mapping = None
         self._region_ids = None
         self._style = None
@@ -45,7 +45,7 @@ class SurfaceState:
         owner = self.owner
         if self._mapping != owner.mapping:
             ids = np.zeros(len(self.words), dtype=np.int64)
-            for presentation in owner.mesh_data.presentations:
+            for presentation in owner._surface_mesh.presentations:
                 mapped = presentation['mappings'][owner.mapping]
                 if mapped is not None:
                     ids[int(presentation['presentation_id'])] = abs(int(mapped))

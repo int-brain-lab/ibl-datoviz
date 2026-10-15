@@ -489,7 +489,7 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'tree_root_acronym': 'VISp' if args.scenario == 'gui_tree_small' else 'grey',
                 'initial_explode': initial_explode,
                 'mutation_upload_bytes_per_frame': (
-                    mesh.positions.nbytes
+                    viewer._surface_mesh.positions.nbytes
                     if args.scenario == 'explode_animated'
                     else None
                     if args.scenario in ('hover_emphasis_update', 'selection_update')
@@ -504,6 +504,8 @@ def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
                 'triangles': len(mesh.indices) // 3,
                 'components': int(len(np.unique(mesh.component_ids))),
                 'presentations': len(mesh.presentations),
+                'render_vertices': len(viewer._surface_mesh.positions),
+                'render_triangles': len(viewer._surface_mesh.indices) // 3,
             },
             'environment': {
                 'platform': platform.platform(),

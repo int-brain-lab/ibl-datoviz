@@ -259,11 +259,12 @@ def test_zero_alpha_palette_filters_canonical_midline_faces_through_selection():
     with AtlasViewer(
         mesh, datoviz=native, palette={-315: (10, 20, 30, 0), 315: (40, 50, 60, 255)}
     ) as viewer:
+        render = viewer._surface_mesh
         assert np.any(mesh.face_mapping_ids('allen') < 0)
         assert np.all(native.keys.view(np.int64) > 0)
-        assert len(native.keys) == np.count_nonzero(mesh.face_mapping_ids('allen') > 0)
+        assert len(native.keys) == np.count_nonzero(render.face_mapping_ids('allen') > 0)
         viewer._apply_selected_region_ids(
             (-315,), update_tree=False, update_table=False, clear_mesh=False
         )
         assert np.all(native.keys.view(np.int64) > 0)
-        assert np.all(native.colors[mesh.mapping_ids('allen') < 0, 3] == 0)
+        assert np.all(native.colors[render.mapping_ids('allen') < 0, 3] == 0)

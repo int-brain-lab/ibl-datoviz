@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import colorsys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -19,6 +19,17 @@ if TYPE_CHECKING:
     from ibl_anatomy import MeshGeometry
 
 MISSING_REGION_ID = 0
+
+
+@dataclass(frozen=True)
+class _MeshPresentationBoundary:
+    """Immutable source classification metadata, separate from centroid identities."""
+
+    coordinate: str
+    ml_axis: int
+    threshold_um: float
+    on_plane_side: str
+    components: tuple[tuple[int, int | None, int | None], ...]
 
 
 def _display_positions(positions_um: NDArray[np.float32]) -> tuple[NDArray[np.float32], float]:
@@ -55,6 +66,9 @@ class AtlasMesh:
     presentations: tuple[dict, ...]
     reference_space: str
     display_scale: float
+    _presentation_boundary: _MeshPresentationBoundary | None = field(
+        default=None, repr=False, compare=False
+    )
 
     @classmethod
     def from_pack(cls, path: str | Path) -> AtlasMesh:
@@ -88,6 +102,20 @@ class AtlasMesh:
             presentations=geometry.presentations,
             reference_space=geometry.reference_space,
             display_scale=display_scale,
+            _presentation_boundary=_MeshPresentationBoundary(
+                coordinate=geometry.presentation_boundary['coordinate'],
+                ml_axis=geometry.coordinate_system['world_axes'].index('ml'),
+                threshold_um=float(geometry.presentation_boundary['threshold_um']),
+                on_plane_side=geometry.presentation_boundary['on_plane_side'],
+                components=tuple(
+                    (
+                        int(item['component_id']),
+                        item['left_presentation_id'],
+                        item['right_presentation_id'],
+                    )
+                    for item in geometry.components
+                ),
+            ),
         )
 
     def exploded_positions(self, amount: float) -> NDArray[np.float32]:

@@ -224,6 +224,10 @@ class FakeDatoviz:
         self.calls.append(('data', visual.name, name, np.array(data, copy=True)))
         return 0
 
+    def dvz_mesh_set_fragment_clip(self, _visual, clip):
+        self.calls.append(('fragment_clip', np.array(clip, copy=True)))
+        return 0
+
     def dvz_visual_set_index_data(self, _visual, indices):
         self.calls.append(('indices', np.array(indices, copy=True)))
         return 0
@@ -596,8 +600,9 @@ def test_minimal_surface_viewer_can_disable_item_interaction(mesh):
 def test_viewer_explode_updates_only_positions(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake, explode=0.25) as viewer:
+        render_mesh = viewer._surface_mesh
         initial = next(call for call in fake.calls if call[:2] == ('data_many', 'mesh'))[3]
-        np.testing.assert_allclose(initial['position'], mesh.exploded_positions(0.25))
+        np.testing.assert_allclose(initial['position'], render_mesh.exploded_positions(0.25))
         before = len(fake.calls)
 
         viewer.set_explode(0.75)
@@ -605,7 +610,7 @@ def test_viewer_explode_updates_only_positions(mesh):
         updates = fake.calls[before:]
         assert len(updates) == 1
         assert updates[0][:3] == ('data', 'mesh', 'position')
-        np.testing.assert_allclose(updates[0][3], mesh.exploded_positions(0.75))
+        np.testing.assert_allclose(updates[0][3], render_mesh.exploded_positions(0.75))
         assert viewer.explode == 0.75
         assert viewer._explode_control.value == pytest.approx(0.75)
 
@@ -645,21 +650,61 @@ def test_camera_angles_are_validated_stored_and_applied(mesh):
 def test_translucent_surface_uses_wboit_and_preserves_alpha(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake, surface_opacity=0.25) as viewer:
+        render_mesh = viewer._surface_mesh
         initial = next(call for call in fake.calls if call[:2] == ('data_many', 'mesh'))[3]
-        np.testing.assert_array_equal(initial['color'][:, 3], [64] * len(mesh.positions))
+        np.testing.assert_array_equal(initial['color'][:, 3], [64] * len(render_mesh.positions))
         assert ('alpha_mode', 'mesh', fake.DVZ_ALPHA_WBOIT) in fake.calls
         assert ('light_intensity', 'ambient_light', 0.65) in fake.calls
         assert ('material', 'mesh', 1.0, 0.45, 0.08, 24.0) in fake.calls
 
         viewer.set_mapping('beryl')
         mapping_colors = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')][-1]
-        np.testing.assert_array_equal(mapping_colors[3][:, 3], [64] * len(mesh.positions))
+        np.testing.assert_array_equal(mapping_colors[3][:, 3], [64] * len(render_mesh.positions))
 
         viewer.set_mapping('allen')
         viewer.set_selected_region_ids([-315])
         color_calls = [call for call in fake.calls if call[:3] == ('data', 'mesh', 'color')]
         selected_colors = color_calls[-1]
-        np.testing.assert_array_equal(selected_colors[3][:, 3], [64] * len(mesh.positions))
+        np.testing.assert_array_equal(selected_colors[3][:, 3], [64] * len(render_mesh.positions))
+
+
+def test_private_render_omits_unused_extreme_vertex_without_changing_source_normalization(mesh):
+    extreme = np.array([[1000.0, 250.0, -400.0]], dtype=np.float32)
+    source = replace(
+        mesh,
+        positions_um=np.vstack((mesh.positions_um, extreme)),
+        positions=np.vstack((mesh.positions, np.array([[80.0, 30.0, -50.0]], np.float32))),
+        explode_offsets=np.vstack((mesh.explode_offsets, np.zeros((1, 3), np.float32))),
+        normals=np.vstack((mesh.normals, np.array([[0.0, 0.0, 1.0]], np.float32))),
+        component_ids=np.append(mesh.component_ids, mesh.component_ids[-1]),
+        presentation_ids=np.append(mesh.presentation_ids, mesh.presentation_ids[-1]),
+    )
+    canonical_positions = source.positions_um.copy()
+    canonical_indices = source.indices.copy()
+    points = np.array([[1000.0, 250.0, -400.0], [0.0, 0.0, 0.0]], np.float32)
+    centre = (source.positions_um.min(axis=0) + source.positions_um.max(axis=0)) / 2
+    expected = np.ascontiguousarray((points - centre) * source.display_scale, dtype=np.float32)
+    np.testing.assert_array_equal(source.normalize_points(points), expected)
+
+    fake = FakeDatoviz()
+    with AtlasViewer(source, datoviz=fake) as viewer:
+        render = viewer._surface_geometry
+        assert viewer.mesh_data is source
+        assert len(source.positions_um) == len(mesh.positions_um) + 1
+        assert len(render.mesh.positions_um) != len(source.positions_um)
+        assert len(source.positions_um) - 1 not in render.source_vertex_indices
+        assert render.fragment_clip.shape == (len(render.mesh.positions), 2)
+        state_binding = next(call[1] for call in fake.calls if call[0] == 'state_binding')
+        np.testing.assert_array_equal(state_binding, render.mesh.presentation_ids)
+        assert len(state_binding) == len(render.fragment_clip)
+        clip_upload = next(call[1] for call in fake.calls if call[0] == 'fragment_clip')
+        np.testing.assert_array_equal(clip_upload, render.fragment_clip)
+        viewer.set_probe(points)
+        probe_upload = next(call for call in fake.calls if call[:2] == ('data_many', 'path'))
+        np.testing.assert_array_equal(probe_upload[3]['position'], expected)
+        np.testing.assert_array_equal(source.normalize_points(points), expected)
+    np.testing.assert_array_equal(source.positions_um, canonical_positions)
+    np.testing.assert_array_equal(source.indices, canonical_indices)
 
 
 def test_hover_uses_gpu_state_without_changing_authored_colors(mesh):

@@ -33,6 +33,7 @@ from .selection import (
     selection_decision,
     tree_selection_keys,
 )
+from .surface_geometry import SurfaceGeometry
 from .surface_state import SurfaceState
 from .surface_style import SurfaceStyle
 from .viewport_input import ViewportInputAdapter
@@ -114,9 +115,13 @@ class AtlasViewer:
         self.camera_angles = self._validated_camera_angles(camera_angles)
         self.dvz = dvz if datoviz is None else datoviz
         self.mesh_data = mesh
-        self._surface_style = SurfaceStyle(mesh)
+        self._surface_geometry = SurfaceGeometry.from_mesh(mesh)
+        self._surface_mesh = self._surface_geometry.mesh
+        self._surface_style = SurfaceStyle(self._surface_mesh)
         self._surface_visible = True
-        self._surface_face_mask = np.ones(len(mesh.face_presentation_ids), dtype=bool)
+        self._surface_face_mask = np.ones(
+            len(self._surface_mesh.face_presentation_ids), dtype=bool
+        )
         self._uploaded_face_mask = self._surface_face_mask.copy()
         self._uploaded_face_mapping = mapping
         self._insertions = None
@@ -271,7 +276,7 @@ class AtlasViewer:
         mapping: str,
         palette: Mapping[int, Sequence[int]] | None,
     ) -> NDArray[np.uint8]:
-        colors = self.mesh_data.colors(mapping, palette)
+        colors = self._surface_mesh.colors(mapping, palette)
         colors = self._surface_style.apply(mapping, colors)
         if self.surface_opacity == 1:
             return colors
@@ -310,8 +315,8 @@ class AtlasViewer:
             self.dvz.dvz_visual_set_data_many(
                 self.mesh,
                 {
-                    'position': self.mesh_data.exploded_positions(self.explode),
-                    'normal': self.mesh_data.normals,
+                    'position': self._surface_mesh.exploded_positions(self.explode),
+                    'normal': self._surface_mesh.normals,
                     'color': surface_colors,
                 },
             ),
@@ -320,9 +325,16 @@ class AtlasViewer:
         self._invalidate_surface_emphasis_cache(surface_colors)
         self._update_surface_alpha_mode()
         self._check(
-            self.dvz.dvz_visual_set_index_data(self.mesh, self.mesh_data.indices),
+            self.dvz.dvz_visual_set_index_data(self.mesh, self._surface_mesh.indices),
             'mesh index upload',
         )
+        if self._surface_geometry.requires_fragment_clip:
+            self._check(
+                self.dvz.dvz_mesh_set_fragment_clip(
+                    self.mesh, self._surface_geometry.fragment_clip
+                ),
+                'source hemisphere fragment coverage',
+            )
         if self.enable_interaction:
             self._check(
                 self.dvz.dvz_visual_set_query_capabilities(
@@ -336,7 +348,7 @@ class AtlasViewer:
                 self.mesh,
                 self.dvz.DVZ_SCENE_TARGET_FACE,
                 self.link_channel,
-                self.mesh_data.link_keys(self.mapping),
+                self._surface_mesh.link_keys(self.mapping),
             ),
             'mesh region link keys',
         )
@@ -351,7 +363,7 @@ class AtlasViewer:
         active = self.mapping if mapping is None else mapping
         palette = self.palette if palette is None else palette
         if self.region_data is None:
-            colors = self._surface_style.apply(active, self.mesh_data.colors(active, palette))
+            colors = self._surface_style.apply(active, self._surface_mesh.colors(active, palette))
         else:
             prepared = self._region_value_view(
                 self.region_data,
@@ -371,24 +383,24 @@ class AtlasViewer:
     def _visible_surface_faces(self, mapping, palette=None):
         mask = self._surface_style.visible_faces(mapping)
         alpha = self._authored_surface_alpha(mapping, palette)
-        presentation_alpha = np.full(len(self.mesh_data.presentations), 255, np.uint8)
-        np.minimum.at(presentation_alpha, self.mesh_data.presentation_ids, alpha)
-        return mask & (presentation_alpha[self.mesh_data.face_presentation_ids] > 0)
+        presentation_alpha = np.full(len(self._surface_mesh.presentations), 255, np.uint8)
+        np.minimum.at(presentation_alpha, self._surface_mesh.presentation_ids, alpha)
+        return mask & (presentation_alpha[self._surface_mesh.face_presentation_ids] > 0)
 
     def _upload_surface_faces(self, mask, mapping):
-        """Filter canonical triangle indices and matching signed face keys together."""
+        """Filter render triangle indices and matching signed face keys together."""
         previous = self._uploaded_face_mask
         old_mapping = self._uploaded_face_mapping
         was_visible = self._surface_visible and bool(np.any(self._surface_face_mask))
         try:
             if np.any(mask):
                 if not np.array_equal(mask, previous):
-                    indices = self.mesh_data.indices.reshape(-1, 3)[mask].reshape(-1).copy()
+                    indices = self._surface_mesh.indices.reshape(-1, 3)[mask].reshape(-1).copy()
                     self._check(
                         self.dvz.dvz_visual_set_index_data(self.mesh, indices),
                         'visible surface indices',
                     )
-                keys = self.mesh_data.face_mapping_ids(mapping)[mask].view(np.uint64).copy()
+                keys = self._surface_mesh.face_mapping_ids(mapping)[mask].view(np.uint64).copy()
                 self._check(
                     self.dvz.dvz_visual_set_target_link_keys(
                         self.mesh,
@@ -406,7 +418,7 @@ class AtlasViewer:
             )
         except Exception as error:
             try:
-                indices = self.mesh_data.indices.reshape(-1, 3)[previous].reshape(-1).copy()
+                indices = self._surface_mesh.indices.reshape(-1, 3)[previous].reshape(-1).copy()
                 self._check(
                     self.dvz.dvz_visual_set_index_data(self.mesh, indices),
                     'surface index rollback',
@@ -416,7 +428,7 @@ class AtlasViewer:
                         self.mesh,
                         self.dvz.DVZ_SCENE_TARGET_FACE,
                         self.link_channel,
-                        self.mesh_data.face_mapping_ids(old_mapping)[previous]
+                        self._surface_mesh.face_mapping_ids(old_mapping)[previous]
                         .view(np.uint64)
                         .copy(),
                     ),
@@ -481,7 +493,7 @@ class AtlasViewer:
             mask = self._uploaded_face_mask
             self._check(
                 self.dvz.dvz_visual_set_index_data(
-                    self.mesh, self.mesh_data.indices.reshape(-1, 3)[mask].reshape(-1).copy()
+                    self.mesh, self._surface_mesh.indices.reshape(-1, 3)[mask].reshape(-1).copy()
                 ),
                 'surface transaction index rollback',
             )
@@ -490,7 +502,7 @@ class AtlasViewer:
                     self.mesh,
                     self.dvz.DVZ_SCENE_TARGET_FACE,
                     self.link_channel,
-                    self.mesh_data.face_mapping_ids(self._uploaded_face_mapping)[mask]
+                    self._surface_mesh.face_mapping_ids(self._uploaded_face_mapping)[mask]
                     .view(np.uint64)
                     .copy(),
                 ),
@@ -592,7 +604,7 @@ class AtlasViewer:
     def reset_surface_style(self):
         """Reset all region overrides and show both hemispheres, retaining the camera."""
         self._require_open()
-        self._commit_surface_style(SurfaceStyle(self.mesh_data))
+        self._commit_surface_style(SurfaceStyle(self._surface_mesh))
 
     def show_region(self, region_id, *, hemisphere=None):
         """Restore mapped-region faces without changing color or opacity."""
@@ -624,7 +636,7 @@ class AtlasViewer:
         self._commit_surface_style(candidate)
 
     def set_hemisphere_visible(self, hemisphere, visible):
-        """Filter canonical left/right face membership without changing the atlas mesh."""
+        """Filter source-bound left/right presentations without changing the atlas mesh."""
         self._require_open()
         candidate = self._surface_style.copy()
         candidate.set_hemisphere_visible(hemisphere, visible)
@@ -642,7 +654,7 @@ class AtlasViewer:
 
     def visible_region_ids(self):
         """Return signed IDs with visible faces in the current mapping."""
-        ids = self.mesh_data.face_mapping_ids(self.mapping)[self._surface_face_mask]
+        ids = self._surface_mesh.face_mapping_ids(self.mapping)[self._surface_face_mask]
         return tuple(int(value) for value in np.unique(ids) if value)
 
     def set_explode(self, amount: float) -> None:
@@ -656,7 +668,7 @@ class AtlasViewer:
             return
         self._check(
             self.dvz.dvz_visual_set_data(
-                self.mesh, 'position', self.mesh_data.exploded_positions(amount)
+                self.mesh, 'position', self._surface_mesh.exploded_positions(amount)
             ),
             'mesh explode position update',
         )
@@ -753,17 +765,17 @@ class AtlasViewer:
         alpha = int(round(255 * opacity))
         lookup = np.tile(
             np.asarray((100, 112, 130, alpha), dtype=np.uint8),
-            (len(self.mesh_data.presentations), 1),
+            (len(self._surface_mesh.presentations), 1),
         )
         by_region = dict(zip(region_ids, value_colors, strict=True))
-        for presentation in self.mesh_data.presentations:
+        for presentation in self._surface_mesh.presentations:
             mapped_id = presentation['mappings'][mapping]
             color = by_region.get(mapped_id)
             if color is not None:
                 lookup[presentation['presentation_id']] = color
         return self._surface_style.apply(
             mapping,
-            np.ascontiguousarray(lookup[self.mesh_data.presentation_ids]),
+            np.ascontiguousarray(lookup[self._surface_mesh.presentation_ids]),
             alpha_scale=opacity,
         )
 

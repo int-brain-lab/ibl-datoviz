@@ -29,25 +29,28 @@ def last_colors(fake):
 
 def test_hide_region_filters_triangles_and_signed_pick_keys_and_restores(mesh):
     fake = FakeDatoviz()
-    indices = mesh.indices.copy()
+    source_indices = mesh.indices.copy()
     with AtlasViewer(mesh, datoviz=fake) as viewer:
+        render = viewer._surface_mesh
+        indices = render.indices.copy()
         viewer.set_selected_region_ids((-315,))
         viewer.hide_region(-315)
-        mask = mesh.face_mapping_ids('allen') > 0
+        mask = render.face_mapping_ids('allen') > 0
         uploaded = [call[1] for call in fake.calls if call[0] == 'indices'][-1]
         np.testing.assert_array_equal(uploaded, indices.reshape(-1, 3)[mask].reshape(-1))
-        np.testing.assert_array_equal(last_keys(fake), mesh.face_mapping_ids('allen')[mask])
+        np.testing.assert_array_equal(last_keys(fake), render.face_mapping_ids('allen')[mask])
         assert viewer.visible_region_ids() == (315,)
         assert viewer.selected_region_ids() == (-315,)
         viewer.show_region(-315)
         assert viewer.visible_region_ids() == (-315, 315)
-        np.testing.assert_array_equal(last_keys(fake), mesh.face_mapping_ids('allen'))
-    np.testing.assert_array_equal(mesh.indices, indices)
+        np.testing.assert_array_equal(last_keys(fake), render.face_mapping_ids('allen'))
+    np.testing.assert_array_equal(mesh.indices, source_indices)
 
 
 def test_empty_surface_hides_without_zero_count_upload_and_restores(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake) as viewer:
+        render = viewer._surface_mesh
         viewer.set_hemisphere('left')
         assert np.all(last_keys(fake) < 0)
         uploads = len([call for call in fake.calls if call[0] == 'indices'])
@@ -59,17 +62,18 @@ def test_empty_surface_hides_without_zero_count_upload_and_restores(mesh):
         assert viewer.visible_region_ids() == (315,)
         assert np.all(last_keys(fake) > 0)
         viewer.set_hemisphere('both')
-        np.testing.assert_array_equal(last_keys(fake), mesh.face_mapping_ids('allen'))
+        np.testing.assert_array_equal(last_keys(fake), render.face_mapping_ids('allen'))
 
 
 def test_palette_alpha_selects_wboit_and_survives_selection_hover_mapping(mesh):
     fake = FakeDatoviz()
     palette = {-315: (220, 30, 40, 128), 315: (30, 180, 40, 255)}
     with AtlasViewer(mesh, datoviz=fake, palette=palette) as viewer:
+        render = viewer._surface_mesh
         assert viewer._surface_alpha_mode == fake.DVZ_ALPHA_WBOIT
         viewer.set_selected_region_ids((-315,))
         viewer._set_hovered_region_ids((-315,))
-        left = mesh.mapping_ids('allen') < 0
+        left = render.mapping_ids('allen') < 0
         np.testing.assert_array_equal(last_colors(fake)[left, 3], 128)
         viewer.clear_selection()
         assert viewer._surface_alpha_mode == fake.DVZ_ALPHA_WBOIT
@@ -80,8 +84,9 @@ def test_palette_alpha_selects_wboit_and_survives_selection_hover_mapping(mesh):
 def test_authored_opacity_independent_of_global_selection_opacity(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake, surface_opacity=0.5) as viewer:
+        render = viewer._surface_mesh
         viewer.set_region_opacity(-315, 0.25)
-        left = mesh.mapping_ids('allen') < 0
+        left = render.mapping_ids('allen') < 0
         np.testing.assert_array_equal(last_colors(fake)[left, 3], 32)
         viewer.set_selected_region_ids((-315,))
         np.testing.assert_array_equal(last_colors(fake)[left, 3], 32)
@@ -101,12 +106,13 @@ def test_region_overrides_are_mapping_scoped_and_hemispheres_persist(mesh):
     mesh = replace(mesh, presentations=presentations)
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake) as viewer:
+        render = viewer._surface_mesh
         viewer.hide_region(-315)
         viewer.set_mapping('beryl')
         assert viewer.visible_region_ids() == (-8, 8)
         viewer.set_region_color(8, (10, 20, 30, 200), hemisphere='both')
         np.testing.assert_array_equal(
-            last_colors(fake)[:, :3], [[10, 20, 30]] * len(mesh.positions)
+            last_colors(fake)[:, :3], [[10, 20, 30]] * len(render.positions)
         )
         assert viewer._surface_alpha_mode == fake.DVZ_ALPHA_WBOIT
         viewer.set_hemisphere('right')
@@ -119,10 +125,11 @@ def test_region_overrides_are_mapping_scoped_and_hemispheres_persist(mesh):
 def test_zero_palette_alpha_is_not_resurrected_by_selection(mesh):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake, palette={-315: (100, 120, 140, 0)}) as viewer:
+        render = viewer._surface_mesh
         assert np.all(last_keys(fake) > 0)
         viewer.set_selected_region_ids((-315,))
         viewer._set_hovered_region_ids((-315,))
-        np.testing.assert_array_equal(last_colors(fake)[mesh.mapping_ids('allen') < 0, 3], 0)
+        np.testing.assert_array_equal(last_colors(fake)[render.mapping_ids('allen') < 0, 3], 0)
         assert viewer.visible_region_ids() == (315,)
 
 
