@@ -13,6 +13,42 @@ keeps its visualization structure throughout the review: presets change layer
 visibility and settings within existing views. Normal edits preserve the camera;
 only the explicit reset button restores the starting camera.
 
+## Linked scientific workspace
+
+```bash
+just review workspace --ui-scale 1.5
+```
+
+This opens the public `AtlasViewer(layout="linked")` with the existing verified
+D070 anatomy and 50 µm volumes. The default points are explicitly illustrative;
+the optional route starts hidden so supported scene queries are available.
+Right-click selects an observation; left-click selects anatomy. Anatomy participates
+in frontmost depth, so hide it to select points inside the brain. Check that the
+observation table follows while region selection remains independent.
+
+Move the AP/ML/DV cursor, switch mapping, change slice layers and toggle physical
+3D planes under Slices controls. Cursor movement must preserve observations and
+must not select a region implicitly. A visible path or physical plane explains
+why scene observation selection is unavailable. Hide it to restore the query route.
+Close/reopen tables, hide layers and reset the camera without losing identities.
+
+The client also accepts explicit local BWM recordings and prepared regional JSON:
+
+```bash
+uv run --frozen python -m examples.scientific_workspace ATLAS_ROOT \
+  --volume-pack VOLUME_PACK --release BWM_RELEASE --pid PID \
+  --frame-evidence REVIEWED_FRAME_JSON --region-values PREPARED_REGION_VALUES_JSON
+```
+
+Frame evidence is optional only when the source already carries an exact reviewed
+producer declaration. Regional JSON supplies all `RegionValues` fields, including
+units, weights, provenance and a WorldFrame object as `frame`; JSON `null` values
+retain missing scalars. It colors detailed anatomy using an explicit weighted
+mean. The client loads supplied metadata before GUI startup and reads no signals.
+`--plane ap`, `--frames N`, `--offscreen PNG` and `--report JSON` support bounded
+engineering checks. Full interactive scientific presentation remains a user review
+gate even when startup/captures pass.
+
 ## Scientific annotations
 
 Review the new viewer-owned point/path API interactively:

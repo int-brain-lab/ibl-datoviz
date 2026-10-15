@@ -5,8 +5,8 @@ The public API is intentionally small and split at data ownership boundaries.
 The [scientific viewer API proposal](../SCIENTIFIC_VIEWER_API_PROPOSAL.md) describes
 the approved direction following acceptance of the recording-context demo.
 Generic payloads, owned layer/recording handles, exact programmatic selection and
-package-level Layers controls are now implemented. Native exact picking and the
-unified linked-layout facade retain later acceptance gates.
+package-level Layers controls are now implemented. Exact native picking for filled points/spheres and the
+unified linked-layout facade are implemented and retain interactive acceptance gates.
 
 | Object | Responsibility |
 | --- | --- |
@@ -22,7 +22,7 @@ unified linked-layout facade retain later acceptance gates.
 ## Supported top-level API
 
 The compatibility surface is the package's explicit `ibl_datoviz.__all__`: `AtlasViewer`,
-`LinkedAtlasNavigator`, `AtlasMesh`, `ProbeSites`, `AtlasRegionValues`, `AtlasTreeModel`,
+`LinkedAtlasNavigator`, `AtlasMesh`, `ProbeSites`, `AtlasRegionValues`, `RegionValues`, `AtlasTreeModel`,
 `AtlasSliceSource`, `AtlasCursor`, `AtlasSliceComposer`, and `compose_atlas_slice`. Examples import
 these names from `ibl_datoviz`. The scientific API also exports `Points`, `Paths`,
 `Channels`, `Clusters`, `Sites`, `Trajectory`, `Recording`, `WorldFrame`, `SourceKey`,

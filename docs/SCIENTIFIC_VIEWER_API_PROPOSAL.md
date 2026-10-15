@@ -2,10 +2,11 @@
 
 Status: API direction and intended-use scripts approved by the user, October 15,
 2026. Staged implementation is authorized. Generic payloads, owned handles,
-recording composition, programmatic exact selection, linked observation tables
-and Layers controls are now implemented; visual acceptance of these workflows remains open. Later sections
-cover intended interfaces, including linked-layout and quantity work not yet
-implemented. This is not an announcement of API stability. The earlier
+recording composition, exact point/sphere scene selection, linked observation tables,
+linked slices with physical planes, prepared regional quantities and Layers controls
+are now implemented; visual acceptance of these workflows remains open. Later sections
+cover intended interfaces, including voxel quantities and supplied alignment
+work not yet implemented. This is not an announcement of API stability. The earlier
 `IBLWorkbench` sketches are superseded.
 
 Use one main `AtlasViewer`, prepared scientific data objects, and handles for
@@ -346,10 +347,10 @@ without a success event. Callback exceptions cannot undo a completed commit, and
 nested writes from callbacks are rejected initially to avoid reentrant partial
 updates. Exact event field names/error reporting remain a contract-review item.
 
-Table/programmatic exact selection is the first acceptance gate. Native picking
-is a separate capability gate: the pinned engine's scientific identity queries
-do not support styled point sprites, and `PointCollectionVisual` has no scientific
-identity link map. Use a demonstrated supported glyph/query route with explicit
+Table/programmatic exact selection established the initial acceptance gate. Native
+queries now support the viewer's plain filled point disks and spheres through an
+explicit attachment identity bridge; stroked/depth-cued point profiles and composed
+paths remain unsupported. Use a demonstrated supported glyph/query route with explicit
 row/identity translation, or expose picking as unavailable. Do not upgrade the
 engine to hide this distinction. Native acceptance must cover overlap, hidden
 layers, multiple attachments, missing rows and original ID zero.
@@ -408,7 +409,7 @@ regions = app.add_region_values(
     name="Regional firing rate",
     mapping_reduction="weighted_mean",
 )
-regions.color_by("value", cmap="viridis", limits=(0, 20))
+regions.color_by("value", cmap="sequential", limits=(0, 20))
 ```
 
 The regional payload supplies source Allen identities, values, units, missingness
@@ -514,7 +515,8 @@ scientific identity contracts through that migration.
   their requirements must not force speculative renderer abstractions into stage 1.
 
 The next user review is the working generic annotation and recording workflows.
-Native picking and the unified linked-layout facade retain separate later gates.
+Exact supported-glyph picking and the unified linked layout are implemented; their
+interactive acceptance remains separate from implementation validation.
 The current supported API remains documented in the [API reference](api/index.md).
 
 ## Architecture audit of the consolidated proposal

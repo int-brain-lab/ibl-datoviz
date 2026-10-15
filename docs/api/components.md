@@ -43,9 +43,10 @@ unshown populations retain handles. An absent population raises
 `UnavailableLayerError`; an entirely unpositioned supplied population retains its
 IDs and handle. Recording observations default to physical sphere glyphs with
 `set_radius_um(20)`. Point sprites use `set_size_px`, paths use `set_width_px`,
-and unsupported operations fail. Inspect `layer.capabilities`; native scientific
-picking is currently unavailable for these handles. Exact ID selection is available
-through Python and the Layers panel, including hidden/unpositioned observations.
+and unsupported operations fail. Inspect `layer.capabilities` for geometry support
+and `app.picking.unavailable_reason` for scene-wide coverage constraints. Plain
+filled points and spheres support exact scene selection. Python, Layers and tables
+also select original IDs, including hidden/unpositioned observations.
 
 Source-backed scalar calls require `observation_refs=payload.observation_keys`
 from the upstream quantity preparation in exactly the full payload order. Reject
@@ -98,6 +99,99 @@ cluster positions currently mean assigned channel locations, not neuron somata.
 Signal access remains an explicit upstream `source.spikes(..., requirements=...)`
 call; the example performs metadata reads only, before starting the GUI.
 
+## One linked scientific workspace
+
+```python
+with AtlasViewer(
+    atlas=atlas_assets, volumes=atlas_volumes, layout="linked", render_volume=False,
+) as app:
+    recording = app.add_recording(prepared_recording, show=("channels", "clusters"))
+    app.tables.show(recording.clusters)
+    app.slices.set_position(ap=120, ml=80, dv=100, units="voxel")
+    app.slices.set_layers(anatomy=True, annotations=True, boundaries=True)
+    app.slices.show_plane("ap", in_3d=True)
+    app.show()
+```
+
+The linked layout reuses the existing navigator implementation behind `AtlasViewer`:
+there is one scene, layer registry, selection controller, table owner and slice
+scheduler. `LinkedAtlasNavigator` remains available for existing callers. Layout
+is fixed at construction. A 3D viewer loads no slice assets; `app.slices.available`
+is false there. A linked viewer requires explicit volumes or an explicit
+`slice_source` with `render_volume=False`; missing coverage is never substituted.
+
+`app.slices.position.index` is AP/ML/DV voxel order; `.world_um` is ML/AP/DV world
+order. `set_position` requires `units="voxel"` or `units="um"`. World positions map
+to the nearest voxel centre and must fall within the grid's centre bounds.
+Cursor navigation preserves committed anatomy and observation selection unless
+`select_region=True` is explicit. Subscribe with `app.slices.on_changed(callback)`;
+accepted cursor events carry previous/current positions and a revision. Async
+textures may still be loading after the request/cursor event. Failed native
+updates restore cursor/controls and supersede rejected requests; callback errors
+are recorded after commit, and callbacks cannot mutate the viewer reentrantly.
+
+Physical planes use the exact accepted request index and pixels, with separate
+linear grayscale and nearest categorical textures. They retain depth testing and
+own their resources until hidden or the viewer closes. Plane geometry respects
+atlas affine direction and half-voxel edges. The Slices controls expose each 3D
+plane independently. Worker shutdown, subscriptions and plane cleanup precede
+scene destruction.
+
+## Scene observation selection
+
+Right-click a supported observation in the 3D panel to select its exact attachment
+and update the retained table. Left-click keeps anatomical selection; dragging
+keeps camera controls. Plain filled point disks and spheres support scientific
+queries on the current pinned engine. Native positive row keys are private and
+never replace original integer/string identities. Missing rows stay in tables,
+and unrelated region selection remains intact.
+
+`layer.capabilities.native_picking` describes its geometry; inspect
+`app.picking.unavailable_reason` for the whole scene. Visible paths, physical slice
+planes, volumes and legacy probe visuals currently make exact observation picking
+unavailable. Hiding a path or plane restores availability. Styled outlines and
+depth-cued point profiles are not covered by the plain-disk contract.
+
+Supported anatomy meshes participate in frontmost query depth, preserving their
+separate region identities. Nonzero-alpha anatomical coverage can block an
+observation even when the context is translucent; hide anatomy to select an
+observation inside it. Failed or stale queries preserve selection. Camera/input,
+presentation, attachment and selection changes invalidate queued clicks.
+
+For controlled native clients, `app.picking.request(x, y)` takes panel-local logical
+pixels and `app.picking.poll()` consumes completed observation results. The normal
+GUI polls before painting controls/tables; its last unrelated native results are
+available as `app.native_query_results`. These methods perform no data loading.
+
+## Prepared regional quantities
+
+`RegionValues` supplies signed Allen IDs, scalar values, explicit weights, name,
+units, weight name, verified frame and provenance. It owns immutable arrays and
+preserves NaN rows. The viewer performs display remapping, not scientific
+aggregation from raw signals:
+
+```python
+quantity = app.add_region_values(prepared_region_values, mapping_reduction="weighted_mean")
+quantity.color_by("value", cmap="sequential", limits=(0, 20))
+coverage = quantity.mapped()
+quantity.set_visible(False)
+quantity.remove()
+```
+
+One quantity can own the detailed anatomy mesh's scalar colors at a time. Remove
+it before attaching another or using the legacy `set_region_data` entry point.
+Hiding/removing restores the prior scalar presentation under the current mapping,
+without changing observations or region selection. Supported schemes are
+`sequential` and `diverging`; units appear in native scalar labels. Coarse context
+surfaces retain their anatomical colors.
+
+`coverage.declared_weights` includes missing source rows;
+`coverage.finite_weights` is the actual finite-value weighted-mean denominator.
+Source and finite counts, missing values and unmapped source IDs remain explicit.
+Mapping changes preserve the complete source payload and hemisphere signs.
+Voxel quantity grids/transfer functions and supplied alignment comparisons remain
+separate later contracts.
+
 ## Candidate endpoint gaps
 
 `paths.set_endpoint_gaps_px(start, end)` authors fixed exclusion-disk radii in
@@ -145,9 +239,8 @@ owned table before notification. Table reads fail after removal/close or from a
 foreign thread. Closing the table window retains its widget state; the layer
 button reopens it.
 
-No table action loads datasets or signals. Exact native scene picking remains a
-separate capability gate; the table does not turn styled point sprites into
-pickable scientific observations.
+No table action loads datasets or signals. Scene selection uses the independent native query bridge described above;
+retaining a table identity does not establish supported native query coverage.
 
 ## Borrowed-scene point collections and sampled planes
 

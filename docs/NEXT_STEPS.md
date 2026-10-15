@@ -9,6 +9,100 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Integrated scientific workspace checkpoint — October 16 2026
+
+The user authorized sustained implementation through a reviewable linked
+workspace, without waiting for Linux visual review. The following is implemented
+on `feature/datoviz-v04`; `main`, the supported native pin and production agent
+remain unchanged. All commits are local and no publication was requested.
+
+- `cf9f2ca`: exact native identities for filled points and spheres, private positive
+  keys, attachment/source translation, stale-click guards and transactional
+  highlight/table updates. Current filled point disks are supported on f77; invoking
+  the point style setter with FILLED does not activate its unsupported outlined
+  profile. GPU coverage checks establish the actual capability rather than
+  assuming every point-style setter disables queries. Paths remain unsupported
+  for composed queries. Unsupported visible path/plane/volume/legacy-probe coverage
+  reports unavailable instead of silently allowing a pick through it.
+- `2f930db`: immutable `RegionValues` and one owned regional quantity on the
+  detailed anatomy mesh, explicit weighted-mean reduction, units, declared versus
+  finite weights/counts, source missingness and unmapped/signed IDs. Hide/remove
+  restores prior scalar presentation under the current mapping. Multiple active
+  mesh-color owners and concurrent legacy scalar writes are rejected.
+- `1896205`: physical paired grayscale/annotation slice planes from accepted
+  immutable requests, correct affine signs/half-voxel edges, independent sampling,
+  stale-result guards, atomic pair replacement and owned resource cleanup.
+- `42adc69`, `553df02`: `AtlasViewer(layout="linked")` dispatches to the existing
+  navigator implementation with one scene/registry/controller/scheduler. Thin
+  `app.slices` provides explicit voxel/world units, accepted cursor events,
+  presentation and physical-plane controls. Full cursor validation and rollback
+  preserve observation/region domains; callbacks cannot mutate reentrantly.
+  Worker/input/plane cleanup, partial construction and native-post error shutdown
+  retain their ownership boundaries. Right-click selects observations;
+  left-click selects anatomy. Supported anatomy contributes frontmost query depth
+  without acquiring unintended region FACE eligibility.
+- `ec0fdde`: optional BWM bridge consumes shared recording metadata, snapshots
+  provenance, checks complete source/PID/session identity and accepts only exact
+  reviewed producer frame declarations. Explicit reviewed legacy frames remain
+  supported when source declarations are absent; they cannot hide failed,
+  conflicting or unreviewed source declarations. Existing signal gates remain.
+- `99ba9fe`: `examples.scientific_workspace` and `just review workspace` compose
+  the public API with supplied local assets, optional BWM recordings and explicit
+  prepared regional JSON. The default annotations and the rendering-check scalar
+  fixture are labelled synthetic, not measurements. Data loading precedes GUI
+  startup; no signals, discovery, downloads, statistical derivations or data copies
+  were introduced.
+
+Shared data commits on `ibl-ai-agent-next/main` are `1195770` (frozen generic
+recording/frame/evidence contracts, publicly exposed through access) and
+`dc69ed1` (explicit producer/PID-scoped BWM spatial declarations). The generic
+contracts do not assume mouse, Allen anatomy or IBL. Frame evidence, byte
+integrity, scientific source validation and insertion alignment are distinct.
+Legacy releases with no declaration retain an empty coordinate-declaration list
+and unknown source validation; channel coordinate columns remain intact. Full shared-reader suite: **369 passed, 13 existing skips**; focused
+contract/reader checks, Ruff and mypy pass. Production `ibl-ai-agent` is untouched.
+
+Final package validation on both the exact f77 source/original binary and the
+separate endpoint candidate: **915 passed, one optional registered 10 µm asset-root
+skip each**. Lint, strict docs and whitespace pass. The normally configured
+engine checkout still has its previously recorded source revision drift; the
+strict baseline run uses the isolated immutable source pair. Ordinary
+`just review workspace --frames 3 --ui-scale 1.5` passes with that configured
+runtime's explicit mismatch warning; no build/configuration/pin change was made.
+Logs are ignored at `build/workspace-final-pytest.log`,
+`build/workspace-endpoint-candidate-pytest.log` and
+`build/scientific-workspace/launcher-startup.log`.
+
+Actual XTest gestures at scale 1.5 select original integer `0` and string `"0"`
+as distinct attachments with matching native table selection, preserve region
+selection on right-click, select signed Allen `-315` on normal left-click while
+preserving observations, and commit nothing on right-button drag. A visible path
+reports unsupported coverage without changing selection. Receipt/captures are
+under `build/scientific-workspace/scene-mouse-*` and `linked-scene-*.png`.
+Real D070/50 µm queries pass with major context and the detailed fragment-clipped
+surface; hiding anatomy permits both illustrative targets to resolve exactly.
+Evidence is `real-query-receipt.json`, `real-query.log` and `real-query-initial.png`
+in that directory. Nonzero-alpha anatomy can block an observation even when
+translucent; this frontmost policy is documented explicitly.
+
+The shared reader and bridge retain the two real reviewed populations (384
+channels/459 clusters and 96 channels/2 clusters with original IDs 21/36) through
+offscreen rendering and bounded GUI startup. Source validation/alignment remain
+unknown; byte integrity passes and signals are not requested. Existing reviewed
+frame evidence SHA256 and release/PID scope are unchanged. Evidence is ignored at
+`build/ibl-integration/shared-metadata-{recordings.png,recordings.json,startup.json}`.
+The combined linked BWM/illustrative regional field/physical AP-plane capture and
+receipt are `build/scientific-workspace/bwm-regions-plane.{png,json}` and were
+visually inspected. Plane query unavailability is reported in the receipt.
+
+The high GPT-6.1 Sol architecture audit reports no remaining P1/P2 findings after
+fixing anatomical FACE eligibility, stale-query invalidation and partial-init
+cleanup. Linux interaction/scientific presentation acceptance remains the next
+user gate. The existing endpoint candidate has not been adopted. Actual browser
+and macOS rendering are unvalidated; voxel quantities, supplied alignment
+comparisons, physical extraction of the shared reader and an AI app-authoring
+skill remain later work after these interfaces are reviewed.
+
 ## Native endpoint-gap candidate implemented — October 15 2026
 
 The user authorized implementing, building, auditing and rendering an isolated

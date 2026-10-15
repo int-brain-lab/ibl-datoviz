@@ -11,6 +11,25 @@ The current API design and implementation stages are in the
 `IBLWorkbench` sketches. The shared-data findings below inform that proposal;
 the source metadata prerequisite has since been implemented locally.
 
+## Integrated workspace ready for Linux review — October 16 2026
+
+`just review workspace --ui-scale 1.5` opens the public linked `AtlasViewer` with
+three orthogonal slices, 3D anatomy, scientific layer controls and retained
+observation tables. Right-click selects supported point/sphere observations;
+left-click keeps anatomical selection. Physical planes, explicit-unit cursor
+controls and prepared regional quantities share the same owner/controller model.
+The default points are illustrative. An explicit BWM client reads the existing
+compressed release through shared metadata access, preserving original source
+identities and validation facts.
+
+Automated native checks, real XTest gestures and source audits establish the
+implementation checkpoint; the user will review Linux interaction later.
+See [the workspace checklist](review-apps.md#linked-scientific-workspace) and
+[the handoff](NEXT_STEPS.md) for source pins, counts, evidence and remaining gates.
+The independent endpoint-gap candidate still awaits visual acceptance and native
+baseline adoption. Voxel quantity and supplied alignment contracts remain later
+scientific workflows; no signal access or data migration was added here.
+
 ## First visual prototype available — October 15 2026
 
 The first visual gate is accepted: six shared source-native

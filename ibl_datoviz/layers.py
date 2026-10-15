@@ -1,4 +1,4 @@
-"""Viewer-owned scientific layers, independent of dataset readers and native picking."""
+"""Viewer-owned scientific layers with exact identities and retained presentation."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class LayerObservationRef:
 
 @dataclass(frozen=True)
 class LayerCapabilities:
-    """Geometry-specific controls; scientific native picking is intentionally absent."""
+    """Geometry controls and native query support, subject to scene coverage."""
 
     scalar_coloring: bool
     size_px: bool = False
