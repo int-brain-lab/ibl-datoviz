@@ -9,6 +9,27 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Python minimum raised to 3.11 — October 15 2026
+
+Package metadata now requires Python 3.11 or newer; CI tests 3.11 and 3.13.
+The refreshed lock removes Python-3.10-only dependencies and resolution branches
+without upgrading the retained package versions. The concurrently updated
+Datoviz pin remains unchanged by this support-policy change. Historical Python
+3.10 validation entries below describe their original environments.
+
+Validation on Python 3.11.15: 659 tests pass, with one explicit skip for the
+unconfigured optional registered 10 µm asset root. Strict doctor, lint, strict
+documentation, wheel build, and three-frame startups of both review apps pass.
+Isolated installed-wheel CPU checks pass on Python 3.11.15 and 3.13.3; receipts
+are under ignored `build/python311-validation/`. Startup checks do not establish
+visual acceptance or macOS evidence.
+
+Validation used separate environments to avoid interfering with concurrent work.
+The untracked local `.python-version` still selects 3.10; update that local pin
+before refreshing the normal development environment, or explicitly select
+Python 3.11+ with `uv --python` on commands that accept it. The shared `.venv`
+was not modified by this change.
+
 ## Zoom-aware panning correction — October 15 2026
 
 The reviewer reports excessive right-drag translation when zoomed in. Datoviz

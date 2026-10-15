@@ -29,6 +29,8 @@ runtime geometry smoothing is performed.
 
 Ongoing v0.4 implementation stays on `feature/datoviz-v04`; see `AGENTS.md`.
 
+Python 3.11 or newer is required. CI covers Python 3.11 and 3.13.
+
 Datoviz is a separate prerequisite: clone and build your chosen local checkout and establish its
 working Vulkan/MoltenVK environment. This package does not build or change that native checkout.
 Install `just` and `uv` on your machine. On macOS, `brew install just uv` installs both; on
@@ -156,9 +158,10 @@ build/install-check/venv/bin/python -I tools/check_installed.py \
   > build/install-check/receipt.json
 ```
 
-Use a fresh output/environment directory for each installation check. Python 3.10
-is also supported. The check rejects editable imports and imports outside the
-isolated environment, exercises the new owned CPU payloads and reads the packaged
+Use a fresh output/environment directory for each installation check. Repeat on
+Python 3.11 to check the minimum supported version. The check rejects editable
+imports and imports outside the isolated environment, exercises the new owned
+CPU payloads and reads the packaged
 atlas, registered-section and envelope locks offline. Its receipt records package
 origins and versions. No native bindings, GPU rendering or downloads of numeric
 atlas assets are exercised; native compatibility remains a separate check.
