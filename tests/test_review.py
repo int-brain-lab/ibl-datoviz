@@ -327,3 +327,33 @@ def test_preset_requires_one_numbered_app(tmp_path, monkeypatch, choice):
             [],
             {},
         )
+
+
+@pytest.mark.parametrize('frames,instance', [(0, 'datoviz'), (3, 'datoviz-automated')])
+def test_annotations_use_context_without_requiring_slice_volumes(
+    tmp_path, monkeypatch, frames, instance
+):
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path / 'unprepared-volume')
+    monkeypatch.setattr(review, 'configured_checkout', lambda: tmp_path)
+    monkeypatch.setattr(review, 'doctor', lambda *_args, **_kwargs: (['native-wrapper'], {}))
+    commands = []
+    monkeypatch.setattr(
+        review, 'run', lambda command, **kwargs: commands.append((command, kwargs['env']))
+    )
+    output = tmp_path / 'annotations with spaces.png'
+    monkeypatch.setattr(review.sys, 'argv', [
+        'review.py', 'run', 'annotations', '--strict', '--frames', str(frames),
+        '--ui-scale', '1.5', '--offscreen', str(output),
+    ])
+    assert review.main() == 0
+    assert len(commands) == 1
+    command, environment = commands[0]
+    assert command[:3] == [
+        'native-wrapper', review.sys.executable,
+        review.REPOSITORY / 'examples' / 'scientific_annotations.py',
+    ]
+    assert command[command.index('--context-root') + 1] == review.CONTEXT
+    assert '--ui-scale' in command and command[command.index('--ui-scale') + 1] == 1.5
+    assert command[-2:] == ['--offscreen', output]
+    assert environment['DVZ_WINDOW_INSTANCE'] == instance

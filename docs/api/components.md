@@ -64,6 +64,12 @@ reentrant viewer writes and writes from another thread are rejected. All resourc
 and subscriptions close before scene destruction, including deferred native
 callback shutdown.
 
+The configured interactive launcher is:
+
+```sh
+just review annotations --strict --ui-scale 1.5
+```
+
 Run the new examples as modules from the repository root in the configured native environment:
 
 ```sh

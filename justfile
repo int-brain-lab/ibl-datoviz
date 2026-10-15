@@ -23,7 +23,7 @@ doctor *args:
 test *args:
     uv run --frozen tools/review.py test -- "$@"
 
-# Open review app 1 or 2, both with all, or one legacy named example.
+# Open review app 1 or 2, both with all, annotations, or a legacy named example.
 review example='1' *args:
     uv run --frozen tools/review.py run "$@"
 

@@ -9,6 +9,20 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Interactive annotation launcher — October 15 2026
+
+Run `just review annotations --strict --ui-scale 1.5` for the generic point/path
+workflow with the configured native pairing, prepared D070 anatomy, the accepted
+six-structure context and package-level Layers controls. It requires no slice
+volumes or IBL reader. Missing context assets fail explicitly. The existing
+`review all` still opens apps 1 and 2; annotations is an explicit additional target.
+Quoted `--offscreen` paths and bounded `--frames` use the same forwarding/runtime
+rules. See [the annotation review checklist](review-apps.md#scientific-annotations).
+
+Validation: 28 launcher tests pass; recipe parsing/discovery, strict three-frame
+native startup and strict lint/docs pass. Interactive quality still needs the
+user's review. BWM source-frame research continues independently of this launcher.
+
 ## Scientific layers and shared BWM bridge implemented — October 15 2026
 
 The user approved the consolidated architecture and both intended-use scripts,

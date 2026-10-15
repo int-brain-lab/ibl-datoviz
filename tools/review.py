@@ -29,6 +29,7 @@ ANATOMY = CACHE / 'anatomy'
 EXAMPLES = {
     '1': ('scientific_scene_review.py', (ASSETS, VOLUME)),
     '2': ('linked_atlas_review.py', (ASSETS, VOLUME)),
+    'annotations': ('scientific_annotations.py', (ASSETS,)),
     'surface': ('real_atlas_surface.py', (ASSETS,)),
     'mapping': ('atlas_mapping_switch.py', (ASSETS,)),
     'picking': ('atlas_region_picking.py', (ASSETS,)),
@@ -337,7 +338,8 @@ def run_benchmark(arguments, prefix, environment):
 def run_examples(args, prefix, environment):
     """Run the selected examples with manual or bounded automation window identity."""
     environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated' if args.frames > 0 else 'datoviz'
-    if not ASSETS.exists() or not VOLUME.exists():
+    needs_volume = args.example != 'annotations'
+    if not ASSETS.exists() or (needs_volume and not VOLUME.exists()):
         raise ValueError('Review data is missing; rerun setup without --tests-only')
     offscreen = getattr(args, 'offscreen', None)
     if offscreen is not None and args.example == 'all':
@@ -358,7 +360,7 @@ def run_examples(args, prefix, environment):
                 REPOSITORY / 'examples' / script,
                 *arguments,
                 *(['--preset', preset] if preset is not None else []),
-                *(['--context-root', CONTEXT] if name == '1' else []),
+                *(['--context-root', CONTEXT] if name in ('1', 'annotations') else []),
                 '--frames',
                 args.frames,
                 '--ui-scale',
@@ -387,7 +389,9 @@ def main():
     tests.add_argument('pytest_args', nargs=argparse.REMAINDER)
     benchmark = commands.add_parser('benchmark', help='benchmark D070 with the configured runtime')
     benchmark.add_argument('benchmark_args', nargs=argparse.REMAINDER)
-    review = commands.add_parser('run', help='open review app 1 or 2, or a standalone example')
+    review = commands.add_parser(
+        'run', help='open review app 1 or 2, annotations, or a standalone example'
+    )
     review.add_argument('example', nargs='?', default='1', choices=['all', *EXAMPLES])
     review.add_argument('--preset', help='initial preset for one numbered review app')
     review.add_argument('--offscreen', type=Path, metavar='PNG', help='capture one named example')

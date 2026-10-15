@@ -1,4 +1,4 @@
-# Review the two applications
+# Review applications and scientific annotations
 
 Use the existing prepared real-data assets and configured Datoviz runtime:
 
@@ -12,6 +12,38 @@ first window closes. Add `--ui-scale 1.5` for larger controls. Each application
 keeps its visualization structure throughout the review: presets change layer
 visibility and settings within existing views. Normal edits preserve the camera;
 only the explicit reset button restores the starting camera.
+
+## Scientific annotations
+
+Review the new viewer-owned point/path API interactively:
+
+```bash
+just review annotations --strict --ui-scale 1.5
+```
+
+This opens the prepared D070 anatomy with illustrative targets and a route, using
+the accepted six-structure context and package-level Layers controls. These are
+user annotations, not measured recording data. It uses the configured native
+runtime and existing anatomy assets; slice volumes and the shared IBL reader are
+not required. Missing major surfaces fail explicitly; run setup if not prepared.
+
+Use the Layers panel to hide/show targets and the route, edit colors and point
+size/path width, and select `target-a` or `target-b` by original ID. Selection is
+pink. Check that hiding a selected layer preserves selection and that mapping
+changes clear region selection while retaining the selected annotation. Orbit,
+pan, zoom and reset; layer state should persist. Native mouse picking of these
+annotations is a later gate; the region browser and anatomical picking still work.
+Changing a scalar-colored layer's uniform color clears its scalar encoding.
+
+For bounded startup or a geometry-only capture:
+
+```bash
+just review annotations --strict --frames 3 --ui-scale 1.5
+just review annotations --strict --offscreen "build/annotations review.png"
+```
+
+`just review all` continues to cover apps 1 and 2. Close the annotation window to
+return to the shell. Record interactive findings in the feedback log.
 
 ## Region browsing in both apps
 

@@ -37,7 +37,8 @@ For real-data review, use `just setup /path/to/datoviz` instead of `setup-tests`
 `just review 1` for the fixed 3D scientific workspace or `just review 2` for the
 fixed four-panel linked navigator. Bare `just review` opens app 1; `review all`
 opens 1 then 2 (close each window to advance). Presets change layers/settings,
-not app/scene/view/panel structure. Older named examples remain available individually:
+not app/scene/view/panel structure. `just review annotations` reviews the generic
+scientific point/path API. Older named examples remain available individually:
 `surface`, `mapping`, `picking`, `probe`, `firing-rate`, `slices`, `controls`,
 `insertions` and `volume-free`. Multiple-insertion review requires explicit W39
 preparation; missing optional assets disable that preset without substitution.
