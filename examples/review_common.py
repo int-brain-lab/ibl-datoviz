@@ -134,16 +134,11 @@ class ReviewControls:
 
     def _draw_styles(self, gui):
         viewer, dvz = self.viewer, self.viewer.dvz
-        dvz.dvz_gui_text(gui, b'Slice labels keep mapping colors.')
+        if hasattr(viewer, 'slice_panels'):
+            dvz.dvz_gui_text(gui, b'Slice labels keep mapping colors.')
         opacity = ctypes.c_float(viewer.surface_opacity)
         if dvz.dvz_gui_slider_float(gui, b'Surface opacity', ctypes.byref(opacity), 0, 1):
             self._attempt(viewer.set_surface_opacity, opacity.value)
-        for side in ('left', 'right'):
-            value = ctypes.c_bool(viewer._surface_style.hemispheres[side])
-            if dvz.dvz_gui_checkbox(
-                gui, f'{side.title()} hemisphere'.encode(), ctypes.byref(value)
-            ):
-                self._attempt(viewer.set_hemisphere_visible, side, value.value)
         regions = viewer.selected_region_ids()
         if not regions:
             dvz.dvz_gui_text(gui, b'Select a surface or tree region to edit its style.')
@@ -167,7 +162,12 @@ class ReviewControls:
             self._region_opacity.value = style.opacity
             self._region_visible.value = style.visible
             self._region_key = key
-        dvz.dvz_gui_text(gui, f'Editing signed region {region} (first selected)'.encode())
+        label = viewer.tree_model.describe(region) if viewer.tree_model else str(abs(region))
+        acronym = label.partition(' — ')[0]
+        side = 'Left' if region < 0 else 'Right'
+        dvz.dvz_gui_text(gui, f'{acronym} ({side})'.encode())
+        if len(regions) > 1:
+            dvz.dvz_gui_text(gui, f'Editing the first of {len(regions)} selected regions'.encode())
         if dvz.dvz_gui_checkbox(gui, b'Region visible', ctypes.byref(self._region_visible)):
             self._attempt(viewer.set_region_visible, region, bool(self._region_visible.value))
         if dvz.dvz_gui_slider_float(
