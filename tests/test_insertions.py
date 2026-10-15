@@ -238,3 +238,58 @@ def test_explicit_none_style_is_rejected_without_mutation(method):
     assert collection.get_data('track') is previous
     assert len(native.calls) == calls
     collection.close()
+
+
+def test_endpoint_gap_support_is_opt_in_and_old_runtime_keeps_paths_unchanged():
+    native = FakeDatoviz()
+    collection = InsertionCollectionVisual(native, 'scene', 'panel')
+    collection.set_insertion('track', path())
+    before = collection.get_data('track')
+    collection.set_endpoint_gaps_px('track', 0, 0)
+    with pytest.raises(RuntimeError, match='compatible native'):
+        collection.set_endpoint_gaps_px('track', 4, 4)
+    assert collection.get_data('track') is before
+    assert collection.ids == ('track',)
+    for invalid in (-1, np.nan, np.inf, True, [1], 1e40):
+        with pytest.raises(ValueError, match='endpoint gaps'):
+            collection.set_endpoint_gaps_px('track', invalid, 0)
+    collection.close()
+
+
+def test_endpoint_gap_updates_rollback_native_state_and_survive_other_style_updates(monkeypatch):
+    native = FakeDatoviz()
+
+    def set_gaps(visual, start, end):
+        native.visuals[visual]['endpoint_gaps'] = (start, end)
+        return native._status('gaps')
+
+    monkeypatch.setattr(native, 'dvz_path_set_endpoint_gaps', set_gaps, raising=False)
+    collection = InsertionCollectionVisual(native, 'scene', 'panel')
+    collection.set_insertion('track', path())
+    item = collection._insertions['track']
+    collection.set_endpoint_gaps_px('track', 4, 6)
+    native.fail_next = 'gaps'
+    with pytest.raises(RuntimeError, match='insertion endpoint gaps'):
+        collection.set_endpoint_gaps_px('track', 8, 9)
+    assert item.endpoint_gaps_px == (4, 6)
+    assert native.visuals[item.visual]['endpoint_gaps'] == (4, 6)
+    collection.set_color('track', (1, 2, 3))
+    collection.set_width('track', 7)
+    collection.set_insertion('track', path(5))
+    assert item.endpoint_gaps_px == (4, 6)
+    assert native.visuals[item.visual]['endpoint_gaps'] == (4, 6)
+    collection.set_endpoint_gaps_px('track', 0, 0)
+    assert item.endpoint_gaps_px == (0, 0)
+    collection.close()
+
+
+def test_endpoint_gap_rollback_failure_removes_only_failed_visual(monkeypatch):
+    native = FakeDatoviz()
+    collection = InsertionCollectionVisual(native, 'scene', 'panel')
+    collection.set_insertion('bad', path())
+    collection.set_insertion('other', path())
+    monkeypatch.setattr(native, 'dvz_path_set_endpoint_gaps', lambda *_: -1, raising=False)
+    with pytest.raises(RuntimeError, match='gap rollback failed'):
+        collection.set_endpoint_gaps_px('bad', 4, 4)
+    assert collection.ids == ('other',)
+    collection.close()

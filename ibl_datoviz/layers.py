@@ -9,7 +9,7 @@ from uuid import uuid4
 import numpy as np
 
 from .component import ComponentVisual, owned
-from .insertions import InsertionCollectionVisual
+from .insertions import InsertionCollectionVisual, _endpoint_gaps
 from .payloads import Paths, Points, Recording
 from .points import PointCollection, PointCollectionVisual
 
@@ -122,6 +122,7 @@ class LayerHandle:
         self._colors = owned(np.tile(_color('#40dcfa'), (len(payload.ids), 1)), np.uint8)
         self._encoding = None
         self._selected = frozenset()
+        self._endpoint_gaps_px = (0.0, 0.0)
         attachment = str(uuid4())
         keys = payload.observation_keys
         self._refs = tuple(
@@ -193,8 +194,9 @@ class LayerHandle:
         except ValueError as error:
             raise KeyError(original_id) from error
 
-    def _build(self, *, colors=None, size=None, selected=None, visible=None):
+    def _build(self, *, colors=None, size=None, selected=None, visible=None, endpoint_gaps=None):
         viewer = self._registry.viewer
+        gaps = self._endpoint_gaps_px if endpoint_gaps is None else endpoint_gaps
         colors = self._colors if colors is None else colors
         selected = self._selected if selected is None else selected
         colors = np.array(colors, copy=True)
@@ -221,6 +223,8 @@ class LayerHandle:
                             color=colors[index],
                             width_px=size,
                         )
+                        if any(gaps):
+                            visual.set_endpoint_gaps_px(index + 1, *gaps)
                         visual.set_visible(index + 1, visible)
             else:
                 rows = self.payload.positioned
@@ -324,6 +328,27 @@ class LayerHandle:
     def set_width_px(self, width):
         """Set opaque path width in pixels."""
         self._set_size(width, 'width_px')
+
+    @property
+    def endpoint_gaps_px(self):
+        """Authored start/end disk radii in logical pixels; no inferred point linkage."""
+        return self._endpoint_gaps_px
+
+    def set_endpoint_gaps_px(self, start, end):
+        """Set fixed path endpoint disk radii; requires compatible native support.
+
+        For each open path, fragments inside either endpoint disk are excluded.
+        Closed paths ignore the radii. Marker size and visibility do not change
+        these explicit radii automatically.
+        """
+        self._mutate()
+        if self._glyph != 'path':
+            raise ValueError('endpoint gaps are unsupported for this glyph')
+        gaps = _endpoint_gaps(start, end)
+        if any(gaps) and not hasattr(self._registry.viewer.dvz, 'dvz_path_set_endpoint_gaps'):
+            raise RuntimeError('endpoint gaps require a compatible native Datoviz build')
+        self._replace(endpoint_gaps=gaps)
+        self._endpoint_gaps_px = gaps
 
     def _close(self):
         if not self._closed:

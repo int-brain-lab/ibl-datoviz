@@ -71,6 +71,21 @@ class _Insertion:
     visual: object
     display_positions: np.ndarray
     visible: bool = True
+    endpoint_gaps_px: tuple[float, float] = (0.0, 0.0)
+
+
+def _endpoint_gaps(start, end):
+    """Validate logical-pixel exclusion radii before any native mutation."""
+    values = []
+    for value in (start, end):
+        raw = np.asarray(value)
+        if raw.shape != () or raw.dtype.kind not in 'iuf':
+            raise ValueError('endpoint gaps must be finite nonnegative float32 numbers')
+        number = float(raw)
+        if not np.isfinite(number) or number < 0 or number > float(np.finfo(np.float32).max):
+            raise ValueError('endpoint gaps must be finite nonnegative float32 numbers')
+        values.append(float(np.float32(number)))
+    return tuple(values)
 
 
 def _identity(value):
@@ -247,6 +262,40 @@ class InsertionCollectionVisual(ComponentVisual):
     def set_width(self, insertion_id, width_px):
         """Set an insertion's uniform positive pixel width."""
         self._replace_attribute(insertion_id, width_px=width_px)
+
+    def set_endpoint_gaps_px(self, insertion_id, start, end):
+        """Exclude endpoint disks without changing coordinates or ordinary depth tests.
+
+        Radii are authored logical pixels, independent of any point visual. The
+        caller owns their relationship to marker size, visibility and lifetime.
+        Nonzero gaps require an engine exposing ``dvz_path_set_endpoint_gaps``.
+        """
+        self._require_open()
+        gaps = _endpoint_gaps(start, end)
+        key = _identity(insertion_id)
+        if key not in self._insertions:
+            raise KeyError(f'unknown insertion identity: {key!r}')
+        item = self._insertions[key]
+        setter = getattr(self.dvz, 'dvz_path_set_endpoint_gaps', None)
+        if setter is None:
+            if any(gaps):
+                raise RuntimeError('endpoint gaps require a compatible native Datoviz build')
+            return
+        try:
+            self._check(setter(item.visual, *gaps), 'insertion endpoint gaps')
+        except Exception as error:
+            try:
+                self._check(
+                    setter(item.visual, *item.endpoint_gaps_px), 'insertion endpoint gaps rollback'
+                )
+            except Exception as rollback_error:
+                self.dvz.dvz_visual_destroy(item.visual)
+                del self._insertions[key]
+                raise RuntimeError(
+                    'insertion gap rollback failed; visual removed'
+                ) from rollback_error
+            raise error
+        item.endpoint_gaps_px = gaps
 
     def set_visible(self, insertion_id, visible):
         """Set authored visibility for one insertion."""

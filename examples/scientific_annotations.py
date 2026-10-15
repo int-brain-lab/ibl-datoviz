@@ -21,6 +21,10 @@ def main():
     """Create stable annotation identities, scalar colors and exact selection."""
     parser = argparse.ArgumentParser(description=__doc__)
     add_arguments(parser)
+    parser.add_argument(
+        '--endpoint-gaps-px', type=float, nargs=2, metavar=('START', 'END'),
+        help='explicit fixed endpoint disk radii; requires a compatible native candidate build',
+    )
     args = parser.parse_args()
     options = prepare_viewer(args)
     xyz = options['atlas'].geometry.world_positions()
@@ -46,6 +50,8 @@ def main():
             Paths(('route-a',), (route,), app.frame, provenance), name='Illustrative route',
         )
         routes.set_width_px(3)
+        if args.endpoint_gaps_px is not None:
+            routes.set_endpoint_gaps_px(*args.endpoint_gaps_px)
         app.selection.set_observations([landmarks.observation('target-b')])
         finish(app, args, {
             'kind': 'illustrative user annotations',
@@ -54,6 +60,7 @@ def main():
             'point_ids': ['target-a', 'target-b'],
             'point_positions_um': targets.tolist(),
             'path_ids': ['route-a'],
+            'endpoint_gaps_px': routes.endpoint_gaps_px,
             'selected_id': 'target-b',
             'native_picking': 'not_requested',
         }, 'Generic scientific annotations')

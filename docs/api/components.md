@@ -98,6 +98,26 @@ cluster positions currently mean assigned channel locations, not neuron somata.
 Signal access remains an explicit upstream `source.spikes(..., requirements=...)`
 call; the example performs metadata reads only, before starting the GUI.
 
+## Candidate endpoint gaps
+
+`paths.set_endpoint_gaps_px(start, end)` authors fixed exclusion-disk radii in
+logical screen pixels for each open path. For example, `(4, 4)` excludes the
+nominal footprint of 8 px endpoint markers. Every segment is clipped against both
+endpoint disks, including a segment that bends back into either disk. Coordinates
+and normal depth tests are preserved; closed paths ignore these radii.
+
+This opt-in style requires a native candidate exposing
+`dvz_path_set_endpoint_gaps`. The supported pinned baseline does not expose it:
+nonzero values raise a clear compatibility error before replacing the layer.
+Default `(0, 0)` preserves existing rendering. The style survives layer selection,
+color, width and visibility changes. Radii have no automatic relationship to point
+size or visibility; callers must update or clear them when changing that relationship.
+This is a candidate review API, pending native validation and baseline adoption.
+
+The annotation example accepts `--endpoint-gaps-px 4 4` when run with the explicit
+candidate source/library pair. Ordinary `just review annotations` keeps its current
+baseline and default appearance.
+
 ## Linked observation tables
 
 Open a retained table from a layer's **Observation table** button, or from Python:

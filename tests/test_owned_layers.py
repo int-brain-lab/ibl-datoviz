@@ -255,3 +255,68 @@ def test_native_point_sphere_path_scalar_and_zero_positioned(native_registry):
     assert render() == 0
     registry.remove_layer(path)
     assert render() == 0
+
+
+def test_endpoint_gap_style_survives_layer_rebuilds_and_rejects_unsupported_runtime(
+    registry, monkeypatch
+):
+    route = registry.add_paths(Paths(('route',), ([[0, 0, 0], [1, 2, 3]],), FRAME, {}))
+    registry.viewer.dvz = SimpleNamespace()
+    initial = route._visual
+    with pytest.raises(RuntimeError, match='compatible native'):
+        route.set_endpoint_gaps_px(4, 4)
+    assert route._visual is initial and not initial.closed
+    assert route.endpoint_gaps_px == (0, 0)
+    registry.viewer.dvz.dvz_path_set_endpoint_gaps = lambda *_: 0
+    real_build = LayerHandle._build
+    gaps = []
+
+    def build(layer, **kwargs):
+        gaps.append(kwargs.get('endpoint_gaps', layer.endpoint_gaps_px))
+        return real_build(layer, **kwargs)
+
+    monkeypatch.setattr(LayerHandle, '_build', build)
+    route.set_endpoint_gaps_px(4, 6)
+    route.set_width_px(9)
+    route.set_color('#ff0000')
+    route.set_visible(False)
+    registry.update_selection([route.observation('route')])
+    assert gaps == [(4, 6)] * 5
+    assert route.endpoint_gaps_px == (4, 6)
+    with pytest.raises(ValueError, match='endpoint gaps'):
+        route.set_endpoint_gaps_px(-1, 3)
+    with pytest.raises(ValueError, match='unsupported'):
+        registry.add_points(points()).set_endpoint_gaps_px(4, 4)
+    prior = route._visual
+    monkeypatch.setattr(route, '_build', lambda **_: (_ for _ in ()).throw(RuntimeError('upload')))
+    with pytest.raises(RuntimeError, match='upload'):
+        route.set_endpoint_gaps_px(1, 2)
+    assert route._visual is prior and not prior.closed
+    assert route.endpoint_gaps_px == (4, 6)
+
+
+def test_native_endpoint_gap_candidate_style_rebuilds_and_baseline_rejection(native_registry):
+    registry, render = native_registry
+    route = registry.add_paths(Paths(('route',), ([[0, 0, 0], [1, 2, 3]],), FRAME, {}))
+    old = route._visual
+    xyz = route.payload.positions_um[0].copy()
+    if not hasattr(registry.viewer.dvz, 'dvz_path_set_endpoint_gaps'):
+        with pytest.raises(RuntimeError, match='compatible native'):
+            route.set_endpoint_gaps_px(4, 6)
+        assert route._visual is old
+        assert route.endpoint_gaps_px == (0, 0)
+        return
+    route.set_endpoint_gaps_px(4, 6)
+    assert old.closed
+    route.set_width_px(5)
+    route.set_color('#ff0000')
+    route.set_visible(False)
+    registry.update_selection([route.observation('route')])
+    route.set_visible(True)
+    assert route.endpoint_gaps_px == (4, 6)
+    assert route._visual._insertions[1].endpoint_gaps_px == (4, 6)
+    np.testing.assert_array_equal(route.payload.positions_um[0], xyz)
+    assert render() == 0
+    route.set_endpoint_gaps_px(0, 0)
+    assert route._visual._insertions[1].endpoint_gaps_px == (0, 0)
+    assert render() == 0
