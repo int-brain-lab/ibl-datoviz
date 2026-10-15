@@ -6,6 +6,7 @@ immutable display observations without reading source files or decoding spikes.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from numbers import Integral
@@ -16,8 +17,13 @@ from .component import owned
 from .payloads import Channels, Clusters, Recording, SourceKey, SourceObservationKey, WorldFrame
 
 __all__ = [
-    'BwmRecording', 'BwmSource', 'ObservationRef',
-    'RecordingObservations', 'prepare_bwm_recording', 'prepare_recording',
+    'BwmRecording',
+    'BwmSource',
+    'ObservationRef',
+    'RecordingObservations',
+    'frame_from_bwm_metadata',
+    'prepare_bwm_recording',
+    'prepare_recording',
 ]
 
 COORDINATE_CONVENTION = 'ibl-mlapdv-um'
@@ -43,7 +49,8 @@ class ObservationRef:
             if not isinstance(value, str) or not value:
                 raise ValueError('observation source identity must contain nonempty strings')
         if (
-            not isinstance(self.manifest_sha256, str) or len(self.manifest_sha256) != 64
+            not isinstance(self.manifest_sha256, str)
+            or len(self.manifest_sha256) != 64
             or any(char not in '0123456789abcdef' for char in self.manifest_sha256)
         ):
             raise ValueError('observation identity requires a lowercase manifest SHA-256')
@@ -129,8 +136,12 @@ def prepare_recording(metadata, *, coordinate_convention, object_id=None):
 
     def reference(kind, identity):
         return ObservationRef(
-            metadata.dataset_name, metadata.dataset_version, metadata.manifest_sha256,
-            metadata.pid, kind, _source_id(identity),
+            metadata.dataset_name,
+            metadata.dataset_version,
+            metadata.manifest_sha256,
+            metadata.pid,
+            kind,
+            _source_id(identity),
         )
 
     positions = {}
@@ -146,7 +157,9 @@ def prepare_recording(metadata, *, coordinate_convention, object_id=None):
         refs.append(reference('channel', identity))
         coordinates.append(position)
     channels = RecordingObservations(
-        tuple(refs), np.asarray(coordinates).reshape(-1, 3), 'supplied channel location',
+        tuple(refs),
+        np.asarray(coordinates).reshape(-1, 3),
+        'supplied channel location',
     )
     refs, coordinates = [], []
     for row in unit_rows:
@@ -167,7 +180,9 @@ def prepare_recording(metadata, *, coordinate_convention, object_id=None):
             raise ValueError('cluster channel association is absent from this insertion')
         coordinates.append(positions[identity])
     clusters = RecordingObservations(
-        tuple(refs), np.asarray(coordinates).reshape(-1, 3), 'assigned channel location',
+        tuple(refs),
+        np.asarray(coordinates).reshape(-1, 3),
+        'assigned channel location',
     )
     return BwmRecording(metadata, channels, clusters, coordinate_convention, object_id)
 
@@ -183,17 +198,125 @@ def _table_provenance(table):
     return provenance
 
 
-def prepare_bwm_recording(recording, *, frame):
+def _prepared_metadata(metadata):
+    """Snapshot the optional shared contract without importing a source reader."""
+    shared = getattr(metadata, 'metadata', None)
+    if shared is None:
+        return None
+    if hasattr(shared, 'model_dump'):
+        shared = shared.model_dump(mode='json')
+    if not isinstance(shared, dict):
+        raise ValueError('prepared recording metadata must be a mapping or metadata model')
+    expected = {
+        'provider': 'ibl',
+        'dataset_name': metadata.dataset_name,
+        'dataset_version': metadata.dataset_version,
+        'manifest_sha256': metadata.manifest_sha256,
+        'recording_id': metadata.pid,
+        'session_id': metadata.eid,
+    }
+    if any(shared.get(key) != value for key, value in expected.items()):
+        raise ValueError('prepared recording metadata identity disagrees with source recording')
+    return deepcopy(shared)
+
+
+def _channel_declarations(shared):
+    coordinates = shared.get('coordinates', ())
+    if not isinstance(coordinates, (tuple, list)):
+        raise ValueError('prepared coordinates must be a sequence of declarations')
+    declarations = []
+    for declaration in coordinates:
+        if not isinstance(declaration, Mapping):
+            raise ValueError('prepared coordinate declarations must be mappings')
+        columns = declaration.get('columns', ())
+        if not isinstance(columns, (tuple, list)):
+            raise ValueError('prepared coordinate columns must be a sequence')
+        if declaration.get('table') == 'channels' and any(
+            column in ('mlapdv_x', 'mlapdv_y', 'mlapdv_z') for column in columns
+        ):
+            declarations.append(declaration)
+    return declarations
+
+
+def frame_from_bwm_metadata(recording):
+    """Resolve only a reviewed, exactly supported producer frame declaration.
+
+    This accepts no transforms or semantic aliases. Legacy source schemas without
+    declarations still require a separately reviewed frame override. Frame review
+    never implies source-value or insertion-alignment validation.
+    """
+    if not isinstance(recording, BwmRecording):
+        raise ValueError('recording must be a prepared BwmRecording')
+    shared = _prepared_metadata(recording.metadata)
+    declarations = _channel_declarations(shared) if shared is not None else []
+    if len(declarations) != 1:
+        raise ValueError(
+            'one reviewed source channel frame is required; supply a reviewed legacy '
+            'frame only when source declarations are absent'
+        )
+    declaration = declarations[0]
+    declared = declaration.get('frame')
+    if not isinstance(declared, Mapping):
+        raise ValueError('source channel coordinate frame is missing')
+    expected = {
+        'unit': 'um',
+        'origin': 'bregma',
+        'reference': 'allen-ccf-2017',
+        'coordinate_convention': COORDINATE_CONVENTION,
+    }
+    if (
+        tuple(declaration.get('columns', ())) != ('mlapdv_x', 'mlapdv_y', 'mlapdv_z')
+        or tuple(declared.get('axes', ())) != ('ML', 'AP', 'DV')
+        or tuple(declared.get('positive_directions', ())) != ('right', 'anterior', 'dorsal')
+        or any(declared.get(key) != value for key, value in expected.items())
+        or declared.get('reference_version') not in (None, '2017')
+        or declared.get('species') not in (None, 'Mus musculus')
+    ):
+        raise ValueError('source coordinate frame does not exactly match the supported IBL frame')
+    evidence = declaration.get('frame_evidence')
+    if not isinstance(evidence, Mapping) or evidence.get('status') != 'passed':
+        raise ValueError('source coordinate frame requires passed declaration evidence')
+    references = evidence.get('references')
+    if not isinstance(references, (tuple, list)) or not references:
+        raise ValueError('source frame review requires evidence references')
+    for reference in references:
+        if not isinstance(reference, Mapping) or any(
+            not isinstance(reference.get(key), str) or not reference[key].strip()
+            for key in ('uri', 'description')
+        ):
+            raise ValueError('source frame evidence references require URI and description')
+    return WorldFrame(
+        'allen-ccf-2017',
+        provenance={
+            'verification': {
+                'method': 'Sealed producer coordinate declaration with passed frame review',
+                'evidence': '; '.join(
+                    ref['uri'] + ': ' + ref['description'] for ref in references
+                ),
+            },
+            'source_manifest_sha256': recording.metadata.manifest_sha256,
+            'source_insertion_ids': [recording.pid],
+            'prepared_coordinate_declaration': declaration,
+            'source_validation': shared.get('source_validation', {'status': 'unknown'}),
+        },
+    )
+
+
+def prepare_bwm_recording(recording, *, frame=None):
     """Bridge detached BWM observations to the viewer's generic payload contract.
 
-    ``frame`` requires reviewed evidence for the source coordinate convention
-    and atlas reference. This identifies the frame, not the quality of individual
-    insertion alignment. Metadata integrity and signal validation remain separate.
+    An explicit ``frame`` requires reviewed evidence for the source coordinate
+    convention and atlas reference. Without one, only a passed, exact producer
+    declaration can resolve the frame. Legacy missing declarations still fail.
+    This identifies the frame, not the quality of individual insertion alignment.
+    Metadata integrity and signal validation remain separate.
     A source_manifest_sha256 provenance scope, when supplied, must match this release.
     No source data is loaded or scientific source validation performed here.
     """
     if not isinstance(recording, BwmRecording):
         raise ValueError('recording must be a prepared BwmRecording')
+    if frame is None:
+        frame = frame_from_bwm_metadata(recording)
     if not isinstance(frame, WorldFrame):
         raise ValueError('frame must be a WorldFrame with verified source-frame evidence')
     frame.require_verified()
@@ -203,6 +326,11 @@ def prepare_bwm_recording(recording, *, frame):
     ):
         raise ValueError('BWM and verified frame coordinate conventions disagree')
     metadata = recording.metadata
+    shared_metadata = _prepared_metadata(metadata)
+    if shared_metadata is not None and _channel_declarations(shared_metadata):
+        source_frame = frame_from_bwm_metadata(recording)
+        if source_frame != frame:
+            raise ValueError('explicit viewer frame disagrees with source coordinate declaration')
     declared_manifest = frame.provenance.get('source_manifest_sha256')
     if declared_manifest is not None and declared_manifest != metadata.manifest_sha256:
         raise ValueError('frame evidence source manifest does not match the recording release')
@@ -212,14 +340,16 @@ def prepare_bwm_recording(recording, *, frame):
         or metadata.pid not in declared_insertions
     ):
         raise ValueError('frame evidence insertion scope does not include this recording')
-    source = SourceKey('ibl', metadata.dataset_name, metadata.dataset_version,
-                       metadata.manifest_sha256)
+    source = SourceKey(
+        'ibl', metadata.dataset_name, metadata.dataset_version, metadata.manifest_sha256
+    )
     # The integration object retains mutable detached metadata tables. Reject a
     # table/ref disagreement instead of relabeling existing observations.
     canonical = prepare_recording(metadata, coordinate_convention=recording.coordinate_convention)
     payloads = {}
     for name, kind, table in (
-        ('channels', Channels, metadata.channels), ('clusters', Clusters, metadata.units),
+        ('channels', Channels, metadata.channels),
+        ('clusters', Clusters, metadata.units),
     ):
         observations = getattr(recording, name)
         expected = getattr(canonical, name)
@@ -229,8 +359,10 @@ def prepare_bwm_recording(recording, *, frame):
             or observations.position_meaning != expected.position_meaning
         ):
             raise ValueError(f'{name} retained observations disagree with source metadata')
-        keys = tuple(SourceObservationKey(source, metadata.pid, name, ref.source_id)
-                     for ref in observations.refs)
+        keys = tuple(
+            SourceObservationKey(source, metadata.pid, name, ref.source_id)
+            for ref in observations.refs
+        )
         payloads[name] = kind(
             ids=tuple(ref.source_id for ref in observations.refs),
             positions_um=observations.positions_um,
@@ -239,16 +371,25 @@ def prepare_bwm_recording(recording, *, frame):
             provenance={
                 'position_meaning': observations.position_meaning,
                 'source_metadata': _table_provenance(table),
+                'prepared_recording_metadata': shared_metadata,
                 'coordinate_assertion': recording.coordinate_convention,
                 'frame_evidence': frame.provenance,
             },
         )
     return Recording(
-        source=source, insertion_id=metadata.pid, session_id=metadata.eid,
-        channels=payloads['channels'], clusters=payloads['clusters'],
+        source=source,
+        insertion_id=metadata.pid,
+        session_id=metadata.eid,
+        channels=payloads['channels'],
+        clusters=payloads['clusters'],
         provenance={
             'manifest_sha256': metadata.manifest_sha256,
-            'source_validation_status': 'unknown',
+            'source_validation_status': (
+                shared_metadata.get('source_validation', {}).get('status', 'unknown')
+                if shared_metadata is not None
+                else 'unknown'
+            ),
+            'prepared_recording_metadata': shared_metadata,
             'signal_validation': 'not_requested',
             'frame_evidence': frame.provenance,
         },
@@ -307,7 +448,9 @@ class BwmSource:
             object_id = matches[0]
             metadata = self.workspace.bwm_recording(object_id)
         return prepare_recording(
-            metadata, coordinate_convention=self.coordinate_convention, object_id=object_id,
+            metadata,
+            coordinate_convention=self.coordinate_convention,
+            object_id=object_id,
         )
 
     def spikes(self, recording, *, requirements):
@@ -316,8 +459,10 @@ class BwmSource:
             raise ValueError('spike access requires a recording from a registered workspace')
         metadata = self.workspace.bwm_recording(recording.object_id)
         if recording.key != (
-            metadata.dataset_name, metadata.dataset_version,
-            metadata.manifest_sha256, metadata.pid,
+            metadata.dataset_name,
+            metadata.dataset_version,
+            metadata.manifest_sha256,
+            metadata.pid,
         ):
             raise ValueError('registered recording identity changed since geometry preparation')
         spikes = self.workspace.spikes(recording.object_id, requirements=requirements)
