@@ -363,6 +363,7 @@ def main() -> int:
         ui_scale=args.ui_scale,
         enable_hover=args.hover,
         enable_interaction=True,
+        fit_workarea=args.offscreen is None,
     ) as viewer:
         finish_review(viewer, args, 'D070 linked atlas review')
     return 0

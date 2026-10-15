@@ -369,6 +369,7 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
             'height': 2000,
             'ui_scale': 1.5,
             'enable_interaction': True,
+            'fit_workarea': True,
             'enable_hover': False,
         },
     )
