@@ -93,6 +93,7 @@ def test_reentry_geometry_has_a_later_segment_inside_start_marker():
         ('white_path_pixels_inside_point', 1, 'crosses a marker'),
         ('white_path_pixels_outside_point', 0, 'erased the external path'),
         ('pink_pixels_after_nearer_mesh', 1, 'through nearer opaque mesh'),
+        ('white_path_pixels_after_nearer_mesh', 1, 'path appears through nearer opaque mesh'),
         ('cyan_pixels_after_nearer_mesh', 0, 'does not cover every marker'),
         ('cyan_pixels_after_nearer_mesh', 499, 'does not cover every marker'),
     ],
@@ -106,6 +107,7 @@ def test_gap_assertions_reject_each_render_failure(field, value, message):
         white_path_pixels_outside_point=100,
         white_path_pixels_total=100,
         pink_pixels_after_nearer_mesh=0,
+        white_path_pixels_after_nearer_mesh=0,
         cyan_pixels_after_nearer_mesh=500,
     )
     assert_gap_pixels(case)
@@ -123,6 +125,7 @@ def test_overlapping_endpoint_gaps_require_short_path_to_disappear():
         white_path_pixels_outside_point=0,
         white_path_pixels_total=0,
         pink_pixels_after_nearer_mesh=0,
+        white_path_pixels_after_nearer_mesh=0,
         cyan_pixels_after_nearer_mesh=500,
     )
     assert_gap_pixels(case)
