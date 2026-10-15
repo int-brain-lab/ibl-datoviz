@@ -32,6 +32,8 @@ from .payloads import WorldFrame
 from .presentation import region_presentation, scalar_colors
 from .region_browser import RegionBrowserSidebar
 from .region_selector_gui import RegionSelectorGui, selector_from_tree, signed_selection
+from .regional_quantities import RegionQuantityRegistry
+from .scientific_picking import ScientificPicking
 from .selection import (
     mesh_ids_from_keys,
     probe_selected_ids,
@@ -82,6 +84,31 @@ class ProbeUpload(NamedTuple):
 class AtlasViewer:
     """Own one Datoviz scene displaying an immutable atlas mesh pack."""
 
+    def __new__(cls, *args, layout='3d', **kwargs):
+        """Allocate one viewer using the requested existing layout implementation."""
+        if cls is AtlasViewer and layout == 'linked':
+            from .linked_atlas import LinkedAtlasNavigator  # noqa: PLC0415
+
+            return object.__new__(LinkedAtlasNavigator)
+        return object.__new__(cls)
+
+    @staticmethod
+    def _resolve_atlas(mesh, atlas, catalog):
+        if atlas is not None:
+            if mesh is not None:
+                raise TypeError('provide either mesh or atlas, not both')
+            if isinstance(atlas, AtlasMesh):
+                mesh = atlas
+            elif isinstance(atlas, MaterializedAtlasAssets):
+                mesh = AtlasMesh.from_geometry(atlas.geometry)
+                if catalog is None:
+                    catalog = atlas.regions
+            else:
+                raise TypeError('atlas must be AtlasMesh or verified MaterializedAtlasAssets')
+        if not isinstance(mesh, AtlasMesh):
+            raise TypeError('viewer requires an AtlasMesh or verified atlas assets')
+        return mesh, catalog
+
     def __init__(  # noqa: PLR0912, PLR0915
         self,
         mesh: AtlasMesh | None = None,
@@ -112,23 +139,12 @@ class AtlasViewer:
         fit_workarea: bool = False,
         datoviz: ModuleType | None = None,
     ) -> None:
-        if layout != '3d':
-            raise ValueError(
-                'scientific layers currently support layout="3d"; linked layout is later'
-            )
-        if atlas is not None:
-            if mesh is not None:
-                raise TypeError('provide either mesh or atlas, not both')
-            if isinstance(atlas, AtlasMesh):
-                mesh = atlas
-            elif isinstance(atlas, MaterializedAtlasAssets):
-                mesh = AtlasMesh.from_geometry(atlas.geometry)
-                if catalog is None:
-                    catalog = atlas.regions
-            else:
-                raise TypeError('atlas must be AtlasMesh or verified MaterializedAtlasAssets')
-        if not isinstance(mesh, AtlasMesh):
-            raise TypeError('viewer requires an AtlasMesh or verified atlas assets')
+        if layout not in ('3d', 'linked'):
+            raise ValueError('layout must be 3d or linked')
+        if layout == 'linked' and not hasattr(self, 'slice_source'):
+            raise ValueError('linked layout requires the linked slice implementation')
+        mesh, catalog = self._resolve_atlas(mesh, atlas, catalog)
+        self.layout = layout
         if anatomy is not None:
             anatomy_presentation = anatomy
             if anatomy == 'major' and not anatomical_context:
@@ -247,9 +263,15 @@ class AtlasViewer:
         self.selection = SelectionController(self)
         self.anatomy = AnatomyController(self)
         self.camera = CameraController(self)
+        from .slice_controller import SliceController  # noqa: PLC0415
+
+        self.slices = SliceController(self)
         self.tables = ObservationTables(self)
+        self.picking = ScientificPicking(self, external_blockers=self._scientific_query_blockers)
+        self.native_query_results = ()
+        self._regional_quantities = RegionQuantityRegistry(self)
         self._layer_registry = LayerRegistry(
-            self, before_mutation=self.selection._check_mutation,
+            self, before_mutation=self._before_layer_mutation,
             on_remove=self.selection._removed, validate_frame=self._validate_layer_frame,
         )
         try:
@@ -285,6 +307,37 @@ class AtlasViewer:
             # Avoid virtual dispatch into a partially initialized subclass.
             AtlasViewer.close(self)
             raise
+
+    def _invalidate_picking(self):
+        picking = getattr(self, 'picking', None)
+        if picking is not None:
+            picking.invalidate()
+
+    def _before_layer_mutation(self):
+        self.selection._check_mutation()
+        self._invalidate_picking()
+
+    def _scientific_query_blockers(self):
+        """Keep unsupported opaque coverage from being silently picked through."""
+        reasons = []
+        if self.probe is not None or self.probe_sites is not None:
+            reasons.append('legacy probe visuals have no exact observation query contract')
+        if self._insertions is not None and any(
+            item.visible for item in self._insertions._insertions.values()
+        ):
+            reasons.append('legacy insertion paths cannot compose frontmost queries')
+        if getattr(self, 'volume', None) is not None and self.volume_opacity > 0:
+            reasons.append('volume coverage cannot compose exact observation queries')
+        planes = getattr(self, '_slice_planes', None)
+        if planes is not None and planes.visible_axes:
+            reasons.append('physical slice planes cannot compose exact observation queries')
+        return tuple(reasons)
+
+    def add_region_values(self, payload, *, name='', mapping_reduction):
+        """Own one prepared regional quantity on the anatomy mesh."""
+        return self._regional_quantities.add(
+            payload, name=name, mapping_reduction=mapping_reduction
+        )
 
     def _validate_layer_frame(self, frame):
         frame.require_verified()
@@ -387,6 +440,7 @@ class AtlasViewer:
     def set_camera_angles(self, angles: Sequence[float]) -> None:
         """Set Euler angles; an active view retains its original reset pose."""
         self._require_open()
+        self._invalidate_picking()
         self.camera_angles = self._validated_camera_angles(angles)
         if self.arcball is not None:
             native = (ctypes.c_float * 3)(*self.camera_angles)
@@ -456,13 +510,14 @@ class AtlasViewer:
                 ),
                 'source hemisphere fragment coverage',
             )
-        if self.enable_interaction:
-            self._check(
-                self.dvz.dvz_visual_set_query_capabilities(
-                    self.mesh, self.dvz.DVZ_QUERY_CAPABILITY_FACE
-                ),
-                'mesh picking capability',
-            )
+        self._check(
+            self.dvz.dvz_visual_set_query_capabilities(
+                self.mesh,
+                getattr(self.dvz, 'DVZ_QUERY_CAPABILITY_ITEM', 0)
+                | (self.dvz.DVZ_QUERY_CAPABILITY_FACE if self.enable_interaction else 0),
+            ),
+            'mesh picking capability',
+        )
         self.link_channel = self.dvz.dvz_link_channel(self.scene, b'atlas-region')
         self._check(
             self.dvz.dvz_visual_set_target_link_keys(
@@ -680,6 +735,7 @@ class AtlasViewer:
             ) from rollback_error
 
     def _commit_surface_style(self, candidate, *, opacity=None):
+        self._invalidate_picking()
         snapshot = self._surface_transaction_snapshot()
         self._surface_style = candidate
         if opacity is not None:
@@ -709,6 +765,7 @@ class AtlasViewer:
         selected overlay follows atlas explosion.
         """
         self._require_open()
+        self._invalidate_picking()
         surfaces = tuple(surfaces)
         if any(
             not isinstance(s, AtlasContextSurface)
@@ -743,6 +800,7 @@ class AtlasViewer:
     def set_context_opacity(self, opacity):
         """Set coarse context opacity, preserving selection and authored colors."""
         self._require_open()
+        self._invalidate_picking()
         if not np.isfinite(opacity) or not 0 <= opacity <= 1:
             raise ValueError('context opacity must be between zero and one')
         snapshot = self._surface_transaction_snapshot()
@@ -756,6 +814,7 @@ class AtlasViewer:
     def set_anatomy_presentation(self, presentation):
         """Choose actual major surfaces or the detailed atlas geometry."""
         self._require_open()
+        self._invalidate_picking()
         if presentation not in ('major', 'detailed'):
             raise ValueError('anatomy presentation must be major or detailed')
         snapshot = self._surface_transaction_snapshot()
@@ -807,6 +866,7 @@ class AtlasViewer:
     def set_selection_presentation(self, mode):
         """Choose signed focus, isolation, full atlas, or legacy bilateral dimming."""
         self._require_open()
+        self._invalidate_picking()
         if mode not in ('legacy', 'focus', 'isolate', 'all'):
             raise ValueError('selection presentation must be legacy, focus, isolate or all')
         if mode == self.selection_presentation:
@@ -826,6 +886,7 @@ class AtlasViewer:
     def set_selection_envelope(self, envelope: AtlasEnvelope | None):
         """Attach a prepared neutral context shell, excluded from scientific picking."""
         self._require_open()
+        self._invalidate_picking()
         if envelope is not None and (
             not isinstance(envelope, AtlasEnvelope)
             or envelope.reference_space != self.mesh_data.reference_space
@@ -861,7 +922,9 @@ class AtlasViewer:
                     'context shell indices',
                 )
                 self._check(
-                    self.dvz.dvz_visual_set_query_capabilities(candidate, 0),
+                    self.dvz.dvz_visual_set_query_capabilities(
+                        candidate, getattr(self.dvz, 'DVZ_QUERY_CAPABILITY_ITEM', 0)
+                    ),
                     'nonpickable context shell',
                 )
                 self._check(
@@ -924,6 +987,7 @@ class AtlasViewer:
     def set_region_visible(self, region_id, visible, *, hemisphere=None):
         """Show/hide signed mapped faces; optional hemisphere expands an absolute ID."""
         self._require_open()
+        self._invalidate_picking()
         candidate = self._surface_style.copy()
         candidate.set_region(self.mapping, region_id, hemisphere=hemisphere, visible=visible)
         self._commit_surface_style(candidate)
@@ -931,6 +995,7 @@ class AtlasViewer:
     def set_surface_visible(self, visible):
         """Toggle the whole surface while retaining region and hemisphere styles."""
         self._require_open()
+        self._invalidate_picking()
         if not isinstance(visible, (bool, np.bool_)):
             raise ValueError('surface visibility must be boolean')
         snapshot = self._surface_transaction_snapshot()
@@ -953,6 +1018,7 @@ class AtlasViewer:
     def set_surface_opacity(self, opacity):
         """Update surface opacity without changing geometry, camera or selection."""
         self._require_open()
+        self._invalidate_picking()
         if not np.isfinite(opacity) or not 0 <= opacity <= 1:
             raise ValueError('surface opacity must be finite and between zero and one')
         self._commit_surface_style(self._surface_style.copy(), opacity=float(opacity))
@@ -960,6 +1026,7 @@ class AtlasViewer:
     def reset_surface_style(self):
         """Reset all region overrides and show both hemispheres, retaining the camera."""
         self._require_open()
+        self._invalidate_picking()
         self._commit_surface_style(SurfaceStyle(self._surface_mesh))
 
     def show_region(self, region_id, *, hemisphere=None):
@@ -973,6 +1040,7 @@ class AtlasViewer:
     def set_region_color(self, region_id, color, *, hemisphere=None):
         """Override 3-D region RGB(A); scientific values and table colors stay intact."""
         self._require_open()
+        self._invalidate_picking()
         candidate = self._surface_style.copy()
         candidate.set_region(self.mapping, region_id, hemisphere=hemisphere, color=color)
         self._commit_surface_style(candidate)
@@ -980,6 +1048,7 @@ class AtlasViewer:
     def set_region_opacity(self, region_id, opacity, *, hemisphere=None):
         """Multiply authored region alpha, preserving it through hover/selection."""
         self._require_open()
+        self._invalidate_picking()
         candidate = self._surface_style.copy()
         candidate.set_region(self.mapping, region_id, hemisphere=hemisphere, opacity=opacity)
         self._commit_surface_style(candidate)
@@ -987,6 +1056,7 @@ class AtlasViewer:
     def reset_region_style(self, region_id, *, hemisphere=None):
         """Reset region overrides in the current mapping, preserving hemisphere controls."""
         self._require_open()
+        self._invalidate_picking()
         candidate = self._surface_style.copy()
         candidate.reset_region(self.mapping, region_id, hemisphere=hemisphere)
         self._commit_surface_style(candidate)
@@ -994,6 +1064,7 @@ class AtlasViewer:
     def set_hemisphere_visible(self, hemisphere, visible):
         """Filter source-bound left/right presentations without changing the atlas mesh."""
         self._require_open()
+        self._invalidate_picking()
         candidate = self._surface_style.copy()
         candidate.set_hemisphere_visible(hemisphere, visible)
         self._commit_surface_style(candidate)
@@ -1001,6 +1072,7 @@ class AtlasViewer:
     def set_hemisphere(self, hemisphere):
         """Show left, right or both anatomical hemispheres."""
         self._require_open()
+        self._invalidate_picking()
         if hemisphere not in ('left', 'right', 'both'):
             raise ValueError('hemisphere must be left, right or both')
         candidate = self._surface_style.copy()
@@ -1016,6 +1088,7 @@ class AtlasViewer:
     def set_explode(self, amount: float) -> None:
         """Explode mesh components along their canonical centroid displacement vectors."""
         self._require_open()
+        self._invalidate_picking()
         if not np.isfinite(amount) or not 0 <= amount <= 1:
             raise ValueError('explode must be between zero and one')
         amount = float(amount)
@@ -1053,6 +1126,7 @@ class AtlasViewer:
     ) -> None:
         """Change presentation colors and link identity transactionally."""
         self._require_open()
+        self._invalidate_picking()
         model = AtlasTreeModel.from_catalog(self.catalog, mapping) if self.catalog else None
         effective_palette = self.palette if palette is None else palette
         if model is not None and palette is None:
@@ -1170,6 +1244,18 @@ class AtlasViewer:
         mapping_reduction: Literal['weighted_mean'],
     ) -> None:
         """Color surfaces, explicitly reducing mapping collisions by weighted mean."""
+        registry = getattr(self, '_regional_quantities', None)
+        if registry is not None and registry.handle is not None:
+            raise ValueError('an owned regional quantity is attached; remove it first')
+        self._set_owned_region_data(
+            data, value_range=value_range, color_scheme=color_scheme,
+            opacity=opacity, mapping_reduction=mapping_reduction,
+        )
+
+    def _set_owned_region_data(
+        self, data, *, value_range, color_scheme, opacity, mapping_reduction
+    ):
+        """Reuse one scalar transaction, including restoring canonical anatomy."""
         self._require_open()
         if self.catalog is None:
             raise ValueError('linked region data requires an atlas region catalog')
@@ -1179,6 +1265,10 @@ class AtlasViewer:
             raise ValueError(f'unknown region mapping reduction: {mapping_reduction}')
         if opacity is not None and (not np.isfinite(opacity) or not 0 <= opacity <= 1):
             raise ValueError('region opacity must be between zero and one')
+        self._invalidate_picking()
+        if data is None:
+            self._clear_owned_region_data(color_scheme, opacity)
+            return
         prepared = self._region_value_view(data, self.mapping, value_range, color_scheme, opacity)
         surface_colors = self._region_surface_colors(
             self.mapping, prepared.region_ids, prepared.colors
@@ -1213,6 +1303,38 @@ class AtlasViewer:
                 candidate.values = self._selector_values(candidate)
                 candidate._repair_focus()
                 self._selector_gui.value_name = data.value_name
+                self._selector_gui.commit(candidate)
+                self._selector_model = candidate
+        except Exception:
+            if not self._closed:
+                self._restore_surface_transaction(snapshot, widgets)
+            raise
+
+    def _clear_owned_region_data(self, color_scheme, opacity):
+        """Restore canonical anatomy and clear its scalar widgets transactionally."""
+        snapshot = self._surface_transaction_snapshot()
+        widgets = []
+        try:
+            self.region_data = None
+            self._region_value_range = None
+            self._region_color_scheme = color_scheme
+            self._region_opacity = opacity
+            colors = self._surface_colors(self.mapping, self.palette)
+            self._check(
+                self.dvz.dvz_visual_set_data(self.mesh, 'color', colors),
+                'canonical anatomy color restore',
+            )
+            self._invalidate_surface_emphasis_cache(colors)
+            self._last_surface_emphasis = None
+            self._update_surface_emphasis()
+            if self.gui is not None:
+                widgets.append('region_table')
+                self._replace_region_table()
+            if self._selector_gui is not None:
+                candidate = self._selector_gui.candidate()
+                candidate.values = self._selector_values(candidate)
+                candidate._repair_focus()
+                self._selector_gui.value_name = 'Value'
                 self._selector_gui.commit(candidate)
                 self._selector_model = candidate
         except Exception:
@@ -1317,6 +1439,7 @@ class AtlasViewer:
     ) -> None:
         """Add or replace a probe trajectory in atlas world micrometres."""
         self._require_open()
+        self._invalidate_picking()
         positions = self.mesh_data.normalize_points(points_um)
         if len(positions) < 2:
             raise ValueError('a probe path needs at least two points')
@@ -1499,6 +1622,7 @@ class AtlasViewer:
     ) -> None:
         """Display a typed probe payload and link its Allen labels to atlas presentation."""
         self._require_open()
+        self._invalidate_picking()
         if self.catalog is None:
             raise ValueError('linked probe data requires an atlas region catalog')
         mapped_ids = self._mapped_probe_region_ids(data)
@@ -1604,6 +1728,7 @@ class AtlasViewer:
     def set_selected_region_ids(self, region_ids: Sequence[int]) -> None:
         """Select signed or logical atlas regions and highlight their mapped descendants."""
         self._require_open()
+        self._invalidate_picking()
         selected = tuple(dict.fromkeys(int(region_id) for region_id in region_ids if region_id))
         if self.tree_model is not None:
             available = {abs(int(region_id)) for region_id in self.tree_model.region_ids}
@@ -1894,7 +2019,7 @@ class AtlasViewer:
             self.set_explode(self._explode_control.value)
         self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
         if self.dvz.dvz_gui_button(gui, b'Reset view') and self.arcball is not None:
-            self._check(self.dvz.dvz_arcball_reset(self.arcball), 'camera reset')
+            self.camera.reset()
         if self.anatomy_presentation == 'detailed' and self.selection_presentation != 'legacy':
             modes = ('focus', 'isolate', 'all')
             current = ctypes.c_int(modes.index(self.selection_presentation))
@@ -1915,6 +2040,10 @@ class AtlasViewer:
 
     def _process_gui_frame(self) -> None:
         """Apply owner-thread work independently of visible controls or windows."""
+        if getattr(self, 'picking', None) is not None and hasattr(
+            self.dvz, 'dvz_scene_poll_query'
+        ):
+            self.native_query_results = self.picking.poll()
 
     def _draw_extra_gui(self, _gui) -> None:
         """Draw optional controls supplied by specialized viewers."""
@@ -2370,6 +2499,8 @@ class AtlasViewer:
             raise RuntimeError('viewer operations require its owning thread')
         if getattr(getattr(self, 'selection', None), '_notifying', False):
             raise RuntimeError('selection callbacks cannot mutate the viewer reentrantly')
+        if getattr(getattr(self, 'slices', None), '_notifying', False):
+            raise RuntimeError('cursor callbacks cannot mutate the viewer reentrantly')
 
     def close(self) -> None:  # noqa: PLR0912 - explicit native teardown order.
         """Release scientific layers, then destroy app and scene."""
@@ -2382,10 +2513,16 @@ class AtlasViewer:
                 self.dvz.dvz_app_stop(self.app)
             return
         datoviz = getattr(self, 'dvz', None)
+        if getattr(self, 'slices', None) is not None:
+            self.slices._close()
         if getattr(self, 'tables', None) is not None:
             self.tables._close()
+        if getattr(self, '_regional_quantities', None) is not None:
+            self._regional_quantities._close()
         if getattr(self, '_layer_registry', None) is not None:
             self._layer_registry.close()
+        if getattr(self, 'picking', None) is not None:
+            self.picking.close()
         if getattr(self, 'selection', None) is not None:
             self.selection._close()
         if getattr(self, '_insertions', None) is not None:

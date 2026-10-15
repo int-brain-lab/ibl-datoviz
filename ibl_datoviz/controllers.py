@@ -247,6 +247,7 @@ class CameraController:
     def reset(self):
         """Restore the same baseline as the Reset view button and double-click."""
         self.viewer._require_open()
+        self.viewer._invalidate_picking()
         if self.viewer.arcball is not None:
             self.viewer._check(
                 self.viewer.dvz.dvz_arcball_reset(self.viewer.arcball), 'camera reset'

@@ -82,9 +82,25 @@ def _layer_controls(viewer, gui, layer, key):
         viewer.selection.set_observations(other + chosen)
 
 
+def _quantity_controls(viewer, gui, quantity):
+    dvz = viewer.dvz
+    dvz.dvz_gui_separator_text(gui, quantity.name.encode())
+    visible = ctypes.c_bool(quantity.visible)
+    if dvz.dvz_gui_checkbox(gui, b'Regional quantity', ctypes.byref(visible)):
+        quantity.set_visible(visible.value)
+    _text(viewer, gui, f'{quantity.payload.name} [{quantity.payload.units}]')
+    _text(viewer, gui, 'Mapping reduction: weighted mean; colors apply to detailed anatomy')
+    values = quantity.payload.values
+    _text(viewer, gui, f'{int(np.isfinite(values).sum())}/{len(values)} source values available')
+    if dvz.dvz_gui_button(gui, b'Remove regional quantity'):
+        quantity.remove()
+
+
 def draw_layers_gui(viewer, gui):
     """Draw retained layer visibility, style and exact-ID selection without I/O."""
-    if not viewer.layers:
+    registry = getattr(viewer, '_regional_quantities', None)
+    quantity = registry.handle if registry is not None else None
+    if not viewer.layers and quantity is None:
         return
     dvz = viewer.dvz
     dvz.dvz_gui_dock_window_once(
@@ -95,6 +111,14 @@ def draw_layers_gui(viewer, gui):
         if not visible:
             return
         _text(viewer, gui, 'Counts: positioned / complete observations')
+        _text(viewer, gui, 'Right-click: select an observation. Left-click: select anatomy.')
+        picking = getattr(viewer, 'picking', None)
+        if picking is not None:
+            reason = picking.unavailable_reason
+            if reason:
+                _text(viewer, gui, 'Scene observation selection unavailable: ' + reason)
+        if quantity is not None:
+            _quantity_controls(viewer, gui, quantity)
         child_layers = set()
         for index, group in enumerate(viewer.recordings):
             dvz.dvz_gui_separator_text(gui, group.name.encode())

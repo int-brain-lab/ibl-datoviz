@@ -26,6 +26,7 @@ from .payloads import (
 )
 from .points import PointCollection, PointCollectionVisual
 from .probe import ProbeSites
+from .regional_quantities import RegionValues
 from .regions import AtlasRegionValues
 from .sampled_plane import SampledPlane, SampledPlaneVisual
 from .viewer import AtlasViewer
@@ -40,6 +41,7 @@ __all__ = [
     'AtlasCursor',
     'AtlasSliceComposer',
     'AtlasRegionValues',
+    'RegionValues',
     'AtlasTreeModel',
     'AtlasViewer',
     'LinkedAtlasNavigator',

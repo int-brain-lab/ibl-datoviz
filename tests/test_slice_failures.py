@@ -74,3 +74,26 @@ def test_completed_slices_are_processed_when_sidebar_is_not_drawn():
     )
     navigator._draw_gui_frame(None)
     assert processed == [navigator.view]
+
+
+def test_posted_native_upload_failure_stops_without_destroying_inside_callback():
+    navigator = LinkedAtlasNavigator.__new__(LinkedAtlasNavigator)
+    error = RuntimeError('native upload failed')
+    navigator._closed = False
+    navigator._hovered_region_ids = ()
+    navigator.app = object()
+    stopped = []
+    navigator.dvz = SimpleNamespace(dvz_app_stop=stopped.append)
+    navigator._slice_loader = SimpleNamespace(
+        drain_ready=lambda: [SimpleNamespace(request=SliceRequest('ap', 1, 2), payload=None)]
+    )
+
+    def fail(*_):
+        raise error
+
+    navigator._upload_slice_payload = fail
+    navigator._drain_prepared_slices(None, None)
+    assert navigator._gui_callback_error is error and navigator._slice_error is error
+    assert navigator._close_pending and stopped == [navigator.app]
+    assert not navigator._closed
+    navigator._closed = True

@@ -12,6 +12,7 @@ def test_public_api_is_explicit_and_stable():
         'AtlasCursor',
         'AtlasSliceComposer',
         'AtlasRegionValues',
+        'RegionValues',
         'AtlasTreeModel',
         'AtlasViewer',
         'LinkedAtlasNavigator',

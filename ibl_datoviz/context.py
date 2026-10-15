@@ -193,9 +193,12 @@ class AnatomicalContext:
                 self._check(
                     owner.dvz.dvz_visual_set_query_capabilities(
                         visual,
-                        owner.dvz.DVZ_QUERY_CAPABILITY_FACE
-                        if owner.enable_interaction and known
-                        else 0,
+                        getattr(owner.dvz, 'DVZ_QUERY_CAPABILITY_ITEM', 0)
+                        | (
+                            owner.dvz.DVZ_QUERY_CAPABILITY_FACE
+                            if owner.enable_interaction and known
+                            else 0
+                        ),
                     ),
                     'context parent picking',
                 )

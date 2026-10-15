@@ -28,6 +28,7 @@ from .navigator import (
     step_slice_cursor,
 )
 from .slice_input import SliceInputAdapter
+from .slice_planes import SlicePlanes
 from .slice_preparation import PreparedSliceLayers, SlicePreparation, prepare_slice_layers
 from .slice_scheduler import SliceRequest, SliceScheduler
 from .viewer import AtlasViewer
@@ -97,9 +98,11 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def __init__(  # noqa: PLR0912, PLR0915
         self,
-        mesh: AtlasMesh,
+        mesh: AtlasMesh | None = None,
         volumes: AtlasVolumes | None = None,
         *,
+        atlas=None,
+        layout='linked',
         slice_source=None,
         render_volume: bool = True,
         mapping: str = 'allen',
@@ -116,6 +119,9 @@ class LinkedAtlasNavigator(AtlasViewer):
         datoviz: ModuleType | None = None,
         **kwargs,
     ) -> None:
+        if layout != 'linked':
+            raise ValueError('LinkedAtlasNavigator requires layout="linked"')
+        mesh, supplied_catalog = self._resolve_atlas(mesh, atlas, kwargs.pop('catalog', None))
         if palette is not None:
             raise ValueError('linked atlas slices require the verified catalog palette')
         if render_volume and volumes is None:
@@ -133,6 +139,14 @@ class LinkedAtlasNavigator(AtlasViewer):
         if mesh.reference_space != slice_reference:
             raise ValueError('mesh and slice grid reference spaces differ')
         catalog = volumes.regions if render_volume else slice_source.regions
+        if supplied_catalog is not None and (
+            supplied_catalog.reference_space_id != catalog.reference_space_id
+            or any(
+                tuple(supplied_catalog.physical(name)) != tuple(catalog.physical(name))
+                for name in mesh.mapping_names
+            )
+        ):
+            raise ValueError('linked layout catalog must match its slice source catalog')
         for atlas_mapping in mesh.mapping_names:
             if atlas_mapping not in catalog.mappings:
                 raise ValueError(f'mesh mapping is absent from atlas catalog: {atlas_mapping}')
@@ -220,14 +234,9 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._slice_zoom = {axis: 1.0 for axis in ('ap', 'ml', 'dv')}
         self._slice_wheel_accumulator = {axis: 0.0 for axis in ('ap', 'ml', 'dv')}
         try:
-            if slice_source is not volumes:
-                self._slice_loader = SliceScheduler(
-                    self._slice_preparation,
-                    notify=self._notify_slice_ready,
-                    max_workers=3,
-                )
             super().__init__(
                 mesh,
+                layout='linked',
                 mapping=mapping,
                 catalog=catalog,
                 width=width,
@@ -236,6 +245,13 @@ class LinkedAtlasNavigator(AtlasViewer):
                 datoviz=datoviz,
                 **kwargs,
             )
+            if slice_source is not volumes:
+                self._slice_loader = SliceScheduler(
+                    self._slice_preparation,
+                    notify=self._notify_slice_ready,
+                    max_workers=3,
+                )
+            self._slice_planes = SlicePlanes(self, slice_source, source_id=self._slice_source_id)
             self._create_slices()
             if self.render_volume:
                 self._create_anatomical_volume()
@@ -451,8 +467,10 @@ class LinkedAtlasNavigator(AtlasViewer):
             attach = self.dvz.dvz_visual_attach_desc()
             attach.controller_mode = self.dvz.DVZ_CONTROLLER_APPLY
             attach.coord_space = self.dvz.DVZ_VISUAL_COORD_DATA
-            payload = prepare_slice_layers(self.slice_composer, self._slice_request(axis))
+            request = self._slice_request(axis)
+            payload = prepare_slice_layers(self.slice_composer, request)
             anatomy_data, annotation_data = payload.anatomy, payload.annotation
+            self._slice_planes.update(axis, request, payload)
             field = self.dvz.dvz_sampled_field_from_array(
                 self.scene,
                 anatomy_data,
@@ -726,6 +744,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._upload_boundaries(
             self._boundary_visuals[axis], starts, ends, f'{axis} prepared boundaries update'
         )
+        self._slice_planes.update(axis, request, payload)
 
     def _refresh_hover_overlays(self, axes=None) -> None:
         """Update lightweight region-tint layers without recomposing base slices."""
@@ -758,9 +777,18 @@ class LinkedAtlasNavigator(AtlasViewer):
             self.dvz.dvz_view_request_frame(self.view)
             return
         for item in ready:
-            self._upload_slice_payload(item.request, item.payload)
-            if self._hovered_region_ids:
-                self._refresh_hover_overlays((item.request.axis,))
+            try:
+                self._upload_slice_payload(item.request, item.payload)
+                if self._hovered_region_ids:
+                    self._refresh_hover_overlays((item.request.axis,))
+            except Exception as error:
+                # Native post callbacks cannot propagate exceptions. Stop the
+                # frame loop and let show() release resources after it returns.
+                self._slice_error = self._gui_callback_error = error
+                self._close_pending = True
+                if getattr(self, 'app', None) is not None:
+                    self.dvz.dvz_app_stop(self.app)
+                return
         if ready:
             self._slice_error = None
             self.dvz.dvz_view_request_frame(self.view)
@@ -1055,26 +1083,48 @@ class LinkedAtlasNavigator(AtlasViewer):
         example a click in a slice) can opt in with ``select_region=True``.
         """
         self._require_open()
-        previous = self.cursor.as_index()
+        if not isinstance(cursor, AtlasCursor):
+            raise TypeError('cursor must be AtlasCursor')
+        if not isinstance(select_region, (bool, np.bool_)):
+            raise ValueError('select_region must be boolean')
         current = cursor.as_index()
+        # Validate the complete candidate before changing any retained/control state.
         for axis, value in zip(('ap', 'ml', 'dv'), current, strict=True):
             cursor.replace(axis, value, self.slice_source.grid.shape)
-            self._cursor_controls[axis].value = value
-        self.cursor = cursor
+        old_cursor = self.cursor
+        before = self.slices._snapshot()
+        snapshot = self._surface_transaction_snapshot()
+        self.selection._hold_events += 1
+        try:
+            self.cursor = cursor
+            for axis, value in zip(('ap', 'ml', 'dv'), current, strict=True):
+                self._cursor_controls[axis].value = value
+            if select_region:
+                row = cursor.region(self.slice_source, self.mapping)
+                ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
+                self._apply_selected_region_ids(
+                    ids, update_tree=True, update_table=True, clear_mesh=True
+                )
+            else:
+                changed_axes = tuple(
+                    axis
+                    for axis, previous, after in zip(
+                        ('ap', 'ml', 'dv'), old_cursor.as_index(), current, strict=True
+                    )
+                    if previous != after
+                )
+                self._refresh_slices(changed_axes)
+        except Exception:
+            self.cursor = old_cursor
+            for axis, value in zip(('ap', 'ml', 'dv'), old_cursor.as_index(), strict=True):
+                self._cursor_controls[axis].value = value
+            self._restore_linked_transaction(snapshot)
+            raise
+        finally:
+            self.selection._hold_events -= 1
         if select_region:
-            row = cursor.region(self.slice_source, self.mapping)
-            ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
-            self._apply_selected_region_ids(
-                ids, update_tree=True, update_table=True, clear_mesh=True
-            )
             self.selection._publish('regions')
-        else:
-            changed_axes = tuple(
-                axis
-                for axis, before, after in zip(('ap', 'ml', 'dv'), previous, current, strict=True)
-                if before != after
-            )
-            self._refresh_slices(changed_axes)
+        self.slices._publish(before)
 
     def set_cursor_from_slice_data(
         self, axis: str, x: float, y: float, *, select_region: bool = False
@@ -1350,6 +1400,11 @@ class LinkedAtlasNavigator(AtlasViewer):
         ):
             self.set_volume_opacity(float(self._volume_opacity_control.value))
 
+    def set_slice_plane(self, axis, *, in_3d=True):
+        """Present accepted slice pixels as paired physical planes in the 3-D panel."""
+        self._require_open()
+        self._slice_planes.show(axis, visible=in_3d)
+
     def set_slice_layers(self, *, anatomy=None, annotations=None, boundaries=None):
         """Change slice layers in the existing panels without moving the cursor."""
         self._require_open()
@@ -1426,10 +1481,21 @@ class LinkedAtlasNavigator(AtlasViewer):
         if self._slice_loader is not None:
             self._drain_prepared_slices(self.view, None)
 
+    def _draw_plane_controls(self, gui):
+        for axis in ('ap', 'ml', 'dv'):
+            control = ctypes.c_bool(axis in self._slice_planes.visible_axes)
+            if self.dvz.dvz_gui_checkbox(
+                gui, f'{axis.upper()} plane in 3-D'.encode(), ctypes.byref(control)
+            ):
+                self.slices.show_plane(axis, in_3d=control.value)
+
     def _draw_extra_gui(self, gui) -> None:
         self._draw_cursor_gui(gui)
         if self.dvz.dvz_gui_collapsing_header(gui, b'Slices and 3-D layers', 0):
             self._draw_layer_gui(gui)
+            planes = getattr(self, '_slice_planes', None)
+            if planes is not None:
+                self._draw_plane_controls(gui)
         if self.dvz.dvz_gui_collapsing_header(gui, b'Controls and orientation', 0):
             self.dvz.dvz_gui_text(gui, b'AP: ML -> right, dorsal up')
             self.dvz.dvz_gui_text(gui, b'ML: AP -> right, dorsal up')
@@ -1458,6 +1524,8 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def close(self) -> None:
         """Guard and defer shutdown before releasing slice subscriptions or workers."""
+        if not hasattr(self, '_closed'):
+            return  # Base validation failed before creating native state or workers.
         if getattr(self, '_closed', False):
             return
         # A failed constructor may have created a scheduler before base viewer
@@ -1470,6 +1538,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         if getattr(self, '_slice_loader', None) is not None:
             self._slice_loader.close()
             self._slice_loader = None
+        if getattr(self, '_slice_planes', None) is not None:
+            self._slice_planes.close()
         if getattr(self, '_slice_input', None) is not None:
             self._slice_input.close()
             self._slice_input = None
