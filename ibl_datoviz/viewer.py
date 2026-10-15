@@ -19,6 +19,7 @@ from ibl_anatomy import (
 )
 
 from .atlas import AtlasMesh
+from .context import AnatomicalContext, AtlasContextSurface
 from .envelope import AtlasEnvelope
 from .gui_data import create_probe_table, create_region_table, create_region_tree
 from .insertions import InsertionCollectionVisual
@@ -92,6 +93,9 @@ class AtlasViewer:
         selection_presentation: str = 'legacy',
         selection_envelope: AtlasEnvelope | None = None,
         surface_opacity: float = 1.0,
+        anatomy_presentation: str = 'detailed',
+        anatomical_context: Sequence[AtlasContextSurface] = (),
+        context_opacity: float = 0.12,
         ui_scale: float = 1.0,
         sidebar_width: float = 400.0,
         tree_root_acronym: str = 'grey',
@@ -100,6 +104,10 @@ class AtlasViewer:
         fit_workarea: bool = False,
         datoviz: ModuleType | None = None,
     ) -> None:
+        if anatomy_presentation not in ('major', 'detailed'):
+            raise ValueError('anatomy presentation must be major or detailed')
+        if not np.isfinite(context_opacity) or not 0 <= context_opacity <= 1:
+            raise ValueError('context opacity must be between zero and one')
         if selection_presentation not in ('legacy', 'focus', 'isolate', 'all'):
             raise ValueError('selection presentation must be legacy, focus, isolate or all')
         if not np.isfinite(selection_dim_factor) or not 0 <= selection_dim_factor <= 1:
@@ -130,6 +138,9 @@ class AtlasViewer:
         )
         self._uploaded_face_mask = self._surface_face_mask.copy()
         self._uploaded_face_mapping = mapping
+        self._anatomical_context = None
+        self.anatomy_presentation = anatomy_presentation
+        self.context_opacity = float(context_opacity)
         self._insertions = None
         self._surface_state = None
         self.mapping = mapping
@@ -203,6 +214,8 @@ class AtlasViewer:
                 raise RuntimeError('dvz_scene() failed')
             self._create_layout()
             self._create_surface()
+            if anatomical_context:
+                self.set_anatomical_context(anatomical_context)
             if selection_envelope is not None:
                 self.set_selection_envelope(selection_envelope)
             if self.enable_interaction:
@@ -404,7 +417,10 @@ class AtlasViewer:
         presentation_alpha = np.full(len(self._surface_mesh.presentations), 255, np.uint8)
         np.minimum.at(presentation_alpha, self._surface_mesh.presentation_ids, alpha)
         mask &= presentation_alpha[self._surface_mesh.face_presentation_ids] > 0
-        if include_selection and self._selection_focus_active():
+        if self.anatomy_presentation == 'major':
+            selected = self._signed_focus_ids()
+            mask &= np.isin(self._surface_mesh.face_mapping_ids(mapping), selected)
+        elif include_selection and self._selection_focus_active():
             mask &= np.isin(self._surface_mesh.face_mapping_ids(mapping), self._signed_focus_ids())
         return mask
 
@@ -472,6 +488,8 @@ class AtlasViewer:
         names = (
             'mapping',
             'selection_presentation',
+            'anatomy_presentation',
+            'context_opacity',
             '_selection_face_state',
             'palette',
             'tree_model',
@@ -591,6 +609,76 @@ class AtlasViewer:
             if not self._closed:
                 self._restore_surface_transaction(snapshot)
             raise
+
+    def set_anatomical_context(self, surfaces):
+        """Replace independently prepared major surfaces without changing selection.
+
+        Coarse clicks select their true signed source Allen parent when present
+        in the current ontology; use the Regions tree for fine mapped anatomy.
+        Context stays at original world positions while the translucent fine
+        selected overlay follows atlas explosion.
+        """
+        self._require_open()
+        surfaces = tuple(surfaces)
+        if any(
+            not isinstance(s, AtlasContextSurface)
+            or s.geometry.mesh.reference_space != self.mesh_data.reference_space
+            for s in surfaces
+        ):
+            raise ValueError('context surfaces must share the atlas reference space')
+        candidate = AnatomicalContext(self, surfaces)
+        previous = self._anatomical_context
+        try:
+            candidate.update()
+            if previous is not None:
+                for entry in previous.entries:
+                    self._check(
+                        self.dvz.dvz_visual_set_visible(entry.visual, False),
+                        'previous anatomy context hide',
+                    )
+        except Exception:
+            candidate.close()
+            if previous is not None:
+                try:
+                    previous.update(force=True)
+                except Exception as error:
+                    self.close()
+                    raise RuntimeError('context rollback failed; viewer closed') from error
+            raise
+        self._anatomical_context = candidate
+        if previous is not None:
+            previous.close()
+
+    def set_context_opacity(self, opacity):
+        """Set coarse context opacity, preserving selection and authored colors."""
+        self._require_open()
+        if not np.isfinite(opacity) or not 0 <= opacity <= 1:
+            raise ValueError('context opacity must be between zero and one')
+        snapshot = self._surface_transaction_snapshot()
+        try:
+            self.context_opacity = float(opacity)
+            self._update_anatomical_context()
+        except Exception:
+            self._restore_surface_transaction(snapshot)
+            raise
+
+    def set_anatomy_presentation(self, presentation):
+        """Choose actual major surfaces or the detailed atlas geometry."""
+        self._require_open()
+        if presentation not in ('major', 'detailed'):
+            raise ValueError('anatomy presentation must be major or detailed')
+        snapshot = self._surface_transaction_snapshot()
+        self.anatomy_presentation = presentation
+        try:
+            self._commit_surface_style(self._surface_style.copy())
+        except Exception:
+            if not self._closed:
+                self._restore_surface_transaction(snapshot)
+            raise
+
+    def _update_anatomical_context(self):
+        if self._anatomical_context is not None:
+            self._anatomical_context.update()
 
     def _selection_focus_active(self):
         return self.selection_presentation in ('focus', 'isolate') and bool(
@@ -749,6 +837,7 @@ class AtlasViewer:
             )
             self._surface_visible = bool(visible)
             self._update_selection_envelope_visibility()
+            self._update_anatomical_context()
             if not visible:
                 self._clear_surface_hover()
         except Exception:
@@ -925,11 +1014,16 @@ class AtlasViewer:
         active_mapping = self.mapping if mapping is None else mapping
         active_palette = self.palette if palette is None else palette
         if self.region_data is None:
-            return self._surface_colors(active_mapping, active_palette)
-        presentation = self._mapped_region_values(active_mapping)
-        return self._region_surface_colors(
-            active_mapping, presentation.region_ids, presentation.colors
-        )
+            colors = self._surface_colors(active_mapping, active_palette)
+        else:
+            presentation = self._mapped_region_values(active_mapping)
+            colors = self._region_surface_colors(
+                active_mapping, presentation.region_ids, presentation.colors
+            )
+        if self.anatomy_presentation == 'major':
+            colors = colors.copy()
+            colors[:, 3] = np.minimum(colors[:, 3], round(255 * 0.18))
+        return colors
 
     def _region_surface_colors(
         self,
@@ -1761,7 +1855,7 @@ class AtlasViewer:
     ) -> None:
         snapshot = (
             self._surface_transaction_snapshot()
-            if self.selection_presentation != 'legacy'
+            if self.selection_presentation != 'legacy' or self.anatomy_presentation == 'major'
             else None
         )
         try:
@@ -1790,9 +1884,17 @@ class AtlasViewer:
 
     def _update_surface_emphasis(self) -> None:
         """Fade non-selected regions and brighten hover without affecting unrelated regions."""
-        face_state = (self.mapping, self._selected_region_ids, self.selection_presentation)
+        self._update_anatomical_context()
+        face_state = (
+            self.mapping,
+            self._selected_region_ids,
+            self.selection_presentation,
+            self.anatomy_presentation,
+        )
         if (
-            self.selection_presentation != 'legacy' or self._selection_face_state is not None
+            self.anatomy_presentation == 'major'
+            or self.selection_presentation != 'legacy'
+            or self._selection_face_state is not None
         ) and face_state != self._selection_face_state:
             mask = self._visible_surface_faces(self.mapping)
             if not np.array_equal(mask, self._surface_face_mask):
@@ -1814,7 +1916,7 @@ class AtlasViewer:
                 sorted({abs(region_id) for region_id in self._hovered_region_ids if region_id})
             )
         )
-        if self.selection_presentation != 'legacy':
+        if self.selection_presentation != 'legacy' or self.anatomy_presentation == 'major':
             selected_ids = self._signed_focus_ids()
             hovered_ids = self._signed_focus_ids(self._hovered_region_ids)
         state = (selected_ids, hovered_ids, self.selection_presentation)
@@ -1830,7 +1932,9 @@ class AtlasViewer:
             selected_ids,
             hovered_ids,
             selection_active=(
-                bool(self._selected_region_ids) and self.selection_presentation == 'legacy'
+                bool(self._selected_region_ids)
+                and self.selection_presentation == 'legacy'
+                and self.anatomy_presentation != 'major'
             ),
         )
         self._highlight_region_ids = selected_ids
@@ -1854,7 +1958,7 @@ class AtlasViewer:
     def _surface_is_translucent(self):
         if self._surface_base_colors_cache is None:
             self._invalidate_surface_emphasis_cache(self._display_surface_colors())
-        if self.selection_presentation != 'legacy':
+        if self.anatomy_presentation == 'major' or self.selection_presentation != 'legacy':
             vertices = np.unique(
                 self._surface_mesh.indices.reshape(-1, 3)[self._surface_face_mask]
             )
@@ -2160,6 +2264,9 @@ class AtlasViewer:
             self._close_gui_widget('region_tree', 'tree')
             self._close_gui_widget('probe_table', 'table')
             self._close_gui_widget('region_table', 'table')
+        if getattr(self, '_anatomical_context', None) is not None:
+            self._anatomical_context.close()
+            self._anatomical_context = None
         if getattr(self, '_surface_state', None) is not None:
             self._surface_state.close()
             self._surface_state = None

@@ -43,7 +43,11 @@ class SurfaceState:
 
     def _mapped_ids(self):
         owner = self.owner
-        key = (owner.mapping, getattr(owner, 'selection_presentation', 'legacy') != 'legacy')
+        key = (
+            owner.mapping,
+            getattr(owner, 'selection_presentation', 'legacy') != 'legacy'
+            or getattr(owner, 'anatomy_presentation', 'detailed') == 'major',
+        )
         if self._mapping != key:
             ids = np.zeros(len(self.words), dtype=np.int64)
             for presentation in owner._surface_mesh.presentations:
@@ -75,6 +79,10 @@ class SurfaceState:
             if style_key != self._style:
                 selection = dvz.dvz_selection_visual_style()
                 selection.selected_visual_flags = 0
+                if getattr(owner, 'context_tint', False):
+                    selection.selected_visual_flags = dvz.DVZ_ITEM_STATE_VISUAL_TINT
+                    selection.selected_tint = dvz.DvzColor(255, 255, 255, 255)
+                    selection.selected_tint_mix = 0.22
                 selection.unselected_visual_flags = dvz.DVZ_ITEM_STATE_VISUAL_ALPHA
                 selection.selected_alpha = 1.0
                 selection.unselected_alpha = owner.selection_context_opacity
