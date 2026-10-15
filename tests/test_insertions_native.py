@@ -132,6 +132,39 @@ def test_native_paths_render_independently_replace_remove_and_leave_scene_alive(
     survivor.close()
 
 
+@pytest.mark.parametrize(('angle', 'width_px'), [(0.0, 7.0), (0.9, 3.0)])
+def test_native_repeated_channel_positions_keep_a_bounded_visible_path(
+    native_scene, angle, width_px
+):
+    """Coincident channel rows must neither create spikes nor disappear on upload."""
+    context = native_scene
+    paths = InsertionCollectionVisual(context.dvz, context.scene, context.panel)
+    context.components.append(paths)
+    xy = np.array([[0.7, 0.04], [0.3, 0.02], [-0.1, 0], [-0.6, -0.025]])
+    rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+    points = np.column_stack((xy @ rotation.T, np.zeros(len(xy)))).astype(np.float32)
+    repeated = np.repeat(points, 2, axis=0)
+    paths.set_insertion('paired-channels', repeated, color=(230, 30, 25), width_px=width_px)
+    pixels = context.capture()
+    mask = colored_path(pixels, (230, 30, 25))
+    y, x = np.where(mask)
+    assert len(x) > 50  # Empty/thin output is not an acceptable way to remove spikes.
+    samples = np.column_stack((x + 0.5, y + 0.5))
+    projected = np.column_stack(((points[:, 0] + 1) * 100, (1 - points[:, 1]) * 80))
+    starts, edges = projected[:-1], np.diff(projected, axis=0)
+    relative = samples[:, None, :] - starts
+    t = np.clip((relative * edges).sum(axis=2) / (edges * edges).sum(axis=1), 0, 1)
+    distances = np.linalg.norm(relative - t[..., None] * edges, axis=2).min(axis=1)
+    assert distances.max() <= width_px / 2 + 2  # Pixel centres and antialias margin.
+    np.testing.assert_array_equal(paths.get_data('paired-channels').positions_um, repeated)
+    assert not paths.get_data('paired-channels').positions_um.flags.writeable
+
+    paths.set_insertion('paired-channels', points, color=(230, 30, 25), width_px=width_px)
+    reference = colored_path(context.capture(), (230, 30, 25))
+    # Repeated observations preserve the displayed centreline, including its real ends.
+    assert np.count_nonzero(mask & reference) >= 0.95 * np.count_nonzero(reference)
+
+
 class InsertionsFake(FakeDatoviz):
     """Viewer fake tracking only path visuals owned by insertions."""
 
