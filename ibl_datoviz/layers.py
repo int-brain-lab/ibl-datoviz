@@ -173,6 +173,7 @@ class LayerHandle:
             self._glyph == 'point',
             self._glyph == 'sphere',
             self._glyph == 'path',
+            native_picking=self._glyph in ('point', 'sphere'),
         )
 
     @property
@@ -241,16 +242,25 @@ class LayerHandle:
                 else:
                     visual = _SphereVisual(viewer, positions, colors[rows], size)
                 visual.set_visible(visible)
+            picking = getattr(viewer, 'picking', None)
+            if picking is not None:
+                picking.register(self, visual)
             return visual
         except Exception:
             if visual is not None:
-                visual.close()
+                self._dispose(visual)
             raise
+
+    def _dispose(self, component):
+        picking = getattr(self._registry.viewer, 'picking', None)
+        if picking is not None:
+            picking.unregister(component)
+        component.close()
 
     def _replace(self, **kwargs):
         candidate = self._build(**kwargs)
         previous, self._visual = self._visual, candidate
-        previous.close()
+        self._dispose(previous)
 
     def _mutate(self):
         self._registry._check()
@@ -352,7 +362,7 @@ class LayerHandle:
 
     def _close(self):
         if not self._closed:
-            self._visual.close()
+            self._dispose(self._visual)
             self._closed = True
 
 
@@ -407,12 +417,12 @@ class RecordingHandle:
             for layer in self.layers:
                 candidates.append((layer, layer._build(visible=bool(visible) and layer.visible)))
         except Exception:
-            for _, candidate in candidates:
-                candidate.close()
+            for layer, candidate in candidates:
+                layer._dispose(candidate)
             raise
         for layer, candidate in candidates:
             old, layer._visual = layer._visual, candidate
-            old.close()
+            layer._dispose(old)
         self._visible = bool(visible)
 
 
@@ -525,13 +535,13 @@ class LayerRegistry:
                 if local != layer._selected:
                     candidates.append((layer, local, layer._build(selected=local)))
         except Exception:
-            for _, _, candidate in candidates:
-                candidate.close()
+            for layer, _, candidate in candidates:
+                layer._dispose(candidate)
             raise
         for layer, local, candidate in candidates:
             old, layer._visual = layer._visual, candidate
             layer._selected = local
-            old.close()
+            layer._dispose(old)
 
     def remove_layer(self, layer):
         """Remove a generic layer and prune only its observation attachments."""

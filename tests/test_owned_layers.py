@@ -186,7 +186,8 @@ def test_capability_and_mutation_guard(registry):
         path.color_by([1], name='x', units='1', cmap='magma', limits=(0, 1))
     with pytest.raises(ValueError, match='opaque'):
         path.set_color('#ff000040')
-    assert not point.capabilities.native_picking and not sphere.capabilities.native_picking
+    assert point.capabilities.native_picking and sphere.capabilities.native_picking
+    assert not path.capabilities.native_picking
 
     def reject():
         raise RuntimeError('foreign thread or reentrant write')
