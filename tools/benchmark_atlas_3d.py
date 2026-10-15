@@ -7,6 +7,7 @@ import argparse
 import cProfile
 import ctypes
 import hashlib
+import importlib
 import json
 import os
 import platform
@@ -20,7 +21,6 @@ from time import perf_counter
 from typing import TYPE_CHECKING
 
 import datoviz as dvz
-import datoviz._ctypes as native
 import numpy as np
 
 from ibl_anatomy import open_region_catalog
@@ -242,6 +242,7 @@ def _emphasis_profile(profile: cProfile.Profile | None) -> list[dict]:
 
 
 def _worker(args: argparse.Namespace) -> int:  # noqa: PLR0915
+    native = importlib.import_module('datoviz._ctypes')
     if args.scenario in GUI_SCENARIOS and args.regions is None:
         raise ValueError(f'{args.scenario} requires --regions')
 
