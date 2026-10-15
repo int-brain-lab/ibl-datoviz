@@ -9,7 +9,7 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
-## App 1 accepted; API review next — October 15 2026
+## App 1 and API direction accepted; staged implementation — October 15 2026
 
 The reviewer validates the current recording-context demo, including the latest
 interaction corrections. The app-1 visual gate is accepted; the immediate next
@@ -23,8 +23,9 @@ and open review decisions. It supersedes the earlier `IBLWorkbench` naming sketc
 The consolidated proposal now includes generic owned points/paths, optional IBL
 recording composition, dependency boundaries, prerequisite identity/frame contracts
 and explicit selection transitions. Its two linked scripts are proposed API
-examples, not runnable supported examples. Review those contracts and scripts
-before the viewer refactor; implementation has not started. An independent
+examples, not runnable supported examples. The user approved the architecture and scripts and authorized staged implementation
+with focused local commits. Generic payloads/layers precede optional IBL composition;
+visual acceptance of the resulting workflows remains a later gate. An independent
 GPT-6.1 Sol audit at high reasoning found no remaining P1/P2 architecture or
 consolidation issues after revision. Syntax and Ruff checks pass for both scripts;
 the strict documentation build passes. These checks do not exercise proposed APIs.

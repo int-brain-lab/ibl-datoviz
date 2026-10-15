@@ -1,9 +1,8 @@
 # Scientific viewer API proposal
 
-Status: proposed for API review, October 15, 2026. The recording-context demo has
+Status: API direction and intended-use scripts approved by the user, October 15, 2026. The recording-context demo has
 been accepted visually. The interfaces below describe the intended refactor;
-they are not implemented APIs or an announcement of API stability. Recording this
-proposal does not start its implementation. This consolidated revision incorporates
+they are not implemented APIs or an announcement of API stability. The user has now authorized staged implementation and focused local commits. This consolidated revision incorporates
 the shared-data investigation and the architectural audit; the earlier
 `IBLWorkbench` scripts are superseded.
 
@@ -524,5 +523,5 @@ consolidation findings after revisions. The review addressed generic identities,
 source versus attachment scope, verified frames, scalar row alignment, selection
 transitions, committed events and resource ownership. This is a design audit,
 not approval of the proposed API or evidence that its interfaces are implemented.
-User review of the scripts and open constructor choices remains stage 0; verified
+The user approved the scripts and architecture after this audit; verified
 BWM frame evidence and capability-specific native picking retain separate gates.
