@@ -354,6 +354,9 @@ class ScientificSceneReview(AtlasViewer):
         return True
 
     def _text(self, gui, message, *, width=43):
+        if hasattr(self.dvz, 'dvz_gui_content_avail'):
+            available_width, _ = self._sidebar.available(gui)
+            width = max(12, min(width, int(available_width / (7.0 * self.ui_scale))))
         for line in textwrap.wrap(message, width=width):
             self.dvz.dvz_gui_text(gui, line.encode())
 
@@ -372,11 +375,8 @@ class ScientificSceneReview(AtlasViewer):
             self._text(gui, self.envelope_note)
 
     def _draw_viewport_toolbar_gui(self, gui):
-        """Keep the primary viewport focused on recording location."""
-        self.dvz.dvz_gui_text(gui, b'Where did we record?')
-        self.dvz.dvz_gui_same_line(gui, 0.0, 16.0 * self.ui_scale)
-        if self.dvz.dvz_gui_button(gui, b'Reset view'):
-            self.set_camera_angles(self.review_controls.initial_camera)
+        """Keep selection explosion and camera reset beside the recording viewport."""
+        super()._draw_viewport_toolbar_gui(gui)
 
     def _draw_auxiliary_gui(self, gui):
         """Keep Layers docked below the viewport, outside the Regions browser."""
