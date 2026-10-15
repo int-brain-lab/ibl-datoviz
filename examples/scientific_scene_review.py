@@ -424,7 +424,7 @@ class ScientificSceneReview(AtlasViewer):
         rows = (
             (
                 'atlas',
-                'Anatomical context',
+                'Brain context',
                 (150, 170, 190, 255),
                 len(getattr(getattr(self, '_anatomical_context', None), 'surfaces', ())),
             ),
@@ -611,6 +611,7 @@ class ScientificSceneReview(AtlasViewer):
     def _draw_insertion_gui(self, gui):
         """Keep every path's visibility, color and width on its own active-only row."""
         for insertion_id in self._active_insertions:
+            row_width, _ = self._sidebar.available(gui)
             style = self._insertion_styles[insertion_id]
             label = 'BWM probe' if insertion_id == BWM_ID else insertion_id[:8]
             visibility = ctypes.c_bool(style['visible'])
@@ -628,8 +629,11 @@ class ScientificSceneReview(AtlasViewer):
             ):
                 color = tuple(int(round(float(value) * 255)) for value in rgba[:3]) + (255,)
                 self._action(self.style_insertion, insertion_id, color=color)
-            self.dvz.dvz_gui_same_line(gui, 0.0, 5.0 * self.ui_scale)
-            self.dvz.dvz_gui_text(gui, b'px')
+            if row_width >= 200.0 * self.ui_scale:
+                self.dvz.dvz_gui_same_line(gui, 0.0, 5.0 * self.ui_scale)
+                self.dvz.dvz_gui_text(gui, b'px')
+            else:
+                self.dvz.dvz_gui_text(gui, b'Width (px)')
             self.dvz.dvz_gui_same_line(gui, 0.0, 4.0 * self.ui_scale)
             available_width, _ = self._sidebar.available(gui)
             self.dvz.dvz_gui_set_next_item_width(gui, max(1.0, available_width - 1.0))
@@ -638,7 +642,7 @@ class ScientificSceneReview(AtlasViewer):
                 gui, f'##width_px_{insertion_id}'.encode(), ctypes.byref(width), 1.0, 12.0
             ):
                 self._action(self.style_insertion, insertion_id, width=width.value)
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Insertion identities and source', 0):
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Insertion details', 0):
             for insertion_id in self._active_insertions:
                 if insertion_id == BWM_ID:
                     insertion = self.recording_provenance.get('insertion', {})

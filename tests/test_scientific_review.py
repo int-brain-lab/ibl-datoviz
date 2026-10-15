@@ -393,7 +393,7 @@ def test_primary_layers_read_authoritative_state_and_hide_diagnostics(viewer):
     viewer._layer_controls['sites'].value = False
     viewer._draw_layer_controls(None)
     assert drawn == ['insertions']
-    assert labels == [b'Anatomical context', b'Insertion paths', b'Recording sites']
+    assert labels == [b'Brain context', b'Insertion paths', b'Recording sites']
     assert viewer._layer_controls['sites'].value
     assert viewer.camera_angles == (0.1, 0.2, 0.3)
 
