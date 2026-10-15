@@ -64,6 +64,7 @@ nav:
       - Audit follow up: NEXT_STEPS.md
       - Guide: development.md
       - Real-data example roadmap: REAL_DATA_EXAMPLE_ROADMAP.md
+      - Scientific viewer API proposal: SCIENTIFIC_VIEWER_API_PROPOSAL.md
       - Release-hardening handoff: RELEASE_HARDENING_HANDOFF.md
   - Evidence:
       - Real D070 checkpoint: REAL_D070_CHECKPOINT.md

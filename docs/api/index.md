@@ -2,6 +2,10 @@
 
 The public API is intentionally small and split at data ownership boundaries.
 
+The [scientific viewer API proposal](../SCIENTIFIC_VIEWER_API_PROPOSAL.md) describes
+the planned refactor following acceptance of the recording-context demo. Its
+recording/layer facade and new payload names are proposals, not current exports.
+
 | Object | Responsibility |
 | --- | --- |
 | [`AtlasViewer`](viewer.md) | Datoviz scene, native resources, mapping, overlays, GUI, and selection |

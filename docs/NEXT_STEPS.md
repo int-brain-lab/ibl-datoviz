@@ -16,6 +16,12 @@ interaction corrections. The app-1 visual gate is accepted; the immediate next
 step is reviewing the existing public API and the provisional recording/layer
 facade. App 2 and further platform evidence retain their own review scope.
 
+The [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md) records the
+intended single-viewer facade, scientific payloads, recording/layer handles,
+anatomy, selection, camera and linked-slice interfaces, along with staged delivery
+and open review decisions. It supersedes the earlier `IBLWorkbench` naming sketch.
+The proposal is recorded for review; its refactor has not started.
+
 ## Consistent reset and panned rotation — October 15 2026
 
 The viewer registers its startup orientation with `dvz_arcball_initial`, so native

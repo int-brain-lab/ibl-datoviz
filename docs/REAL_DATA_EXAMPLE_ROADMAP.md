@@ -2,6 +2,12 @@
 
 Status: the reviewer accepted the current app-1 recording-context demo after the reset and panned-rotation corrections. The next gate is public API review. App 2 and further platforms have separate acceptance scope.
 
+The current API design and implementation stages are in the
+[scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md). It uses
+`AtlasViewer` as the single entry point and supersedes the historical
+`IBLWorkbench` sketches below. The shared-data investigation and source metadata
+prerequisites remain applicable.
+
 ## First visual prototype available — October 15 2026
 
 The first visual gate is accepted: six shared source-native
@@ -48,11 +54,12 @@ Observed local BWM and HC-3 spike opens took approximately 0.1 s and 0.01 s;
 cache state was uncontrolled and the BWM insertion has only two units. These
 measurements do not establish full-recording interactive performance.
 
-### API sketches for review, not implemented APIs
+### Historical API sketches
 
-These scripts show the proposed separation and convenience level. Names,
-imports and the recording-layer facade remain provisional. The source adapter
-would use the shared data library rather than implement its own reader.
+These unimplemented scripts preserve the earlier feasibility sketch. The newer
+[API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md) replaces their `IBLWorkbench`
+naming with one `AtlasViewer` facade. The source adapter still uses the shared
+data library rather than implementing its own reader.
 
 One recording:
 
