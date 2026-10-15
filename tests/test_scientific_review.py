@@ -1,5 +1,6 @@
 """Scientific review state/lifetime checks without creating a native runtime."""
 
+import ctypes
 from types import SimpleNamespace
 
 import numpy as np
@@ -382,12 +383,15 @@ def test_primary_layers_read_authoritative_state_and_hide_diagnostics(viewer):
     viewer.dvz.dvz_gui_same_line = lambda *_: None
     viewer.dvz.dvz_gui_text = lambda *_: None
     viewer.dvz.dvz_gui_color_edit4 = lambda *_: None
+    viewer.dvz.dvz_gui_set_next_item_width = lambda *_: None
+    viewer.dvz.dvz_gui_combo = lambda *_: False
+    viewer.dvz.dvz_gui_slider_float = lambda *_: False
     viewer._draw_point_gui = lambda _gui: drawn.append('points')
     viewer._draw_plane_gui = lambda _gui: drawn.append('plane')
     viewer._draw_insertion_gui = lambda _gui: drawn.append('insertions')
     viewer._layer_controls['sites'].value = False
     viewer._draw_layer_controls(None)
-    assert drawn == []
+    assert drawn == ['insertions']
     assert labels == [b'Anatomical context', b'Insertion paths', b'Recording sites']
     assert viewer._layer_controls['sites'].value
     assert viewer.camera_angles == (0.1, 0.2, 0.3)
@@ -397,7 +401,7 @@ def test_primary_layers_read_authoritative_state_and_hide_diagnostics(viewer):
 def test_layers_window_is_persistent_dockable_and_balances_scope(viewer, fail):
     calls = []
     viewer._sidebar = SimpleNamespace(rect=lambda _: (0, 500, 1100, 170))
-    viewer.dvz.DVZ_GUI_DOCK_SLOT_BOTTOM = 3
+    viewer.dvz.DVZ_GUI_DOCK_SLOT_RIGHT = 2
     viewer.dvz.dvz_gui_dock_window_once = lambda *args: calls.append(('dock', args[1:])) or 0
     viewer.dvz.dvz_gui_begin = lambda *args: calls.append(('begin', args[1:])) or True
     viewer.dvz.dvz_gui_end = lambda *_: calls.append('end')
@@ -414,7 +418,7 @@ def test_layers_window_is_persistent_dockable_and_balances_scope(viewer, fail):
     else:
         viewer._draw_auxiliary_gui(None)
     assert calls == [
-        ('dock', (b'Layers', 3, 170.0)),
+        ('dock', (b'Layers', 2, 330.0)),
         ('begin', (b'Layers', None, 0)),
         'controls',
         'end',
@@ -483,13 +487,83 @@ def test_major_context_loading_delegates_to_hash_verified_shared_catalog(monkeyp
 
 
 def test_recording_caption_tracks_supplied_provenance_without_default_identity():
-    caption, values = review.recording_description({
-        'dataset': {'name': 'other_release', 'version': '2.0'},
-        'insertion': {'subject': 'OtherSubject', 'probe_name': 'probe01'},
-        'derivation': {'value': 'declared prepared site statistic'},
-    })
+    caption, values = review.recording_description(
+        {
+            'dataset': {'name': 'other_release', 'version': '2.0'},
+            'insertion': {'subject': 'OtherSubject', 'probe_name': 'probe01'},
+            'derivation': {'value': 'declared prepared site statistic'},
+        }
+    )
     assert caption == 'other_release 2.0 / OtherSubject probe01'
     assert values == 'declared prepared site statistic'
     assert review.recording_description(None) == (
-        'Supplied recording', 'prepared recording-site values'
+        'Supplied recording',
+        'prepared recording-site values',
     )
+
+
+def test_insertion_rows_change_only_active_path_and_preserve_other_styles(viewer):
+    viewer.apply_preset('multiple-insertions')
+    before_bwm = viewer._insertion_styles[review.BWM_ID].copy()
+    labels = []
+    viewer.dvz.dvz_gui_same_line = lambda *_: None
+    viewer.dvz.dvz_gui_set_next_item_width = lambda *_: None
+    viewer.dvz.dvz_gui_collapsing_header = lambda *_: False
+
+    def checkbox(_gui, label, pointer):
+        labels.append(label)
+        if label.endswith(b'##real-path-one'):
+            ctypes.cast(pointer, ctypes.POINTER(ctypes.c_bool))[0] = False
+            return True
+        return False
+
+    def color(_gui, label, rgba, _flags):
+        if label == b'##color_real-path-two':
+            rgba[0], rgba[1], rgba[2] = 0.5, 0.25, 1.0
+            return True
+        return False
+
+    def width(_gui, label, pointer, _low, _high):
+        if label == b'px##real-path-two':
+            ctypes.cast(pointer, ctypes.POINTER(ctypes.c_float))[0] = 6.0
+            return True
+        return False
+
+    viewer.dvz.dvz_gui_checkbox = checkbox
+    viewer.dvz.dvz_gui_color_edit4 = color
+    viewer.dvz.dvz_gui_slider_float = width
+    viewer._draw_insertion_gui(None)
+    assert len(labels) == 2 and all(b'bwm' not in label.lower() for label in labels)
+    assert not viewer._insertion_styles['real-path-one']['visible']
+    assert viewer._insertion_styles['real-path-two']['color'] == (128, 64, 255, 255)
+    assert viewer._insertion_styles['real-path-two']['width'] == 6.0
+    assert viewer._insertion_styles[review.BWM_ID] == before_bwm
+    assert not viewer.path_styles[review.BWM_ID]['visible']
+
+
+def test_site_radius_preserves_scalar_missingness_and_is_transactional(viewer):
+    uploads = []
+    viewer._upload_probe_sites = lambda positions, **kwargs: uploads.append((positions, kwargs))
+    viewer.set_site_mode('scalar')
+    viewer.set_site_radius(7.0)
+    assert viewer.site_mode == 'scalar' and viewer.site_radius_um == 7.0
+    assert uploads[-1][1]['radius_um'] == 7.0
+    np.testing.assert_array_equal(uploads[-1][0], viewer.review_sites.positions_um)
+    colors = uploads[-1][1]['colors']
+    missing = ~np.isfinite(viewer.review_sites.values)
+    np.testing.assert_array_equal(
+        colors[missing, :3], np.tile([110, 116, 126], (missing.sum(), 1))
+    )
+    assert np.all(colors[:, 3] == 255)
+    for invalid in (0, -1, np.nan, np.inf):
+        with pytest.raises(ValueError, match='radius'):
+            viewer.set_site_radius(invalid)
+    assert viewer.site_radius_um == 7.0 and viewer.site_mode == 'scalar'
+
+    def fail(*args, **kwargs):
+        raise RuntimeError('upload failed')
+
+    viewer._upload_probe_sites = fail
+    with pytest.raises(RuntimeError, match='upload failed'):
+        viewer.set_site_radius(12.0)
+    assert viewer.site_radius_um == 7.0 and viewer._site_radius_control.value == 7.0

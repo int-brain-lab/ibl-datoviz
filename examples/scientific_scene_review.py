@@ -35,6 +35,7 @@ PRESETS = ('atlas', 'single-probe', 'multiple-insertions', 'mixed')
 PRESET_LABELS = ('Atlas surface', 'Single BWM probe', 'Multiple W39 insertions', 'Points + plane')
 BWM_ID = 'bwm-probe'
 POINT_COLOR = (70, 220, 250, 180)
+SITE_RADIUS_UM = 8.0
 # A small nonredundant context cut; the complete verified catalog remains available.
 CONTEXT_LANDMARKS = frozenset((315, 698, 313, 771, 354, 528))
 MISSING_W39 = (
@@ -116,6 +117,7 @@ class ScientificSceneReview(AtlasViewer):
     def configure_review(self, sites, plane, paths=(), *, unavailable_note='', provenance=None):
         """Attach verified data once, borrowing this viewer's scene and atlas panel."""
         self.review_sites, self.base_plane = sites, plane
+        self.recording_provenance = provenance or {}
         self.recording_caption, self.value_description = recording_description(provenance)
         self.value_range = firing_rate_range(sites)
         self.unavailable_note = unavailable_note
@@ -146,6 +148,8 @@ class ScientificSceneReview(AtlasViewer):
         self._preset_control = ctypes.c_int(0)
         self._layer_controls = {name: ctypes.c_bool(value) for name, value in self.layers.items()}
         self.site_mode = 'uniform'
+        self.site_radius_um = SITE_RADIUS_UM
+        self._site_radius_control = ctypes.c_float(self.site_radius_um)
         self._site_mode_control = ctypes.c_int(0)
         self._point_mode_control = ctypes.c_int(1)
         self._point_size_control = ctypes.c_float(self.point_size)
@@ -154,7 +158,10 @@ class ScientificSceneReview(AtlasViewer):
         self._plane_opacity_control = ctypes.c_float(self.plane_opacity)
         self._plane_cutoff_control = ctypes.c_float(self.plane_cutoff)
         self.set_probe_data(
-            sites, value_range=self.value_range, radius_um=85, color_scheme='sequential'
+            sites,
+            value_range=self.value_range,
+            radius_um=self.site_radius_um,
+            color_scheme='sequential',
         )
         self.set_site_mode('uniform')
         self.review_points = PointCollectionVisual(
@@ -350,8 +357,7 @@ class ScientificSceneReview(AtlasViewer):
     def reset_review(self):
         """Explicitly restore initial controls, camera, layers and scientific styles."""
         self.review_controls.reset()
-        if self.site_mode != 'uniform':
-            self.set_site_mode('uniform')
+        self.set_site_mode('uniform', radius_um=SITE_RADIUS_UM)
         self.set_point_mode('scalar')
         self.set_point_size(6.0)
         self.set_point_opacity(0.7)
@@ -397,12 +403,12 @@ class ScientificSceneReview(AtlasViewer):
         super()._draw_viewport_toolbar_gui(gui)
 
     def _draw_auxiliary_gui(self, gui):
-        """Keep Layers docked below the viewport, outside the Regions browser."""
+        """Keep Layers docked on the right, outside the Regions browser."""
         if self.review_controls is None:
             return
         self._check(
             self.dvz.dvz_gui_dock_window_once(
-                gui, b'Layers', self.dvz.DVZ_GUI_DOCK_SLOT_BOTTOM, 170.0 * self.ui_scale
+                gui, b'Layers', self.dvz.DVZ_GUI_DOCK_SLOT_RIGHT, 330.0 * self.ui_scale
             ),
             'recording layers dock',
         )
@@ -431,50 +437,24 @@ class ScientificSceneReview(AtlasViewer):
             if self.dvz.dvz_gui_checkbox(gui, label.encode(), ctypes.byref(control)):
                 self._action(self.set_layer_visible, layer, control.value)
                 control.value = self.layers[layer]
-            self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
+            self.dvz.dvz_gui_same_line(gui, 0.0, 6.0 * self.ui_scale)
             rgba = (ctypes.c_float * 4)(*(np.asarray(color) / 255))
-            # Display a swatch without exposing an editing widget in the primary rows.
+            # Read-only layer swatch; insertion rows below have editable swatches.
             self.dvz.dvz_gui_color_edit4(
                 gui,
                 f'##swatch_{layer}'.encode(),
                 rgba,
-                (1 << 1) | (1 << 2) | (1 << 3) | (1 << 5) | (1 << 8),
+                (1 << 1) | (1 << 2) | (1 << 3) | (1 << 5) | (1 << 7),
             )
-            self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
-            unit = {'atlas': 'structure', 'insertions': 'path', 'sites': 'site'}[layer]
-            if count != 1:
-                unit += 's'
-            self.dvz.dvz_gui_text(gui, f'{count} {unit}'.encode())
-            if layer == 'sites':
-                self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
-                if self.dvz.dvz_gui_button(gui, b'Site table'):
-                    self._show_scientific_data.value = not self._show_scientific_data.value
-        if self.layers['sites']:
-            low, high = self.value_range
-            if self.site_mode == 'scalar':
-                self._text(
-                    gui,
-                    f'Mean firing rate: {low:.3g} - {high:.3g} Hz (5-95% of finite sites). '
-                    'Purple: low; yellow: high; gray: missing.',
-                    width=105,
-                )
-            else:
-                self._text(
-                    gui,
-                    'Cyan: recording sites; all supplied locations.',
-                    width=105,
-                )
+            self.dvz.dvz_gui_same_line(gui, 0.0, 6.0 * self.ui_scale)
+            self.dvz.dvz_gui_text(gui, str(count).encode())
+            if layer == 'insertions' and self.layers['insertions']:
+                self._draw_insertion_gui(gui)
+            if layer == 'sites' and self.layers['sites']:
+                self._draw_site_controls(gui)
         if self.dvz.dvz_gui_collapsing_header(gui, b'Recording details', 0):
-            if self._combo(
-                gui,
-                'Site color',
-                self._site_mode_control,
-                ('Uniform color', 'Mean firing rate (Hz)'),
-            ):
-                self._action(
-                    self.set_site_mode, ('uniform', 'scalar')[self._site_mode_control.value]
-                )
-                self._site_mode_control.value = ('uniform', 'scalar').index(self.site_mode)
+            if self.dvz.dvz_gui_button(gui, b'Site table'):
+                self._show_scientific_data.value = not self._show_scientific_data.value
             self._text(
                 gui,
                 f'{self.recording_caption}: {self.value_description}. '
@@ -504,12 +484,46 @@ class ScientificSceneReview(AtlasViewer):
             self._draw_point_gui(gui)
         if self.layers['plane']:
             self._draw_plane_gui(gui)
-        self._draw_insertion_gui(gui)
 
-    def set_site_mode(self, mode):
+    def _draw_site_controls(self, gui):
+        self.dvz.dvz_gui_set_next_item_width(gui, 205.0 * self.ui_scale)
+        if self._combo(
+            gui, 'Color', self._site_mode_control, ('Uniform', 'Mean firing rate (Hz)')
+        ):
+            self._action(self.set_site_mode, ('uniform', 'scalar')[self._site_mode_control.value])
+            self._site_mode_control.value = ('uniform', 'scalar').index(self.site_mode)
+        self.dvz.dvz_gui_set_next_item_width(gui, 160.0 * self.ui_scale)
+        if self.dvz.dvz_gui_slider_float(
+            gui, b'Radius (um)', ctypes.byref(self._site_radius_control), 3.0, 40.0
+        ):
+            self._action(self.set_site_radius, self._site_radius_control.value)
+            self._site_radius_control.value = self.site_radius_um
+        low, high = self.value_range
+        legend = (
+            f'Mean firing rate: {low:.3g}–{high:.3g} Hz (5–95%). '
+            'Purple: low; yellow: high; gray: missing.'
+            if self.site_mode == 'scalar'
+            else 'Cyan identifies recording sites; no quantity is encoded.'
+        )
+        self._text(gui, legend)
+        self._text(
+            gui,
+            f'{len(self.review_sites.values)} co-located channel groups; sites are not neurons.',
+        )
+        if self.preset == 'multiple-insertions':
+            self._text(gui, 'Sites belong to the BWM recording, not these W39 paths.')
+
+    def set_site_radius(self, radius_um):
+        """Resize glyphs in physical units while preserving observations and their encoding."""
+        self.set_site_mode(self.site_mode, radius_um=radius_um)
+
+    def set_site_mode(self, mode, *, radius_um=None):
         """Color the retained recording sites without changing identities or visibility."""
         if mode not in ('uniform', 'scalar'):
             raise ValueError('site color mode must be uniform or scalar')
+        radius_um = self.site_radius_um if radius_um is None else float(radius_um)
+        if not np.isfinite(radius_um) or radius_um <= 0:
+            raise ValueError('site radius must be finite and positive')
         colors = (
             scalar_colors(self.review_sites.values, self.value_range, 'sequential')
             if mode == 'scalar'
@@ -521,11 +535,13 @@ class ScientificSceneReview(AtlasViewer):
         self._upload_probe_sites(
             self.review_sites.positions_um,
             colors=colors,
-            radius_um=85,
+            radius_um=radius_um,
             mapped_ids=self._mapped_probe_region_ids(self.review_sites),
         )
         self._probe_colors = colors
         self.site_mode = mode
+        self.site_radius_um = radius_um
+        self._site_radius_control.value = radius_um
         self._site_mode_control.value = ('uniform', 'scalar').index(mode)
 
     def _draw_examples_gui(self, gui):
@@ -587,21 +603,47 @@ class ScientificSceneReview(AtlasViewer):
         )
 
     def _draw_insertion_gui(self, gui):
-        for insertion_id, style in self._insertion_styles.items():
+        """Keep every path's visibility, color and width on its own active-only row."""
+        for insertion_id in self._active_insertions:
+            style = self._insertion_styles[insertion_id]
             label = 'BWM probe' if insertion_id == BWM_ID else insertion_id[:8]
             visibility = ctypes.c_bool(style['visible'])
             if self.dvz.dvz_gui_checkbox(
                 gui, f'{label}##{insertion_id}'.encode(), ctypes.byref(visibility)
             ):
                 self._action(self.style_insertion, insertion_id, visible=visibility.value)
-            color = ctypes.c_int(next((i for i, c in enumerate(COLORS) if c == style['color']), 0))
-            if self._combo(gui, f'Color##{insertion_id}', color, ('Gold', 'Cyan', 'Rose')):
-                self._action(self.style_insertion, insertion_id, color=COLORS[color.value])
+            self.dvz.dvz_gui_same_line(gui, 0.0, 5.0 * self.ui_scale)
+            rgba = (ctypes.c_float * 4)(*(np.asarray(style['color']) / 255))
+            if self.dvz.dvz_gui_color_edit4(
+                gui,
+                f'##color_{insertion_id}'.encode(),
+                rgba,
+                (1 << 1) | (1 << 3) | (1 << 5) | (1 << 7),
+            ):
+                color = tuple(int(round(float(value) * 255)) for value in rgba[:3]) + (255,)
+                self._action(self.style_insertion, insertion_id, color=color)
+            self.dvz.dvz_gui_same_line(gui, 0.0, 5.0 * self.ui_scale)
+            self.dvz.dvz_gui_set_next_item_width(gui, 80.0 * self.ui_scale)
             width = ctypes.c_float(style['width'])
             if self.dvz.dvz_gui_slider_float(
-                gui, f'Width (px)##{insertion_id}'.encode(), ctypes.byref(width), 1.0, 12.0
+                gui, f'px##{insertion_id}'.encode(), ctypes.byref(width), 1.0, 12.0
             ):
                 self._action(self.style_insertion, insertion_id, width=width.value)
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Insertion identities and source', 0):
+            for insertion_id in self._active_insertions:
+                if insertion_id == BWM_ID:
+                    insertion = self.recording_provenance.get('insertion', {})
+                    self._text(gui, self.recording_caption)
+                    self._text(gui, f'Insertion: {insertion.get("pid", "not supplied")}')
+                    self._text(gui, f'Session: {insertion.get("eid", "not supplied")}')
+                    self._text(gui, 'Path joins the supplied BWM channel-group coordinates.')
+                else:
+                    self._text(gui, f'Insertion: {insertion_id}')
+                    self._text(
+                        gui,
+                        'Source: pinned W39 channels; 384 ordered channel rows. '
+                        'Session metadata is not supplied in this derivative.',
+                    )
 
     def _draw_data_tables_gui(self, gui):
         if self.review_controls is None or not self._show_scientific_data.value:
@@ -694,7 +736,9 @@ def main():
     )
     parser.add_argument('--paths', type=Path, default=DEFAULT_PATHS)
     parser.add_argument(
-        '--context-detail', choices=('landmarks', 'all'), default='landmarks',
+        '--context-detail',
+        choices=('landmarks', 'all'),
+        default='landmarks',
         help='six orientation landmarks by default; all twelve surfaces for comparison',
     )
     parser.add_argument('--provenance', type=Path)
