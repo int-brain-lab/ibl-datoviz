@@ -1367,9 +1367,12 @@ class LinkedAtlasNavigator(AtlasViewer):
                 raise RuntimeError('volume opacity rollback failed; navigator closed') from error
             raise
 
-    def _draw_extra_gui(self, gui) -> None:
+    def _process_gui_frame(self) -> None:
+        super()._process_gui_frame()
         if self._slice_loader is not None:
             self._drain_prepared_slices(self.view, None)
+
+    def _draw_extra_gui(self, gui) -> None:
         self._draw_cursor_gui(gui)
         if self.dvz.dvz_gui_collapsing_header(gui, b'Slices and 3-D layers', 0):
             self._draw_layer_gui(gui)

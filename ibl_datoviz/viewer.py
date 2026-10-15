@@ -1393,6 +1393,7 @@ class AtlasViewer:
 
     def _draw_gui_frame(self, gui) -> None:
         """Draw one GUI frame with balanced native window and child scopes."""
+        self._process_gui_frame()
         self.dvz.dvz_gui_dock_window_once(
             gui,
             b'Allen mouse brain atlas',
@@ -1548,6 +1549,9 @@ class AtlasViewer:
             ):
                 self.set_explode(self._explode_control.value)
         self._draw_extra_gui(gui)
+
+    def _process_gui_frame(self) -> None:
+        """Apply owner-thread work independently of visible controls or windows."""
 
     def _draw_extra_gui(self, _gui) -> None:
         """Draw optional controls supplied by specialized viewers."""
