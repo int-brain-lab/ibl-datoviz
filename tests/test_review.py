@@ -429,3 +429,30 @@ def test_app_two_does_not_require_major_context(tmp_path, monkeypatch):
     monkeypatch.setattr(review, 'run', lambda command, **_kwargs: commands.append(command))
     review.run_examples(SimpleNamespace(example='2', frames=3, ui_scale=1.0), [], {})
     assert len(commands) == 1
+
+
+def test_contour_prototype_scopes_reader_and_preserves_arguments(tmp_path, monkeypatch):
+    source = tmp_path / 'anatomy source'
+    package = source / 'src' / 'ibl_anatomy'
+    package.mkdir(parents=True)
+    (package / 'contours.py').touch()
+    environment = {'PYTHONPATH': 'configured-native', 'runtime': 'existing'}
+    calls = []
+    monkeypatch.setattr(review, 'run', lambda command, **kwargs: calls.append((command, kwargs)))
+    arguments = ['atlas path', '--regions', 'regions path.json', '--offscreen', 'output path.png']
+    review.run_contours(source, ['--', *arguments], ['wrapper'], environment)
+    command, kwargs = calls[0]
+    assert command == [
+        'wrapper', review.sys.executable,
+        review.REPOSITORY / 'examples' / 'registered_contours.py', *arguments,
+    ]
+    assert kwargs['env']['PYTHONPATH'].split(review.os.pathsep) == [
+        str(source / 'src'), 'configured-native',
+    ]
+    assert environment == {'PYTHONPATH': 'configured-native', 'runtime': 'existing'}
+
+
+def test_contour_prototype_rejects_anatomy_without_numerical_api(tmp_path, monkeypatch):
+    monkeypatch.setattr(review, 'run', lambda *_args, **_kwargs: pytest.fail('unexpected launch'))
+    with pytest.raises(ValueError, match='numerical contour API'):
+        review.run_contours(tmp_path, [], [], {})

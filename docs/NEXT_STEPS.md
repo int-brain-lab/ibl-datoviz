@@ -9,6 +9,61 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Shared contour reader and native prototype — October 17 2026
+
+The authorized first two stages now have an additive numerical reader in
+`ibl-anatomy/main` (commit `857564f`) and the isolated `examples/registered_contours.py` experiment
+on this branch. The reader preserves signed mapping IDs and classifies arbitrary
+serialized ring order into owned immutable components, holes and nested islands.
+It supports the exact rectilinear half-grid SVG profile, not arbitrary SVG curves
+or a smoothing derivative. Existing asset bytes and registered reader APIs remain
+unchanged. Reader validation and audit details are recorded in the anatomy
+repository's handoff.
+
+The native prototype renders coronal 660, sagittal 566 and horizontal 393 directly
+through retained polygon sets, unlit catalog fills and joined outlines, with
+requested 4x MSAA. It uses private positive native component keys with a signed
+identity side table. Three GPU tests cover holes/islands, source-buffer detachment,
+actual native descriptor-buffer copying and display-only Y inversion. Geometry
+and source copies have independent lifetimes; app teardown precedes scene teardown.
+
+Original even-odd SVG versus classified-component rasterization has **zero changed
+source pixel centres across all 837 source paths** in these three sections. The
+captured components total 649/434/1086, with 22/15/36 holes. Decoding initially took
+about 0.42–0.79 seconds per uncached section in the final captures. The final
+three-panel captures took about 148–196 ms for the first render, including
+deferred triangulation/warm-up; their last two warm frames were about 4–9.5 ms.
+Whole-process peak RSS was about 488–497 MiB, including native/driver allocations.
+These are
+prototype measurements, not scrolling performance guarantees. Final receipts also
+record loaded native binary and reader source hashes, requested MSAA, stroke and
+output dimensions, and whole-process peak RSS.
+
+Actual macOS captures at normal scale and central 3x magnification were inspected
+under `build/contour-prototype/exact{,-zoom3}.png`. Receipts, original-path parity,
+bounded GUI startup and test logs are in that ignored directory. The package full
+suite passes **979 tests with one optional registered 10 µm asset-root skip**;
+lint, strict docs and whitespace pass. Normal configured native source still has
+the documented 54c9ce1/f77 drift; no engine build, revision, binary or pin changed.
+The independent high GPT-6.1 Sol audit reports no remaining blocking findings for
+this first two-stage scope; its final shared-reader check passed 33 tests with
+all three real sections and no skips. Anatomy's full suite passed 159 tests.
+
+Use the [prototype command](review-apps.md#exact-shared-contour-prototype) with
+explicit anatomy source and asset paths. The source override is scoped to that
+child process. The local anatomy main ancestry does not contain the installed
+6498a830 surface-catalog baseline, so this experiment does not establish that its
+new commit can replace the package pin. Reconcile that ancestry and validate the
+full supported anatomy API before a future dependency adoption.
+
+Workspace defaults, native selection/picking/navigation and web runtime assets
+are unchanged. The next gate is human review of the three-orientation experiment,
+followed by shared mapped/selection boundary semantics, worker/cache integration,
+geometry-authoritative picking and bounded scrolling/lifetime tests. Complete
+corpus geometry/triangulation validation and producer extraction/publication remain
+later gates. Do not promise mathematically smooth curves: these are exact 10 µm
+voxel-edge contours with finer source geometry and native antialiasing.
+
 ## Slice palette, selection and contour review — October 16 2026
 
 Linked annotations now default to opaque catalog colors instead of the previous

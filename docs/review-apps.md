@@ -246,3 +246,41 @@ from your live scientific/design acceptance.
 The older named commands (`surface`, `mapping`, `picking`, `probe`, `firing-rate`,
 `slices`, `controls`, `insertions`, `volume-free`) remain available as focused
 standalone diagnostics.
+
+## Exact shared contour prototype
+
+This separate experiment renders one coronal (660), sagittal (566) and horizontal
+(393) section from the accepted complete bilateral 10 µm anatomy pack, in that
+left-to-right order. It consumes `ibl-anatomy` numerical components and holes
+without rasterizing labels or reconstructing boundaries. It uses one retained
+polygon set per panel with unlit catalog fills, joined strokes and requested 4x
+MSAA. The prototype has no picking, slice navigation, mapped-boundary unions or
+selection UI. Workspace defaults remain unchanged.
+
+The shared reader is initially an explicit development source, because it has not
+been adopted in the package lock. Supply paths; neither a sibling checkout nor a
+workstation layout is assumed:
+
+```bash
+uv run --frozen tools/review.py contours \
+  --anatomy-source /path/to/ibl-anatomy -- \
+  /path/to/allen-ccfv3-10um-bilateral-exact-599b5e0bbab1 \
+  --regions build/atlas-d070/regions.json \
+  --reference-space-id allen-ccf-2017 --grid-id allen-ccf-2017-10um \
+  --offscreen build/contour-prototype/exact.png \
+  --report build/contour-prototype/exact.json
+```
+
+The launcher reuses the configured Datoviz environment and scopes the development
+reader to this child process. Remove `--offscreen` to open the static native
+review window; add `--frames 3` for bounded startup. Add `--zoom 3` for a central
+magnification, or `--samples 1` to compare single-sample rendering. Each receipt
+records source hashes, signed component-identity fingerprint, slice affines,
+dimensions, stroke width, requested MSAA, decode/setup/render timings and process
+peak RSS. Initial rendering includes deferred native triangulation and warm-up;
+preparation timing alone is not a triangulation benchmark.
+
+The full contour pack covers all 3,260 sections. The sparse web display pack is
+not a substitute. No dense 10 µm volume, download, engine build or pin change is
+needed for this experiment. Exact voxel edges still become visible at sufficient
+magnification; this is not a smoothing derivative.

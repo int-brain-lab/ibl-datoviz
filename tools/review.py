@@ -393,6 +393,26 @@ def run_examples(args, prefix, environment):
         )
 
 
+def run_contours(source, arguments, prefix, environment):
+    """Scope an explicit development anatomy reader to the isolated prototype."""
+    source = source.expanduser().resolve()
+    package = source / 'src' / 'ibl_anatomy'
+    if not (package / 'contours.py').is_file():
+        raise ValueError('The explicit anatomy source needs the numerical contour API')
+    if arguments and arguments[0] == '--':
+        arguments = arguments[1:]
+    environment = environment.copy()
+    environment['PYTHONPATH'] = os.pathsep.join(
+        (str(source / 'src'), environment.get('PYTHONPATH', ''))
+    )
+    environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated'
+    print(f'Using explicit development anatomy reader: {source}', flush=True)
+    run(
+        [*prefix, sys.executable, REPOSITORY / 'examples' / 'registered_contours.py', *arguments],
+        env=environment,
+    )
+
+
 def main():
     """Prepare once, then run unit/native tests or focused real-data examples."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -411,6 +431,9 @@ def main():
     tests.add_argument('pytest_args', nargs=argparse.REMAINDER)
     benchmark = commands.add_parser('benchmark', help='benchmark D070 with the configured runtime')
     benchmark.add_argument('benchmark_args', nargs=argparse.REMAINDER)
+    contours = commands.add_parser('contours', help='review the isolated shared contour prototype')
+    contours.add_argument('--anatomy-source', type=Path, required=True)
+    contours.add_argument('contour_args', nargs=argparse.REMAINDER)
     review = commands.add_parser(
         'run', help='open review app 1 or 2, annotations, or a standalone example'
     )
@@ -421,7 +444,7 @@ def main():
         '--frames', type=int, default=0, help='zero runs until each window is closed'
     )
     review.add_argument('--ui-scale', type=float, default=1.0, help='GUI size multiplier')
-    for command in (diagnosis, tests, review, benchmark):
+    for command in (diagnosis, tests, review, benchmark, contours):
         command.add_argument(
             '--strict', action='store_true', help='require the pinned Datoviz source revision'
         )
@@ -435,6 +458,9 @@ def main():
         checkout = configured_checkout()
         prefix, environment = doctor(checkout, strict=args.strict)
         if args.command == 'doctor':
+            return 0
+        if args.command == 'contours':
+            run_contours(args.anatomy_source, args.contour_args, prefix, environment)
             return 0
         if args.command == 'benchmark':
             run_benchmark(args.benchmark_args, prefix, environment)
