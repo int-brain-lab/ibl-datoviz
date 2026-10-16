@@ -970,79 +970,51 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._surface_alpha_mode = mode
 
     def _create_cursor_marker(self) -> None:
-        self.cursor_marker = self.dvz.dvz_segment(self.scene, 0)
-        self.cursor_dot = self.dvz.dvz_point(self.scene, 0)
-        if not self.cursor_marker or not self.cursor_dot:
+        self.cursor_marker = self.dvz.dvz_mesh(self.scene, 0)
+        if not self.cursor_marker:
             raise RuntimeError('3-D cursor visual creation failed')
+        material = self.dvz.dvz_phong_material_desc()
+        material.phong.ambient = 0.35
+        material.phong.diffuse = 0.75
+        material.phong.specular = 0.35
+        material.phong.shininess = 32.0
         self._check(
-            self.dvz.dvz_visual_set_depth_test(self.cursor_marker, False),
-            '3-D cursor depth disable',
+            self.dvz.dvz_visual_set_material(self.cursor_marker, material),
+            '3-D cursor material',
         )
         self._check(
-            self.dvz.dvz_visual_set_alpha_mode(self.cursor_marker, self.dvz.DVZ_ALPHA_BLENDED),
+            self.dvz.dvz_visual_set_depth_test(self.cursor_marker, True),
+            '3-D cursor depth',
+        )
+        self._check(
+            self.dvz.dvz_visual_set_alpha_mode(self.cursor_marker, self.dvz.DVZ_ALPHA_OPAQUE),
             '3-D cursor alpha mode',
         )
+        self._update_cursor_marker()
         self._check(
-            self.dvz.dvz_visual_set_depth_test(self.cursor_dot, False),
-            '3-D cursor dot depth disable',
-        )
-        self._check(
-            self.dvz.dvz_visual_set_alpha_mode(self.cursor_dot, self.dvz.DVZ_ALPHA_BLENDED),
-            '3-D cursor dot alpha mode',
-        )
-        point_style = self.dvz.dvz_point_style_desc()
-        point_style.aspect = self.dvz.DVZ_SHAPE_ASPECT_FILLED
-        point_style.stroke_width_px = 0.0
-        self._check(
-            self.dvz.dvz_point_set_style(self.cursor_dot, ctypes.byref(point_style)),
-            '3-D cursor dot style',
-        )
-        attach = self.dvz.dvz_visual_attach_desc()
-        attach.z_layer = 2
-        attach.controller_mode = self.dvz.DVZ_CONTROLLER_APPLY
-        attach.coord_space = self.dvz.DVZ_VISUAL_COORD_DATA
-        self._check(
-            self.dvz.dvz_panel_add_visual(self.panel, self.cursor_marker, ctypes.byref(attach)),
+            self.dvz.dvz_panel_add_visual(self.panel, self.cursor_marker, None),
             '3-D cursor attach',
         )
-        attach.z_layer = 3
-        self._check(
-            self.dvz.dvz_panel_add_visual(self.panel, self.cursor_dot, ctypes.byref(attach)),
-            '3-D cursor dot attach',
-        )
-        self._update_cursor_marker()
 
     def _update_cursor_marker(self) -> None:
         world = np.asarray(self.cursor.world_um(self.slice_source), dtype=np.float32).reshape(1, 3)
         position = self.mesh_data.normalize_points(world)[0]
-        half_length = 600.0 * self.mesh_data.display_scale
-        starts = np.tile(position, (3, 1))
-        ends = np.tile(position, (3, 1))
-        starts[np.arange(3), np.arange(3)] -= half_length
-        ends[np.arange(3), np.arange(3)] += half_length
-        self._check(
-            self.dvz.dvz_visual_set_data_many(
-                self.cursor_marker,
-                {
-                    'position_start': np.ascontiguousarray(starts, dtype=np.float32),
-                    'position_end': np.ascontiguousarray(ends, dtype=np.float32),
-                    'color': np.tile(np.array([43, 220, 255, 255], dtype=np.uint8), (3, 1)),
-                    'stroke_width_px': np.full(3, 3.0, dtype=np.float32),
-                },
-            ),
-            '3-D cursor update',
-        )
-        self._check(
-            self.dvz.dvz_visual_set_data_many(
-                self.cursor_dot,
-                {
-                    'position': position.reshape(1, 3),
-                    'color': np.array([[43, 220, 255, 255]], dtype=np.uint8),
-                    'diameter_px': np.array([13.0], dtype=np.float32),
-                },
-            ),
-            '3-D cursor dot update',
-        )
+        desc = self.dvz.dvz_geometry_sphere_desc()
+        desc.center[:] = position
+        # Fixed atlas-space size: zoom and perspective provide physical depth cues.
+        desc.radius = 120.0 * self.mesh_data.display_scale
+        desc.color = self.dvz.DvzColor(43, 220, 255, 255)
+        geometry = self.dvz.dvz_geometry_sphere(ctypes.byref(desc))
+        if not geometry:
+            raise RuntimeError('3-D cursor sphere creation failed')
+        try:
+            # The mesh copies the geometry; the scene owns the visual.
+            self._check(
+                self.dvz.dvz_mesh_set_geometry(self.cursor_marker, geometry),
+                '3-D cursor update',
+            )
+        finally:
+            self.dvz.dvz_geometry_destroy(geometry)
 
     def _refresh_slices(self, axes=None) -> None:
         if not self._slice_fields:

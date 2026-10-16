@@ -9,6 +9,21 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Lit spatial slice cursor — October 16 2026
+
+The linked workspace's 3D slice cursor now uses one cyan Phong-lit sphere mesh
+with a fixed 120 µm atlas-space radius, replacing the depth-disabled segment
+crosshair and pixel dot. Normal depth testing and opaque rendering provide
+occlusion and perspective cues. Native temporary geometry is destroyed after
+the mesh copies it; the scene retains visual ownership. Cursor updates reuse
+the same visual and preserve slice/selection behavior.
+
+All **22 focused linked-workspace, auto-slice and native review-app tests** pass
+without skips on the configured macOS runtime. The real-data offscreen capture
+`build/review/cursor-lit-sphere.png` was inspected. Lint and whitespace pass;
+the existing native source revision mismatch remains. Visual interaction
+acceptance remains with the reviewer.
+
 ## Compact linked slice toolbar — October 16 2026
 
 The three projection sliders now share one row with equal space. Auto-slice
