@@ -262,6 +262,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             if slice_source is not volumes:
                 self._slice_loader = SliceScheduler(
                     self._slice_preparation,
+                    prepare_cancellable=self._slice_preparation.prepare_cancellable,
                     notify=self._notify_slice_ready,
                     max_workers=3,
                 )

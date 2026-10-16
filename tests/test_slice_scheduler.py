@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from threading import Event
+from threading import Event, Thread
 from time import monotonic, sleep
 
 import pytest
@@ -125,4 +125,75 @@ def test_failed_axis_preserves_another_axis_and_can_resume():
         assert notified['ap'].wait(2)
         assert scheduler.drain_ready() == [PreparedSlice(SliceRequest('ap', 5, 2), 5)]
     finally:
+        scheduler.close()
+
+
+def test_optional_cancellable_callback_reports_real_current_errors_once():
+    notified = {axis: Event() for axis in ('ap', 'dv')}
+
+    def ordinary(_request):
+        raise AssertionError('the explicitly supplied cooperative callback should run')
+
+    def cancellable(request, is_current):
+        assert is_current()
+        if request.axis == 'ap':
+            raise ValueError('current scientific preparation failed')
+        return request.index
+
+    scheduler = SliceScheduler(
+        ordinary, prepare_cancellable=cancellable,
+        notify=lambda axis: notified[axis].set(),
+    )
+    try:
+        scheduler.submit(SliceRequest('ap', 1, 1))
+        scheduler.submit(SliceRequest('dv', 2, 1))
+        assert all(event.wait(2) for event in notified.values())
+        with pytest.raises(ValueError, match='scientific preparation'):
+            scheduler.drain_ready()
+        assert scheduler.drain_ready() == [PreparedSlice(SliceRequest('dv', 2, 1), 2)]
+        assert scheduler.drain_ready() == []
+    finally:
+        scheduler.close()
+
+
+def test_close_invalidates_checkpoint_before_join_and_preserves_submission_state():
+    started, release, closing = Event(), Event(), Event()
+    notifications, checks = [], []
+
+    def cancellable(_request, is_current):
+        started.set()
+        assert release.wait(2)
+        checks.append(is_current())
+        raise RuntimeError('obsolete cancellation or old source failure')
+
+    scheduler = SliceScheduler(lambda _: None, prepare_cancellable=cancellable,
+                               notify=notifications.append)
+    original_close = scheduler._executor.close
+
+    def joined_close():
+        closing.set()
+        original_close()
+
+    scheduler._executor.close = joined_close
+    scheduler.submit(SliceRequest('ap', 1, 5))
+    assert started.wait(2)
+    closer = Thread(target=scheduler.close)
+    closer.start()
+    try:
+        assert closing.wait(2)
+        assert closer.is_alive()
+        # Even stale submissions must reject close before changing state.
+        for revision in (1, 6):
+            with pytest.raises(RuntimeError, match='closed'):
+                scheduler.submit(SliceRequest('ap', 2, revision))
+        assert scheduler.latest_revision('ap') == 5
+        release.set()
+        closer.join(2)
+        assert not closer.is_alive()
+        assert checks == [False] and notifications == []
+        assert scheduler.drain_ready() == []
+        scheduler.close()
+    finally:
+        release.set()
+        closer.join(2)
         scheduler.close()

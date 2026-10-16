@@ -7,6 +7,7 @@ import pytest
 
 from ibl_anatomy import open_volume_pack
 from ibl_datoviz import LinkedAtlasNavigator
+from ibl_datoviz.contour_geometry import prepare_contour_geometry
 from ibl_datoviz.navigator import AtlasCursor, AtlasSliceComposer
 from ibl_datoviz.slice_preparation import (
     PreparedSliceLayers,
@@ -284,3 +285,172 @@ def test_contour_cache_evicts_by_bytes_before_its_entry_count_limit():
     count, retained = worker.contour_cache_info()['dv']
     assert count == 1 and retained <= budget
     assert worker(request).contours is not first.contours
+
+
+def test_superseded_decode_skips_geometry_and_raster_then_prepares_latest(monkeypatch):
+    source = ExactSource()
+    worker = SlicePreparation(source, 'allen')
+    started, release, notified = Event(), Event(), Event()
+    decoded, composed, geometry_calls = [], [], []
+    original_decode = source.contour_slice
+    original_compose = worker._composers['dv'].compose_layers
+
+    def decode(axis, index):
+        decoded.append(index)
+        result = original_decode(axis, index)
+        if index == 1:
+            started.set()
+            assert release.wait(2)
+        return result
+
+    def compose(axis, index, **kwargs):
+        composed.append(index)
+        return original_compose(axis, index, **kwargs)
+
+    monkeypatch.setattr(source, 'contour_slice', decode)
+    monkeypatch.setattr(worker._composers['dv'], 'compose_layers', compose)
+    original_geometry = prepare_contour_geometry
+
+    def geometry(*args, **kwargs):
+        geometry_calls.append(True)
+        return original_geometry(*args, **kwargs)
+
+    monkeypatch.setattr('ibl_datoviz.slice_preparation.prepare_contour_geometry', geometry)
+    scheduler = SliceScheduler(worker, prepare_cancellable=worker.prepare_cancellable,
+                               notify=lambda _: notified.set(), max_workers=1)
+    request = SliceRequest('dv', 1, 1, renderer='contours')
+    try:
+        scheduler.submit(request)
+        assert started.wait(2)
+        latest = replace(request, index=2, revision=2)
+        scheduler.submit(latest)
+        release.set()
+        assert notified.wait(2)
+        ready = scheduler.drain_ready()
+        assert [item.request for item in ready] == [latest]
+        assert decoded == [1, 2] and composed == [2]
+        assert len(geometry_calls) == 1
+        assert worker.contour_cache_info()['dv'][0] == 1
+    finally:
+        release.set()
+        scheduler.close()
+
+
+@pytest.mark.parametrize('phase', ['geometry', 'compose'])
+def test_phase_checkpoint_rejects_obsolete_work_before_next_expensive_stage(monkeypatch, phase):
+    worker = SlicePreparation(ExactSource(), 'allen')
+    current, calls = [True], []
+    request = SliceRequest('dv', 1, 1, renderer='contours')
+    original_geometry = prepare_contour_geometry
+    original_compose = worker._composers['dv'].compose_layers
+
+    def geometry(*args, **kwargs):
+        calls.append('geometry')
+        result = original_geometry(*args, **kwargs)
+        if phase == 'geometry':
+            current[0] = False
+        return result
+
+    def compose(*args, **kwargs):
+        calls.append('compose')
+        result = original_compose(*args, **kwargs)
+        current[0] = False
+        return result
+
+    def payload(*_args):
+        raise AssertionError('obsolete work must not allocate or publish its payload')
+
+    monkeypatch.setattr('ibl_datoviz.slice_preparation.prepare_contour_geometry', geometry)
+    monkeypatch.setattr(worker._composers['dv'], 'compose_layers', compose)
+    monkeypatch.setattr('ibl_datoviz.slice_preparation._contour_payload', payload)
+    with pytest.raises(RuntimeError, match='superseded'):
+        worker.prepare_cancellable(request, lambda: current[0])
+    assert calls == (['geometry'] if phase == 'geometry' else ['geometry', 'compose'])
+    assert worker.contour_cache_info()['dv'][0] == (0 if phase == 'geometry' else 1)
+
+
+def test_closed_worker_waiting_for_axis_lock_skips_decode_and_joins(monkeypatch):
+    worker = SlicePreparation(ExactSource(), 'allen')
+    requested, closing = Event(), Event()
+    original_lock = worker._locks['dv']
+
+    class SignaledLock:
+        def __enter__(self):
+            requested.set()
+            original_lock.acquire()
+
+        def __exit__(self, *_args):
+            original_lock.release()
+
+    def unexpected_decode(*_args):
+        raise AssertionError('closed preparation must not begin source reads')
+
+    monkeypatch.setattr(worker._composers['dv'].volumes, 'contour_slice', unexpected_decode)
+    worker._locks['dv'] = SignaledLock()
+    notifications = []
+    scheduler = SliceScheduler(worker, prepare_cancellable=worker.prepare_cancellable,
+                               notify=notifications.append)
+    original_close = scheduler._executor.close
+
+    def close_executor():
+        closing.set()
+        original_close()
+
+    scheduler._executor.close = close_executor
+    original_lock.acquire()
+    scheduler.submit(SliceRequest('dv', 1, 1, renderer='contours'))
+    assert requested.wait(2)
+    closer = Thread(target=scheduler.close)
+    closer.start()
+    try:
+        assert closing.wait(2) and closer.is_alive()
+    finally:
+        original_lock.release()
+        closer.join(2)
+        scheduler.close()
+    assert not closer.is_alive() and notifications == []
+    assert scheduler.drain_ready() == []
+
+
+def test_close_during_source_decode_skips_remaining_preparation(monkeypatch):
+    source = ExactSource()
+    worker = SlicePreparation(source, 'allen')
+    started, release, closing = Event(), Event(), Event()
+    original_decode = source.contour_slice
+
+    def decode(*args):
+        result = original_decode(*args)
+        started.set()
+        assert release.wait(2)
+        return result
+
+    def unexpected_geometry(*_args):
+        raise AssertionError('closed preparation must stop after the source operation')
+
+    monkeypatch.setattr(source, 'contour_slice', decode)
+    monkeypatch.setattr(
+        'ibl_datoviz.slice_preparation.prepare_contour_geometry', unexpected_geometry,
+    )
+    notifications = []
+    scheduler = SliceScheduler(worker, prepare_cancellable=worker.prepare_cancellable,
+                               notify=notifications.append)
+    original_close = scheduler._executor.close
+
+    def close_executor():
+        closing.set()
+        original_close()
+
+    scheduler._executor.close = close_executor
+    scheduler.submit(SliceRequest('dv', 1, 1, renderer='contours'))
+    assert started.wait(2)
+    closer = Thread(target=scheduler.close)
+    closer.start()
+    try:
+        assert closing.wait(2) and closer.is_alive()
+    finally:
+        release.set()
+        closer.join(2)
+        scheduler.close()
+    assert not closer.is_alive() and notifications == []
+    assert worker.contour_cache_info()['dv'] == (0, 0)
+    assert scheduler.drain_ready() == []

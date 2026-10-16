@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from threading import Event, Lock
+from threading import Event, Lock, Thread
 from time import monotonic, sleep
+from weakref import ref
 
 import pytest
 
@@ -198,4 +199,51 @@ def test_ready_failure_is_superseded_by_new_request():
         assert notified.wait(2)
         assert [item.result for item in queue.drain_ready()] == [2]
     finally:
+        queue.close()
+
+
+def test_close_releases_callback_owners_without_garbage_collection():
+    class Owner:
+        def prepare(self, token):
+            return token
+
+        def notify(self, _key):
+            pass
+
+    owner = Owner()
+    weak = ref(owner)
+    queue = LatestWinsExecutor(owner.prepare, notify=owner.notify)
+    owner.queue = queue
+    del owner
+    assert weak() is not None
+    queue.close()
+    assert weak() is None
+    queue.close()
+
+
+def test_close_discards_late_failure_without_caching_traceback_or_notifying():
+    started, release = Event(), Event()
+    notifications = []
+
+    def prepare(_token):
+        started.set()
+        assert release.wait(2)
+        raise ValueError('source failure after close started')
+
+    queue = LatestWinsExecutor(prepare, notify=notifications.append)
+    queue.request('axis', 1)
+    assert started.wait(2)
+    closer = Thread(target=queue.close)
+    closer.start()
+    try:
+        wait_until(lambda: queue._closed)
+        assert closer.is_alive()
+        release.set()
+        closer.join(2)
+        assert not closer.is_alive()
+        assert notifications == [] and queue.drain_ready() == []
+        assert queue._prepare is None and queue._notify is None
+    finally:
+        release.set()
+        closer.join(2)
         queue.close()

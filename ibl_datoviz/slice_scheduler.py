@@ -74,27 +74,50 @@ class SliceScheduler(Generic[Payload]):
     by :meth:`drain_ready`, which is the only point where the owner should
     mutate Datoviz resources.  Submitting a revision older than or equal to
     the latest revision for that axis is a no-op and returns ``False``.
+
+    ``prepare_cancellable`` optionally receives the request plus a renderer-free
+    ``is_current()`` predicate for cooperative phase-boundary checks. The regular
+    one-argument callback remains supported. Only complete current outcomes reach
+    the owner; superseded failures are discarded by the executor generation gate.
     """
 
     def __init__(
         self,
         prepare: Callable[[SliceRequest], Payload],
         *,
+        prepare_cancellable: Callable[[SliceRequest, Callable[[], bool]], Payload] | None = None,
         notify: Callable[[Axis], object] | None = None,
         max_workers: int = 3,
     ) -> None:
         self._prepare = prepare
+        self._prepare_cancellable = prepare_cancellable
         self._lock = RLock()
+        self._closed = False
         self._latest_revision: dict[Axis, int] = {}
         self._executor = LatestWinsExecutor[Axis, SliceRequest, Payload](
-            prepare,
+            self._run_prepare,
             notify=notify,
             max_workers=max_workers,
         )
 
+    def _run_prepare(self, request: SliceRequest) -> Payload:
+        if self._prepare_cancellable is None:
+            return self._prepare(request)
+
+        def is_current():
+            with self._lock:
+                return (
+                    not self._closed
+                    and request.revision == self._latest_revision.get(request.axis)
+                )
+
+        return self._prepare_cancellable(request, is_current)
+
     def submit(self, request: SliceRequest) -> bool:
         """Submit ``request`` if it advances that axis; return acceptance."""
         with self._lock:
+            if self._closed:
+                raise RuntimeError('slice scheduler is closed')
             latest = self._latest_revision.get(request.axis, -1)
             if request.revision <= latest:
                 return False
@@ -123,4 +146,14 @@ class SliceScheduler(Generic[Payload]):
 
     def close(self) -> None:
         """Stop workers and reject subsequent submissions."""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            # Invalidate generations before a checkpoint can observe closure.
+            # The executor then discards cancellation errors as stale outcomes.
+            for axis in self._latest_revision:
+                self._executor.cancel(axis)
+        # A worker may need the scheduler lock for its final checkpoint. Never
+        # retain it while joining the executor or awaiting notification cleanup.
         self._executor.close()

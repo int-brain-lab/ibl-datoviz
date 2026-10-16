@@ -13,9 +13,20 @@ from .contour_geometry import ContourGeometry, prepare_contour_geometry
 from .navigator import AtlasSliceComposer, label_contours
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from numpy.typing import NDArray
 
     from .slice_scheduler import SliceRequest
+
+
+class _SliceSupersededError(RuntimeError):
+    """Internal control flow discarded by the scheduler's stale generation check."""
+
+
+def _check_current(is_current):
+    if is_current is not None and not is_current():
+        raise _SliceSupersededError('slice preparation was superseded or closed')
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +88,8 @@ class _ContourCache:
         self.source, self.max_entries, self.max_bytes = source, max_entries, max_bytes
         self.entries, self.retained_bytes = OrderedDict(), 0
 
-    def get(self, request):
+    def get(self, request, *, is_current=None):
+        _check_current(is_current)
         key = request.source_id, request.mapping, request.axis, request.index
         if key in self.entries:
             entry = self.entries.pop(key)
@@ -86,7 +98,9 @@ class _ContourCache:
         # Preload the shared numerical section before compose_layers so its
         # annotation adapter can reuse the same decoded reader result.
         section = self.source.contour_slice(request.axis, request.index)
+        _check_current(is_current)
         geometry = prepare_contour_geometry(section.paths, self.source.regions, request.mapping)
+        _check_current(is_current)
         transform = np.asarray(section.svg_to_fraction).reshape(3, 3)
         entry = _CachedContours(
             geometry, tuple(section.svg_to_fraction),
@@ -105,14 +119,14 @@ class _ContourCache:
         return entry
 
 
-def _contour_entry(composer, request):
+def _contour_entry(composer, request, *, is_current=None):
     caches = getattr(composer, '_contour_caches', None)
     if caches is None:
         caches = composer._contour_caches = {}
     cache = caches.get(request.axis)
     if cache is None or cache.source is not composer.volumes:
         cache = caches[request.axis] = _ContourCache(composer.volumes)
-    return cache.get(request)
+    return cache.get(request, is_current=is_current)
 
 
 def _contour_payload(anatomy, annotation, entry, geometry):
@@ -137,12 +151,18 @@ def _contour_payload(anatomy, annotation, entry, geometry):
 
 
 def prepare_slice_layers(
-    composer: AtlasSliceComposer, request: SliceRequest
+    composer: AtlasSliceComposer, request: SliceRequest, *,
+    is_current: Callable[[], bool] | None = None,
 ) -> PreparedSliceLayers:
     """Prepare only from captured request values and a renderer-free composer."""
+    _check_current(is_current)
     if composer.mapping != request.mapping:
         composer.set_mapping(request.mapping)
-    contour_entry = _contour_entry(composer, request) if request.renderer == 'contours' else None
+    contour_entry = (
+        _contour_entry(composer, request, is_current=is_current)
+        if request.renderer == 'contours' else None
+    )
+    _check_current(is_current)
     anatomy, annotation = composer.compose_layers(
         request.axis,
         request.index,
@@ -150,6 +170,7 @@ def prepare_slice_layers(
         selected_region_ids=request.selected_region_ids,
         selection_dim_factor=request.selection_dim_factor,
     )
+    _check_current(is_current)
     if not request.anatomy_visible:
         anatomy[..., 3] = 0
     if not request.annotation_visible:
@@ -202,5 +223,20 @@ class SlicePreparation:
 
     def __call__(self, request: SliceRequest) -> PreparedSliceLayers:
         """Return a complete owned payload under the axis cache lock."""
+        return self.prepare_cancellable(request, None)
+
+    def prepare_cancellable(
+        self, request: SliceRequest, is_current: Callable[[], bool] | None,
+    ) -> PreparedSliceLayers:
+        """Stop obsolete preparation at phase boundaries without retaining a viewer.
+
+        Numerical decoding and raster composition finish their current operation;
+        cancellation is cooperative, never an interruption of source/cache writes.
+        The scheduler suppresses obsolete outcomes before native presentation.
+        """
+        _check_current(is_current)
         with self._locks[request.axis]:
-            return prepare_slice_layers(self._composers[request.axis], request)
+            _check_current(is_current)
+            return prepare_slice_layers(
+                self._composers[request.axis], request, is_current=is_current,
+            )

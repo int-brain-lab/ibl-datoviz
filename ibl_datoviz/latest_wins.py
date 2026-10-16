@@ -124,6 +124,8 @@ class LatestWinsExecutor(Generic[Key, Token, Result]):
             except Exception as exc:  # preserve worker failures for drain_ready
                 with self._lock:
                     state = self._states.get(key)
+                    if self._closed:
+                        return
                     if (
                         state is None
                         or state.generation != generation
@@ -188,3 +190,10 @@ class LatestWinsExecutor(Generic[Key, Token, Result]):
                 state.ready = None
                 state.error = None
         self._executor.shutdown(wait=True)
+        # Worker frames and notifications have unwound. Release bound callbacks
+        # now, including owners retained by scheduler/executor reference cycles.
+        with self._lock:
+            for state in self._states.values():
+                state.active = False
+            self._prepare = None
+            self._notify = None
