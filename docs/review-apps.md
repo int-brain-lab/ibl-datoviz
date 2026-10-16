@@ -49,14 +49,16 @@ The client also accepts explicit local BWM recordings and prepared regional JSON
 ```bash
 uv run --frozen python -m examples.scientific_workspace ATLAS_ROOT \
   --volume-pack VOLUME_PACK --release BWM_RELEASE --pid PID \
-  --frame-evidence REVIEWED_FRAME_JSON --region-values PREPARED_REGION_VALUES_JSON
+  --frame-evidence REVIEWED_FRAME_JSON --region-values PREPARED_REGION_VALUES_JSON \
+  --region-mapping-reduction weighted_mean
 ```
 
 Frame evidence is optional only when the source already carries an exact reviewed
 producer declaration. Regional JSON supplies all `RegionValues` fields, including
 units, weights, provenance and a WorldFrame object as `frame`; JSON `null` values
-retain missing scalars. It colors detailed anatomy using an explicit weighted
-mean. The client loads supplied metadata before GUI startup and reads no signals.
+retain missing scalars. The required `--region-mapping-reduction weighted_mean` declares the cross-mapping
+reduction explicitly; check that a weighted mean is meaningful for the supplied
+quantity. It colors detailed anatomy using that declared reduction. The client loads supplied metadata before GUI startup and reads no signals.
 `--plane ap`, `--frames N`, `--offscreen PNG` and `--report JSON` support bounded
 engineering checks. Full interactive scientific presentation remains a user review
 gate even when startup/captures pass.
@@ -284,3 +286,46 @@ The full contour pack covers all 3,260 sections. The sparse web display pack is
 not a substitute. No dense 10 µm volume, download, engine build or pin change is
 needed for this experiment. Exact voxel edges still become visible at sufficient
 magnification; this is not a smoothing derivative.
+
+
+## Integrated exact contour workspace
+
+The accepted contour prototype is now available inside the existing linked
+`AtlasViewer`, with mapping-aware borders, signed selection unions, exact
+geometry hover and asynchronous section loading. Keep the existing default
+50 µm workspace for its dense-grid auto-slice behavior. The exact mode needs
+complete registered anatomy and intensity packs on the same grid; the bundled
+sampled assets do not provide unrestricted navigation.
+
+Until the reconciled anatomy reader is published and adopted, use an explicit
+compatible source checkout (commit `2e190e05b9516df99bbba61284036306681476d9`):
+
+```sh
+uv run --frozen tools/review.py contours --workspace \
+  --anatomy-source /path/to/ibl-anatomy -- \
+  /path/to/verified-atlas-assets \
+  --volume-pack /path/to/50um-volume-pack \
+  --intensity-pack /path/to/10um-intensity-pack \
+  --anatomy-pack /path/to/complete-exact-registered-pack \
+  --context-root /path/to/major-context \
+  --ui-scale 1.5 --frames 3
+```
+
+Omit `--frames 3` for later interaction review. BWM `--workspace` or `--release`,
+repeated `--pid`, reviewed frame evidence and prepared `--region-values` remain
+available on this same client. The launcher scopes the development reader to
+its child process; it changes no environment, package pin or assets persistently.
+
+Engineering evidence covers Allen/Beryl/Cosmos, all three orientations, selected
+parent unions, actual mouse hover, wheel and burst scrolling, stale requests,
+voxel-edge/center conversion and failure recovery. Two fixed polygon buffers per
+axis avoid the pinned engine's append-only scene slot limits. A native 160-update
+stress check confirms retained reuse. Source geometry cache is bounded by both
+entry count and 32 MiB. Missing sections and unsupported geometry fail explicitly.
+
+The measured Linux run used roughly 1.37 GiB peak process RSS; cold wheel settling
+was about 2.3 seconds, while mapped/selection updates settled in about 0.5–0.9
+seconds. These are bounded engineering measurements on one machine, not scrolling
+performance guarantees. Screenshots and receipts remain under ignored
+`build/contour-workspace/`; whole-corpus triangulation and further platform checks
+remain separate from these sampled tests.

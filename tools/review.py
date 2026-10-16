@@ -357,7 +357,8 @@ def run_examples(args, prefix, environment):
         if missing:
             recovery = (
                 f'Move the incomplete context directory aside ({CONTEXT}), then rerun'
-                if CONTEXT.exists() else 'Run'
+                if CONTEXT.exists()
+                else 'Run'
             )
             raise ValueError(
                 f'Review context data is missing: {missing[0]}. '
@@ -381,7 +382,8 @@ def run_examples(args, prefix, environment):
                 *(['--preset', preset] if preset is not None else []),
                 *(
                     ['--context-root', CONTEXT]
-                    if name in ('1', 'annotations', 'workspace') else []
+                    if name in ('1', 'annotations', 'workspace')
+                    else []
                 ),
                 '--frames',
                 args.frames,
@@ -393,8 +395,8 @@ def run_examples(args, prefix, environment):
         )
 
 
-def run_contours(source, arguments, prefix, environment):
-    """Scope an explicit development anatomy reader to the isolated prototype."""
+def run_contours(source, arguments, prefix, environment, *, workspace=False):
+    """Scope an explicit development reader to a prototype or linked workspace."""
     source = source.expanduser().resolve()
     package = source / 'src' / 'ibl_anatomy'
     if not (package / 'contours.py').is_file():
@@ -407,8 +409,10 @@ def run_contours(source, arguments, prefix, environment):
     )
     environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated'
     print(f'Using explicit development anatomy reader: {source}', flush=True)
+    script = 'scientific_workspace.py' if workspace else 'registered_contours.py'
+    extra = ['--slice-renderer', 'contours'] if workspace else []
     run(
-        [*prefix, sys.executable, REPOSITORY / 'examples' / 'registered_contours.py', *arguments],
+        [*prefix, sys.executable, REPOSITORY / 'examples' / script, *arguments, *extra],
         env=environment,
     )
 
@@ -433,6 +437,7 @@ def main():
     benchmark.add_argument('benchmark_args', nargs=argparse.REMAINDER)
     contours = commands.add_parser('contours', help='review the isolated shared contour prototype')
     contours.add_argument('--anatomy-source', type=Path, required=True)
+    contours.add_argument('--workspace', action='store_true', help='open the linked workspace')
     contours.add_argument('contour_args', nargs=argparse.REMAINDER)
     review = commands.add_parser(
         'run', help='open review app 1 or 2, annotations, or a standalone example'
@@ -460,7 +465,13 @@ def main():
         if args.command == 'doctor':
             return 0
         if args.command == 'contours':
-            run_contours(args.anatomy_source, args.contour_args, prefix, environment)
+            run_contours(
+                args.anatomy_source,
+                args.contour_args,
+                prefix,
+                environment,
+                workspace=args.workspace,
+            )
             return 0
         if args.command == 'benchmark':
             run_benchmark(args.benchmark_args, prefix, environment)

@@ -456,3 +456,22 @@ def test_contour_prototype_rejects_anatomy_without_numerical_api(tmp_path, monke
     monkeypatch.setattr(review, 'run', lambda *_args, **_kwargs: pytest.fail('unexpected launch'))
     with pytest.raises(ValueError, match='numerical contour API'):
         review.run_contours(tmp_path, [], [], {})
+
+
+def test_contour_workspace_scopes_shared_reader_and_uses_public_client(tmp_path, monkeypatch):
+    source = tmp_path / 'anatomy'
+    package = source / 'src' / 'ibl_anatomy'
+    package.mkdir(parents=True)
+    (package / 'contours.py').touch()
+    calls = []
+    monkeypatch.setattr(review, 'run', lambda command, **kwargs: calls.append((command, kwargs)))
+    arguments = ['atlas path', '--volume-pack', 'volume path',
+                 '--intensity-pack', 'intensity path',
+                 '--anatomy-pack', 'anatomy path']
+    environment = {'PYTHONPATH': 'configured-native'}
+    review.run_contours(source, ['--', *arguments], [], environment, workspace=True)
+    command, kwargs = calls[0]
+    assert command == [review.sys.executable, review.REPOSITORY / 'examples' /
+                       'scientific_workspace.py', *arguments, '--slice-renderer', 'contours']
+    assert kwargs['env']['PYTHONPATH'].split(review.os.pathsep)[0] == str(source / 'src')
+    assert environment == {'PYTHONPATH': 'configured-native'}

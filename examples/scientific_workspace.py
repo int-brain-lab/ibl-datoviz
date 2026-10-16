@@ -16,8 +16,8 @@ import numpy as np
 
 from examples.ibl_recordings import _receipt, _source
 from examples.scientific_common import add_arguments, finish, prepare_viewer
-from ibl_anatomy import open_volume_pack
-from ibl_datoviz import AtlasViewer, Paths, Points, RegionValues, WorldFrame
+from ibl_anatomy import open_anatomy_pack, open_intensity_block_pack, open_volume_pack
+from ibl_datoviz import AtlasSliceSource, AtlasViewer, Paths, Points, RegionValues, WorldFrame
 from ibl_datoviz.ibl import prepare_bwm_recording
 
 
@@ -39,19 +39,59 @@ def _illustrative_annotations(app):
     app.tables.show(landmarks)
 
 
-def main():
-    """Prepare data before opening the GUI and retain one viewer/controller model."""
+def _slice_options(args, parser):
+    """Prepare one explicit source; sparse or incompatible assets never fall back."""
+    if bool(args.intensity_pack) != bool(args.anatomy_pack):
+        parser.error('--intensity-pack and --anatomy-pack must be supplied together')
+    if args.slice_renderer == 'contours' and args.anatomy_pack is None:
+        parser.error('contours require explicit --intensity-pack and --anatomy-pack')
+    options = {}
+    volumes = open_volume_pack(args.volume_pack).load_volumes()
+    options.update(
+        layout='linked', volumes=volumes, render_volume=False, slice_renderer=args.slice_renderer
+    )
+    if args.anatomy_pack is not None:
+        intensity = open_intensity_block_pack(args.intensity_pack)
+        anatomy = open_anatomy_pack(
+            args.anatomy_pack,
+            reference_space_id=intensity.reference_space_id,
+            grid_id=intensity.grid_id,
+        )
+        options['slice_source'] = AtlasSliceSource(
+            intensity,
+            {p.world_slice_axis: p for p in anatomy.projections.values()},
+            volumes.regions,
+        )
+    return options
+
+
+def _arguments():
+    """Declare the offline client inputs and parse command-line arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
     add_arguments(parser)
     parser.add_argument('--volume-pack', type=Path, required=True)
+    parser.add_argument('--intensity-pack', type=Path)
+    parser.add_argument('--anatomy-pack', type=Path)
+    parser.add_argument('--slice-renderer', choices=('raster', 'contours'), default='raster')
     sources = parser.add_mutually_exclusive_group()
     sources.add_argument('--release', type=Path, help='existing BWM release directory')
     sources.add_argument('--workspace', type=Path, help='existing shared-reader workspace')
     parser.add_argument('--pid', action='append', default=[])
     parser.add_argument('--frame-evidence', type=Path)
     parser.add_argument('--region-values', type=Path, help='prepared RegionValues JSON')
+    parser.add_argument('--region-mapping-reduction', choices=('weighted_mean',))
     parser.add_argument('--plane', action='append', choices=('ap', 'ml', 'dv'), default=[])
     args = parser.parse_args()
+    if bool(args.region_values) != bool(args.region_mapping_reduction):
+        parser.error(
+            '--region-values requires an explicit --region-mapping-reduction weighted_mean'
+        )
+    return parser, args
+
+
+def main():
+    """Prepare data before opening the GUI and retain one viewer/controller model."""
+    parser, args = _arguments()
     if bool(args.release or args.workspace) != bool(args.pid):
         parser.error(
             '--release or --workspace and one or more distinct --pid values must be '
@@ -61,9 +101,9 @@ def main():
         parser.error('duplicate insertion IDs are not supported')
     if args.frame_evidence is not None and args.release is None and args.workspace is None:
         parser.error('--frame-evidence requires --release or --workspace')
+    slice_options = _slice_options(args, parser)
     options = prepare_viewer(args)
-    volumes = open_volume_pack(args.volume_pack).load_volumes()
-    options.update(layout='linked', volumes=volumes, render_volume=False)
+    options.update(slice_options)
     frame = None
     if args.frame_evidence is not None:
         frame = WorldFrame(**json.loads(args.frame_evidence.read_text()))
@@ -91,12 +131,14 @@ def main():
         else:
             _illustrative_annotations(app)
         if regional is not None:
-            quantity = app.add_region_values(regional, mapping_reduction='weighted_mean')
+            quantity = app.add_region_values(
+                regional, mapping_reduction=args.region_mapping_reduction
+            )
             quantity.color_by('value', cmap='sequential')
             report['regional_quantity'] = {
                 'name': quantity.name,
                 'units': quantity.payload.units,
-                'mapping_reduction': 'weighted_mean',
+                'mapping_reduction': args.region_mapping_reduction,
                 'source_rows': len(quantity.payload.values),
             }
         for axis in args.plane:
