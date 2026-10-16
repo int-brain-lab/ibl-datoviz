@@ -213,7 +213,6 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._hover_images: dict[str, object] = {}
         self._boundary_visuals: dict[str, object] = {}
         self._crosshairs: dict[str, object] = {}
-        self._hover_markers: dict[str, object] = {}
         self._cursor_controls = {
             axis: ctypes.c_int(value)
             for axis, value in zip(('ap', 'ml', 'dv'), self.cursor.as_index(), strict=True)
@@ -638,39 +637,6 @@ class LinkedAtlasNavigator(AtlasViewer):
             )
             self._crosshairs[axis] = crosshair
 
-            hover = self.dvz.dvz_point(self.scene, 0)
-            if not hover:
-                raise RuntimeError('slice hover marker creation failed')
-            point_style = self.dvz.dvz_point_style_desc()
-            point_style.aspect = self.dvz.DVZ_SHAPE_ASPECT_FILLED
-            point_style.stroke_width_px = 0.0
-            self._check(
-                self.dvz.dvz_point_set_style(hover, ctypes.byref(point_style)),
-                'slice hover marker style',
-            )
-            self._check(self.dvz.dvz_visual_set_depth_test(hover, False), 'hover marker depth')
-            self._check(
-                self.dvz.dvz_visual_set_alpha_mode(hover, self.dvz.DVZ_ALPHA_BLENDED),
-                'hover marker alpha mode',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
-                    hover,
-                    {
-                        'position': np.zeros((1, 3), dtype=np.float32),
-                        'color': np.array([[255, 255, 255, 0]], dtype=np.uint8),
-                        'diameter_px': np.zeros(1, dtype=np.float32),
-                    },
-                ),
-                'slice hover marker upload',
-            )
-            attach.z_layer = 11
-            self._check(
-                self.dvz.dvz_panel_add_visual(panel, hover, ctypes.byref(attach)),
-                'hover marker attach',
-            )
-            self._hover_markers[axis] = hover
-
     def _slice_rgba(self, axis: str) -> NDArray[np.uint8]:
         index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
         return self.slice_composer.compose(
@@ -1007,14 +973,39 @@ class LinkedAtlasNavigator(AtlasViewer):
         geometry = self.dvz.dvz_geometry_sphere(ctypes.byref(desc))
         if not geometry:
             raise RuntimeError('3-D cursor sphere creation failed')
+        parts = [geometry]
+        merged = None
         try:
+            for axis in range(3):
+                cylinder = self.dvz.dvz_geometry_cylinder_desc()
+                cylinder.radius = 28.0 * self.mesh_data.display_scale
+                cylinder.height = 900.0 * self.mesh_data.display_scale
+                cylinder.color = self.dvz.DvzColor(94, 174, 192, 255)
+                rod = self.dvz.dvz_geometry_cylinder(ctypes.byref(cylinder))
+                if not rod:
+                    raise RuntimeError('3-D cursor cylinder creation failed')
+                parts.append(rod)
+                transform = np.eye(4)
+                transform[:3, :3] = np.roll(np.eye(3), (axis + 1) % 3, axis=0)
+                transform[:3, 3] = position
+                matrix = ((ctypes.c_double * 4) * 4)(*map(tuple, transform.T))
+                self._check(
+                    self.dvz.dvz_geometry_transform(rod, matrix), '3-D cursor axis transform'
+                )
+            pointers = (type(geometry) * len(parts))(*parts)
+            merged = self.dvz.dvz_geometry_merge(len(parts), pointers)
+            if not merged:
+                raise RuntimeError('3-D cursor geometry merge failed')
             # The mesh copies the geometry; the scene owns the visual.
             self._check(
-                self.dvz.dvz_mesh_set_geometry(self.cursor_marker, geometry),
+                self.dvz.dvz_mesh_set_geometry(self.cursor_marker, merged),
                 '3-D cursor update',
             )
         finally:
-            self.dvz.dvz_geometry_destroy(geometry)
+            if merged:
+                self.dvz.dvz_geometry_destroy(merged)
+            for part in parts:
+                self.dvz.dvz_geometry_destroy(part)
 
     def _refresh_slices(self, axes=None) -> None:
         if not self._slice_fields:
@@ -1175,17 +1166,6 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._hovered_slice_position = position
         self._hovered_region_label = label
         self._set_hovered_region_ids(region_ids)
-        for marker_axis, marker in self._hover_markers.items():
-            visible = marker_axis == axis and cursor is not None
-            position = np.array([[x, y, 0.04]], dtype=np.float32)
-            color = np.array([[255, 255, 255, 230 if visible else 0]], dtype=np.uint8)
-            diameter = np.array([9.0 if visible else 0.0], dtype=np.float32)
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
-                    marker, {'position': position, 'color': color, 'diameter_px': diameter}
-                ),
-                'slice hover marker update',
-            )
         return changed
 
     def step_slice(self, axis: str, delta: int) -> bool:

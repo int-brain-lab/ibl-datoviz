@@ -9,6 +9,16 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Slice cursor review refinement — October 16 2026
+
+Removed the small mouse-following disc from the 2D slice panels, preserving
+region hover and tooltips. The 3D cursor now combines its lit sphere with three
+thin, subdued cyan cylinders aligned with the atlas axes (900 µm length,
+28 µm radius). All parts share one scene-owned opaque mesh and normal depth
+testing; temporary native geometries are destroyed after copying/merging,
+including on failure. Actual macOS bounded workspace startup and lint pass
+with the existing configured source revision warning.
+
 ## Lit spatial slice cursor — October 16 2026
 
 The linked workspace's 3D slice cursor now uses one cyan Phong-lit sphere mesh
