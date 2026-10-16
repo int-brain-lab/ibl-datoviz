@@ -1368,13 +1368,20 @@ class LinkedAtlasNavigator(AtlasViewer):
         self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
         if self.dvz.dvz_gui_checkbox(gui, b'Auto-slice selected region', ctypes.byref(enabled)):
             self.slices.set_auto_slice(enabled.value)
+        if self._auto_slice.status:
+            self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
+            self.dvz.dvz_gui_text(gui, self._auto_slice.status.encode())
         changed = False
         labels = (b'Coronal (AP)', b'Sagittal (ML)', b'Horizontal (DV)')
         width, _ = self._sidebar.available(gui)
-        for axis, size, label in zip(
+        gap = 12.0 * self.ui_scale
+        slider_width = max(1.0, (width - 2.0 * gap) / 3.0 - 150.0 * self.ui_scale)
+        for index, (axis, size, label) in enumerate(zip(
             ('ap', 'ml', 'dv'), self.slice_source.grid.shape, labels, strict=True
-        ):
-            self.dvz.dvz_gui_set_next_item_width(gui, max(40.0, width - 150.0 * self.ui_scale))
+        )):
+            if index:
+                self.dvz.dvz_gui_same_line(gui, 0.0, gap)
+            self.dvz.dvz_gui_set_next_item_width(gui, slider_width)
             changed |= self.dvz.dvz_gui_slider_int(
                 gui, label, ctypes.byref(self._cursor_controls[axis]), 0, size - 1
             )
@@ -1382,8 +1389,6 @@ class LinkedAtlasNavigator(AtlasViewer):
             self.set_cursor(
                 AtlasCursor(*(self._cursor_controls[a].value for a in ('ap', 'ml', 'dv')))
             )
-        if self._auto_slice.status:
-            self.dvz.dvz_gui_text(gui, self._auto_slice.status.encode())
 
     def _draw_cursor_gui(self, gui) -> None:
         """Draw compact, always-visible cursor and selection controls."""

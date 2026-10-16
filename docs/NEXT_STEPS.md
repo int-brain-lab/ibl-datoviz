@@ -9,6 +9,15 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Compact linked slice toolbar — October 16 2026
+
+The three projection sliders now share one row with equal space. Auto-slice
+progress/errors appear beside the checkbox, so transient status no longer adds
+a row and shifts the viewport. The 12 auto-slice tests, lint, whitespace check
+and actual macOS `just review workspace --frames 3` pass on the configured
+runtime with its existing source revision warning. Interaction acceptance remains
+with the reviewer.
+
 ## Review context setup recovery — October 16 2026
 
 After pulling newer code on macOS, atlas and volume assets were present but the
