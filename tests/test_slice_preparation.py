@@ -152,12 +152,14 @@ def test_navigator_close_joins_preparation_before_destroying_scene(monkeypatch):
 
     def close_scene(_viewer):
         assert finished.is_set()
+        assert _viewer._slice_preparation is None
         destroyed.set()
 
     scheduler.close = close_workers
     monkeypatch.setattr(AtlasViewer, 'close', close_scene)
     viewer = LinkedAtlasNavigator.__new__(LinkedAtlasNavigator)
     viewer._slice_loader = scheduler
+    preparation = viewer._slice_preparation = object()
     viewer._input_subscription = 0
     scheduler.submit(SliceRequest('dv', 1, 1))
     assert started.wait(2)
@@ -166,6 +168,7 @@ def test_navigator_close_joins_preparation_before_destroying_scene(monkeypatch):
     try:
         assert closing.wait(2)
         assert not destroyed.is_set()
+        assert viewer._slice_preparation is preparation
         release.set()
         close_thread.join(2)
         assert not close_thread.is_alive()

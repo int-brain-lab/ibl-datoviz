@@ -1778,6 +1778,9 @@ class LinkedAtlasNavigator(AtlasViewer):
         if getattr(self, '_slice_loader', None) is not None:
             self._slice_loader.close()
             self._slice_loader = None
+        # Drop viewer-owned geometry/composer caches only after workers joined.
+        # The externally owned source and its caches remain available to callers.
+        self._slice_preparation = None
         if getattr(self, '_slice_planes', None) is not None:
             self._slice_planes.close()
         if getattr(self, '_slice_input', None) is not None:

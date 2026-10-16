@@ -192,3 +192,18 @@ def test_contours_omit_unused_panel_textures_but_keep_physical_plane_pixels(view
     viewer._slice_planes.show('ap')
     assert viewer._slice_planes.visible_axes == ('ap',)
     viewer._slice_planes.show('ap', False)
+
+
+def test_close_releases_viewer_preparation_caches_but_preserves_shared_source(viewer):
+    from weakref import ref  # noqa: PLC0415 - inspect ownership at this boundary.
+
+    preparation = ref(viewer._slice_preparation)
+    source = viewer.slice_source
+    index = viewer.cursor.ap
+    count = len(source.contour_slice('ap', index).paths)
+    assert count > 0
+    assert preparation().contour_cache_info()['ap'][0] > 0
+    viewer.close()
+    assert viewer._slice_preparation is None
+    assert preparation() is None
+    assert len(source.contour_slice('ap', index).paths) == count
