@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import RLock
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .navigator import AtlasSliceComposer
+from .navigator import AtlasSliceComposer, label_contours
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -25,6 +25,9 @@ class PreparedSliceLayers:
     boundary_starts: NDArray[np.float32]
     boundary_ends: NDArray[np.float32]
 
+    selection_starts: NDArray[np.float32] = field(default_factory=lambda: np.empty((0, 2)))
+    selection_ends: NDArray[np.float32] = field(default_factory=lambda: np.empty((0, 2)))
+
     def __post_init__(self) -> None:
         """Detach buffers from composer caches before transferring to the owner."""
         for name, dtype in (
@@ -32,6 +35,8 @@ class PreparedSliceLayers:
             ('annotation', np.uint8),
             ('boundary_starts', np.float32),
             ('boundary_ends', np.float32),
+            ('selection_starts', np.float32),
+            ('selection_ends', np.float32),
         ):
             values = np.array(getattr(self, name), dtype=dtype, order='C', copy=True)
             values.setflags(write=False)
@@ -56,7 +61,12 @@ def prepare_slice_layers(
     if not request.annotation_visible:
         annotation[..., 3] = 0
     starts, ends = composer.boundary_segments(request.axis, request.index)
-    return PreparedSliceLayers(anatomy, annotation, starts, ends)
+    if request.selected_region_ids:
+        mask = composer.region_mask(request.axis, request.index, request.selected_region_ids)
+        selection_starts, selection_ends = label_contours(mask)
+    else:
+        selection_starts = selection_ends = np.empty((0, 2), dtype=np.float32)
+    return PreparedSliceLayers(anatomy, annotation, starts, ends, selection_starts, selection_ends)
 
 
 class SlicePreparation:

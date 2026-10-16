@@ -28,12 +28,14 @@ def source():
 def test_prepared_layers_detach_every_array_and_freeze_storage():
     image = np.zeros((2, 3, 4), dtype=np.uint8)
     boundaries = np.arange(12, dtype=np.float32).reshape(6, 2)[::2]
-    payload = PreparedSliceLayers(image, image, boundaries, boundaries)
+    payload = PreparedSliceLayers(image, image, boundaries, boundaries, boundaries, boundaries)
     for name, original, dtype in (
         ('anatomy', image, np.uint8),
         ('annotation', image, np.uint8),
         ('boundary_starts', boundaries, np.float32),
         ('boundary_ends', boundaries, np.float32),
+        ('selection_starts', boundaries, np.float32),
+        ('selection_ends', boundaries, np.float32),
     ):
         values = getattr(payload, name)
         assert values.dtype == dtype

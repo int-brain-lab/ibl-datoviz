@@ -14,6 +14,7 @@ from ibl_datoviz.navigator import (
     AtlasSliceComposer,
     compose_atlas_slice,
     cursor_from_slice_fraction,
+    label_contours,
     mapped_region,
     oriented_slice,
     step_slice_cursor,
@@ -232,6 +233,28 @@ def test_slice_boundaries_are_vectorized_cached_and_mapping_aware(volumes):
     composer.set_mapping('beryl')
     beryl_starts, _ = composer.boundary_segments('dv', 1)
     assert len(beryl_starts) < len(allen_starts)
+
+
+def test_display_contours_round_voxel_corners_without_modifying_labels():
+    labels = np.array([[1, 0], [0, 0]], dtype=np.int64)
+    before = labels.copy()
+    starts, ends = label_contours(labels)
+    np.testing.assert_array_equal(labels, before)
+    assert len(starts) == 4  # A one-voxel region remains a closed diamond.
+    assert np.all(np.count_nonzero(starts != ends, axis=1) == 2)
+    endpoints, counts = np.unique(np.concatenate((starts, ends)), axis=0, return_counts=True)
+    assert np.all(counts == 2)  # No gaps or dangling endpoints.
+    assert np.all((endpoints >= 0) & (endpoints <= 1))
+
+
+def test_categorical_junctions_share_one_center_and_preserve_small_regions():
+    starts, ends = label_contours(np.array([[1, 2], [3, 4]]))
+    center = np.array((0.5, 0.5))
+    assert np.count_nonzero(np.all(ends == center, axis=1)) == 4
+    segments = {tuple(sorted((tuple(a), tuple(b)))) for a, b in zip(starts, ends, strict=True)}
+    assert len(segments) == len(starts)
+    empty_starts, empty_ends = label_contours(np.zeros((2, 3), dtype=int))
+    assert empty_starts.shape == empty_ends.shape == (0, 2)
 
 
 def test_selection_dims_only_other_mapped_regions(volumes):

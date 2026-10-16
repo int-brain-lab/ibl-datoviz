@@ -9,6 +9,34 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Slice palette, selection and contour review — October 16 2026
+
+Linked annotations now default to opaque catalog colors instead of the previous
+58% grayscale blend. Native readback verifies chromatic catalog RGB values within
+one byte, with no extra sRGB encoding detected. Annotation opacity remains
+adjustable for grayscale context. Slice selection preserves every base pixel and
+uses a dark-edged white vector outline, expanding selected parent descendants.
+The legacy standalone composer's explicit dimming arguments remain available;
+the linked slice request uses a dim factor of one independently of 3D styling.
+
+Cached shared categorical contours connect half-cell crossings instead of
+tracing each voxel stair step. Multi-region/checkerboard junctions meet at the
+cell center. Small one-voxel regions remain represented. This is presentation
+geometry within half a voxel, not higher-resolution anatomy or label
+interpolation. The exact source labels and picking/lookup contracts remain
+unchanged. Selected contours are owned immutable worker results, accepted under
+the existing request/revision gates and remapped on zoom alongside the images.
+Deselecting hides old geometry without submitting empty native attributes.
+
+Actual macOS real-data captures were inspected at
+`build/review/slice-presentation.png` and `build/review/presentation/selected.png`,
+including an Allen parent selection. Bounded workspace startup passes. The full
+suite passes **974 tests with one optional registered 10 µm asset-root skip**;
+lint, strict docs and whitespace pass. The configured native checkout still
+reports its existing revision mismatch, and no native build or pin was changed.
+Manual visual acceptance and complete higher-resolution assets remain separate
+gates.
+
 ## Slice cursor review refinement — October 16 2026
 
 Removed the small mouse-following disc from the 2D slice panels, preserving

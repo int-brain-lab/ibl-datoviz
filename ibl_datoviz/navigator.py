@@ -70,13 +70,36 @@ def mapped_region(volumes: AtlasVolumes, source_index: int, mapping: str) -> Atl
     return by_id[mapped_id]
 
 
-def _true_runs(values: NDArray[np.bool_]) -> tuple[tuple[int, int], ...]:
-    """Return half-open runs of true values in one Boolean row."""
-    padded = np.pad(values.astype(np.int8, copy=False), (1, 1))
-    transitions = np.diff(padded)
-    starts = np.flatnonzero(transitions == 1)
-    stops = np.flatnonzero(transitions == -1)
-    return tuple(zip(starts.tolist(), stops.tolist(), strict=True))
+def label_contours(labels: NDArray) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
+    """Trace shared categorical contours through half-cell edge crossings.
+
+    Two crossings form a diagonal at a voxel corner. Multi-region and ambiguous
+    checkerboard junctions meet at the cell center without choosing a new label.
+    Only display geometry changes; the original labels remain authoritative.
+    """
+    height, width = labels.shape
+    padded = np.pad(labels, 1)
+    tl, tr = padded[:-1, :-1], padded[:-1, 1:]
+    bl, br = padded[1:, :-1], padded[1:, 1:]
+    edges = np.stack((tl != tr, tr != br, bl != br, tl != bl), axis=-1)
+    counts = edges.sum(axis=-1)
+    offsets = np.array(((0, -0.5), (0.5, 0), (0, 0.5), (-0.5, 0)))
+    starts, ends = [], []
+    for first in range(4):
+        for second in range(first + 1, 4):
+            rows, columns = np.nonzero((counts == 2) & edges[..., first] & edges[..., second])
+            centers = np.column_stack((columns, rows))
+            starts.append(centers + offsets[first])
+            ends.append(centers + offsets[second])
+        rows, columns = np.nonzero((counts > 2) & edges[..., first])
+        centers = np.column_stack((columns, rows))
+        starts.append(centers + offsets[first])
+        ends.append(centers)
+    scale = np.array((width, height))
+    return (
+        np.ascontiguousarray(np.concatenate(starts) / scale, dtype=np.float32),
+        np.ascontiguousarray(np.concatenate(ends) / scale, dtype=np.float32),
+    )
 
 
 class AtlasSliceComposer:
@@ -126,15 +149,13 @@ class AtlasSliceComposer:
         self._valid = valid
         self._boundary_cache.clear()
 
-    def boundary_segments(  # noqa: PLR0912
+    def boundary_segments(
         self, axis: str, index: int
     ) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
-        """Return merged mapping-aware boundaries in normalized slice coordinates.
+        """Return cached, mapping-aware display contours in normalized coordinates.
 
-        Boundaries follow target-mapping identities rather than raw Allen source
-        labels, so borders disappear when Allen regions collapse into one Beryl
-        or Cosmos region. Adjacent boundary cells are merged into longer vector
-        segments for efficient retained rendering.
+        Contours follow half-cell crossings rather than every voxel stair step.
+        Adjacent regions share one boundary; collapsed mappings remove borders.
         """
         key = (self.mapping, axis, int(index))
         cached = self._boundary_cache.pop(key, None)
@@ -147,40 +168,8 @@ class AtlasSliceComposer:
         )
         if int(annotation.max(initial=0)) >= len(self._valid):
             raise ValueError('annotation contains an unknown source index')
-        labels = self._mapped_ids[annotation]
-        valid = self._valid[annotation]
-        height, width = labels.shape
-        segments: list[tuple[float, float, float, float]] = []
-
-        vertical = (labels[:, :-1] != labels[:, 1:]) & (valid[:, :-1] | valid[:, 1:])
-        for column in range(width - 1):
-            for start, stop in _true_runs(vertical[:, column]):
-                x = (column + 1) / width
-                segments.append((x, start / height, x, stop / height))
-
-        horizontal = (labels[:-1, :] != labels[1:, :]) & (valid[:-1, :] | valid[1:, :])
-        for row in range(height - 1):
-            for start, stop in _true_runs(horizontal[row, :]):
-                y = (row + 1) / height
-                segments.append((start / width, y, stop / width, y))
-
-        for start, stop in _true_runs(valid[:, 0]):
-            segments.append((0.0, start / height, 0.0, stop / height))
-        for start, stop in _true_runs(valid[:, -1]):
-            segments.append((1.0, start / height, 1.0, stop / height))
-        for start, stop in _true_runs(valid[0, :]):
-            segments.append((start / width, 0.0, stop / width, 0.0))
-        for start, stop in _true_runs(valid[-1, :]):
-            segments.append((start / width, 1.0, stop / width, 1.0))
-
-        if segments:
-            values = np.asarray(segments, dtype=np.float32)
-            starts = np.ascontiguousarray(values[:, :2])
-            ends = np.ascontiguousarray(values[:, 2:])
-        else:
-            starts = np.empty((0, 2), dtype=np.float32)
-            ends = np.empty((0, 2), dtype=np.float32)
-        result = (starts, ends)
+        labels = np.where(self._valid[annotation], self._mapped_ids[annotation], 0)
+        result = label_contours(labels)
         self._boundary_cache[key] = result
         while len(self._boundary_cache) > self._boundary_cache_size:
             self._boundary_cache.popitem(last=False)

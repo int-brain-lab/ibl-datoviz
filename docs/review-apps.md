@@ -199,6 +199,20 @@ the volume, and positive volume opacity hides the plane. Neither action changes
 view structure. Slice-label colors retain their canonical mapping colors when you
 edit 3D region styles.
 
+Annotations default to opaque catalog colors. Lower annotation opacity to reveal
+grayscale anatomy beneath them. Selecting a region adds a white outline with a
+dark edge, including descendants of parent regions; surrounding slice colors
+remain unchanged. Hover still provides a transient region tint and tooltip, with
+no disc beneath the mouse. The 3D cursor is a lit sphere with three thin atlas-axis
+cylinders and normal depth testing.
+
+Slice borders use shared contours through half-cell crossings to soften voxel
+stair steps. This changes display geometry within half a voxel; source labels,
+cursor lookup and picking retain the exact 50 µm grid. It adds no anatomical
+resolution. Integer label sampling remains nearest-neighbour. A higher-resolution
+source requires separately prepared complete assets; the bundled sampled 10 µm
+registered sections cannot provide unrestricted navigation.
+
 Review these scenarios within the same window:
 
 1. Scroll/click each slice and move the sliders. Check orientation, coordinate

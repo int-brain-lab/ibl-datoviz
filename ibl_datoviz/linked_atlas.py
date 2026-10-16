@@ -109,7 +109,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         mapping: str = 'allen',
         width: int = 1280,
         height: int = 900,
-        annotation_opacity: float = 0.58,
+        annotation_opacity: float = 1.0,
         volume_opacity: float = 0.24,
         boundary_opacity: float = 0.82,
         boundary_width_px: float = 0.7,
@@ -212,6 +212,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._hover_fields: dict[str, object] = {}
         self._hover_images: dict[str, object] = {}
         self._boundary_visuals: dict[str, object] = {}
+        self._selection_visuals: dict[str, tuple] = {}
+        self._selection_contours: dict[str, tuple] = {}
         self._crosshairs: dict[str, object] = {}
         self._cursor_controls = {
             axis: ctypes.c_int(value)
@@ -609,6 +611,27 @@ class LinkedAtlasNavigator(AtlasViewer):
             )
             self._boundary_visuals[axis] = boundaries
 
+            outlines = []
+            for layer in range(2):
+                outline = self.dvz.dvz_segment(self.scene, 0)
+                if not outline:
+                    raise RuntimeError('slice selection outline creation failed')
+                self._check(
+                    self.dvz.dvz_visual_set_depth_test(outline, False), 'selection outline depth'
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_alpha_mode(outline, self.dvz.DVZ_ALPHA_BLENDED),
+                    'selection outline alpha',
+                )
+                attach.z_layer = 4 + layer
+                self._check(
+                    self.dvz.dvz_panel_add_visual(panel, outline, ctypes.byref(attach)),
+                    'selection outline attach',
+                )
+                outlines.append(outline)
+            self._selection_visuals[axis] = tuple(outlines)
+            self._upload_selection_outline(axis, payload)
+
             crosshair = self.dvz.dvz_segment(self.scene, 0)
             if not crosshair:
                 raise RuntimeError('dvz_segment() failed')
@@ -644,13 +667,17 @@ class LinkedAtlasNavigator(AtlasViewer):
             index,
             annotation_opacity=self.annotation_opacity,
             selected_region_ids=self._selected_region_ids,
-            selection_dim_factor=self.selection_dim_factor,
+            selection_dim_factor=1.0,
         )
 
     def _slice_request(self, axis: str, index: int | None = None) -> SliceRequest:
         """Capture mutable presentation state on the owner thread."""
         if index is None:
             index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
+        selected_ids = (
+            self._signed_focus_ids() if getattr(self, 'tree_model', None) is not None
+            else tuple(self._selected_region_ids)
+        )
         return SliceRequest(
             axis=axis,
             index=index,
@@ -660,8 +687,8 @@ class LinkedAtlasNavigator(AtlasViewer):
             annotation_opacity=self.annotation_opacity,
             anatomy_visible=self.anatomy_visible,
             annotation_visible=self.annotation_visible,
-            selected_region_ids=tuple(self._selected_region_ids),
-            selection_dim_factor=self.selection_dim_factor,
+            selected_region_ids=selected_ids,
+            selection_dim_factor=1.0,
         )
 
     def _slice_layers(
@@ -713,6 +740,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._upload_boundaries(
             self._boundary_visuals[axis], starts, ends, f'{axis} prepared boundaries update'
         )
+        self._upload_selection_outline(axis, payload)
         self._slice_planes.update(axis, request, payload)
 
     def _refresh_hover_overlays(self, axes=None) -> None:
@@ -829,7 +857,21 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._boundary_visuals[axis], starts, ends, f'{axis} slice boundaries update'
         )
 
-    def _upload_boundaries(self, visual, starts, ends, context: str) -> None:
+    def _upload_selection_outline(self, axis, payload=None):
+        if payload is not None:
+            self._selection_contours[axis] = (payload.selection_starts, payload.selection_ends)
+        starts, ends = self._map_boundary_segments(
+            axis, *self._selection_contours[axis]
+        )
+        for visual, color, width in zip(
+            self._selection_visuals[axis], ((7, 16, 25, 255), (255, 255, 255, 255)),
+            (4.0, 1.5), strict=True,
+        ):
+            self._upload_boundaries(
+                visual, starts, ends, 'slice selection outline', color=color, width=width
+            )
+
+    def _upload_boundaries(self, visual, starts, ends, context: str, *, color=None, width=None):
         """Hide empty layers; native attribute setters require nonzero counts."""
         count = len(starts)
         if count:
@@ -839,9 +881,12 @@ class LinkedAtlasNavigator(AtlasViewer):
                     {
                         'position_start': starts,
                         'position_end': ends,
-                        'color': np.tile(self._boundary_rgba(), (count, 1)),
+                        'color': np.tile(
+                            self._boundary_rgba() if color is None else color, (count, 1)
+                        ).astype(np.uint8),
                         'stroke_width_px': np.full(
-                            count, self.boundary_width_px, dtype=np.float32
+                            count, self.boundary_width_px if width is None else width,
+                            dtype=np.float32,
                         ),
                     },
                 ),
@@ -1043,6 +1088,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                 f'{axis} slice zoom',
             )
         self._refresh_boundaries(axis)
+        self._upload_selection_outline(axis)
         starts, ends = self._crosshair_positions(axis)
         self._check(
             self.dvz.dvz_visual_set_data_many(

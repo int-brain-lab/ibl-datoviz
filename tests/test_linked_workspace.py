@@ -7,6 +7,7 @@ import pytest
 
 from ibl_anatomy import open_volume_pack
 from ibl_datoviz import AtlasCursor, AtlasMesh, AtlasViewer, LinkedAtlasNavigator, Points
+from ibl_datoviz.slice_preparation import prepare_slice_layers
 from tests.test_volume_free_navigator import MESH, VOLUME
 
 
@@ -140,3 +141,62 @@ def test_failed_base_validation_preserves_error_without_creating_slice_workers(m
             render_volume=False,
             context_opacity=2,
         )
+
+
+def test_native_slice_palette_round_trips_srgb_without_a_second_gamma_encode(linked):
+    expected = set()
+    for axis in ('ap', 'ml', 'dv'):
+        _, annotation = linked._slice_layers(axis)
+        expected.update(
+            tuple(pixel[:3]) for pixel in annotation.reshape(-1, 4)
+            if pixel[3] == 255 and len(set(pixel[:3])) > 1
+        )
+    assert expected  # Test chromatic catalog colors, not only black/white endpoints.
+    linked._create_view(offscreen=True, title='Slice catalog color regression')
+    for visual in (*linked._crosshairs.values(), *linked._boundary_visuals.values()):
+        assert linked.dvz.dvz_visual_set_visible(visual, False) == 0
+    assert linked.dvz.dvz_view_render_once(linked.view) == 0
+    pixels = np.array(linked.dvz.dvz_view_capture_rgba(linked.view), copy=True)[..., :3]
+    for color in expected:
+        difference = np.abs(pixels.astype(np.int16) - color)
+        assert np.count_nonzero(np.max(difference, axis=-1) <= 1) > 10, color
+
+
+def test_slice_selection_keeps_context_colors_and_adds_an_owned_outline(linked):
+    before = {axis: linked._slice_layers(axis) for axis in ('ap', 'ml', 'dv')}
+    linked.selection.set_regions((315,), mapping='allen')
+    found = False
+    for axis in before:
+        payload = prepare_slice_layers(linked.slice_composer, linked._slice_request(axis))
+        np.testing.assert_array_equal(payload.anatomy, before[axis][0])
+        np.testing.assert_array_equal(payload.annotation, before[axis][1])
+        assert not payload.selection_starts.flags.writeable
+        assert not payload.selection_ends.flags.writeable
+        found |= len(payload.selection_starts) > 0
+    assert found
+    linked.selection.clear_regions()
+    for axis in before:
+        payload = prepare_slice_layers(linked.slice_composer, linked._slice_request(axis))
+        assert len(payload.selection_starts) == 0
+
+
+def test_selection_outline_follows_slice_zoom_and_hides_after_deselection(linked, monkeypatch):
+    linked.selection.set_regions((315,), mapping='allen')
+    uploads = []
+    upload = linked._upload_boundaries
+
+    def record(visual, starts, ends, context, **kwargs):
+        if context == 'slice selection outline':
+            uploads.append((starts.copy(), ends.copy()))
+        return upload(visual, starts, ends, context, **kwargs)
+
+    monkeypatch.setattr(linked, '_upload_boundaries', record)
+    axis = next(a for a, (starts, _) in linked._selection_contours.items() if len(starts))
+    before = linked._map_boundary_segments(axis, *linked._selection_contours[axis])
+    linked._slice_zoom[axis] = 2.0
+    linked._update_slice_geometry(axis)
+    assert len(uploads) == 2
+    np.testing.assert_allclose(uploads[0][0][:, :2], before[0][:, :2] * 2)
+    np.testing.assert_allclose(uploads[0][1][:, :2], before[1][:, :2] * 2)
+    linked.selection.clear_regions()
+    assert all(len(starts) == 0 for starts, _ in linked._selection_contours.values())
