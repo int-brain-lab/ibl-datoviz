@@ -5,7 +5,19 @@ from types import SimpleNamespace
 
 import pytest
 
+from ibl_anatomy import bundled_surface_catalog
 from tools import review
+
+
+@pytest.fixture(autouse=True)
+def prepared_context(tmp_path_factory, monkeypatch):
+    context = tmp_path_factory.mktemp('context') / 'major context'
+    monkeypatch.setattr(review, 'CONTEXT', context)
+    for member in bundled_surface_catalog().members:
+        source = context / str(member.asset.source_allen_id) / 'surface.obj'
+        source.parent.mkdir(parents=True)
+        source.touch()
+    return context
 
 
 @pytest.fixture
@@ -390,3 +402,30 @@ def test_workspace_launch_requires_volume_and_forwards_explicit_context_and_outp
     assert command[command.index('--context-root') + 1] == review.CONTEXT
     assert command[-2:] == ['--offscreen', args.offscreen]
     assert command[command.index('--ui-scale') + 1] == 1.5
+
+
+@pytest.mark.parametrize('choice', ['1', 'annotations', 'workspace', 'all'])
+@pytest.mark.parametrize('partial', [False, True])
+def test_missing_context_fails_before_launch(tmp_path, monkeypatch, choice, partial):
+    context = tmp_path / 'missing context'
+    if partial:
+        (context / '315').mkdir(parents=True)
+    monkeypatch.setattr(review, 'CONTEXT', context)
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    monkeypatch.setattr(review, 'run', lambda *_args, **_kwargs: pytest.fail('unexpected launch'))
+    args = SimpleNamespace(example=choice, frames=3, ui_scale=1.0)
+    with pytest.raises(ValueError, match='just setup') as error:
+        review.run_examples(args, [], {})
+    assert 'git pull does not download' in str(error.value)
+    assert ('Move the incomplete' in str(error.value)) == partial
+
+
+def test_app_two_does_not_require_major_context(tmp_path, monkeypatch):
+    monkeypatch.setattr(review, 'CONTEXT', tmp_path / 'missing context')
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    commands = []
+    monkeypatch.setattr(review, 'run', lambda command, **_kwargs: commands.append(command))
+    review.run_examples(SimpleNamespace(example='2', frames=3, ui_scale=1.0), [], {})
+    assert len(commands) == 1

@@ -346,6 +346,24 @@ def run_examples(args, prefix, environment):
     if offscreen is not None and args.example == 'all':
         raise ValueError('--offscreen requires one named example or numbered app')
     names = DEFAULT_EXAMPLES if args.example == 'all' else (args.example,)
+    if any(name in ('1', 'annotations', 'workspace') for name in names):
+        from ibl_anatomy import bundled_surface_catalog  # noqa: PLC0415
+
+        missing = [
+            CONTEXT / str(member.asset.source_allen_id) / 'surface.obj'
+            for member in bundled_surface_catalog().members
+            if not (CONTEXT / str(member.asset.source_allen_id) / 'surface.obj').is_file()
+        ]
+        if missing:
+            recovery = (
+                f'Move the incomplete context directory aside ({CONTEXT}), then rerun'
+                if CONTEXT.exists() else 'Run'
+            )
+            raise ValueError(
+                f'Review context data is missing: {missing[0]}. '
+                f'{recovery} just setup /path/to/datoviz with your configured checkout '
+                '(without --tests-only). git pull does not download ignored review assets.'
+            )
     for name in names:
         script, arguments = EXAMPLES[name]
         print(f'Opening {name}; close its window to continue.', flush=True)

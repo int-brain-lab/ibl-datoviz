@@ -124,6 +124,9 @@ Quote a checkout path containing spaces, for example `just setup "$HOME/GIT/Dato
 Run `just setup` with the checkout path again after dependency pins change; a cache from a different
 anatomy revision must be moved aside as the setup error instructs. Setup preserves existing cached
 assets and does not rebuild Datoviz.
+After `git pull`, rerun setup if review reports missing context data: downloaded
+meshes under `build/` are ignored by Git. If a context directory is incomplete,
+move it aside first so setup can prepare a complete verified catalog.
 
 The recipes wrap `tools/review.py`. If `just` is unavailable, the equivalent commands are:
 

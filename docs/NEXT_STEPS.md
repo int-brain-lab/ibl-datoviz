@@ -9,6 +9,24 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Review context setup recovery — October 16 2026
+
+After pulling newer code on macOS, atlas and volume assets were present but the
+ignored major-context directory was absent. Review now checks every expected
+context OBJ before launching app 1, annotations, workspace or all, and reports
+the setup command instead of failing inside the example. Incomplete directories
+must be moved aside before setup; downloads remain confined to setup. App 2 does
+not require major context.
+
+The older local anatomy fixture cache was preserved under
+`build/review/anatomy-before-6498a830-20261016`; rerunning setup prepared the locked
+cache, reference envelope and major surfaces. The actual macOS
+`just review workspace --frames 3` passes. All **38 launcher tests** pass without
+skips; lint, strict docs and whitespace checks pass. This is bounded startup
+evidence, not interaction acceptance. `just doctor --strict` still rejects the
+previously recorded configured Datoviz source drift (54c9ce1 versus f77b5d0);
+no native build, checkout revision or package pin was changed.
+
 ## Workspace docking and region navigation — October 16 2026
 
 Implemented the user's workspace review requests on `feature/datoviz-v04`:
