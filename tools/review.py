@@ -397,18 +397,27 @@ def run_examples(args, prefix, environment):
 
 def run_contours(source, arguments, prefix, environment, *, workspace=False):
     """Scope an explicit development reader to a prototype or linked workspace."""
-    source = source.expanduser().resolve()
-    package = source / 'src' / 'ibl_anatomy'
-    if not (package / 'contours.py').is_file():
-        raise ValueError('The explicit anatomy source needs the numerical contour API')
     if arguments and arguments[0] == '--':
         arguments = arguments[1:]
     environment = environment.copy()
-    environment['PYTHONPATH'] = os.pathsep.join(
-        (str(source / 'src'), environment.get('PYTHONPATH', ''))
-    )
+    if source is not None:
+        source = source.expanduser().resolve()
+        package = source / 'src' / 'ibl_anatomy'
+        if not (package / 'contours.py').is_file():
+            raise ValueError('The explicit anatomy source needs the numerical contour API')
+        environment['PYTHONPATH'] = os.pathsep.join(
+            (str(source / 'src'), environment.get('PYTHONPATH', ''))
+        )
+    else:
+        import ibl_anatomy  # noqa: PLC0415 - optional renderer entry point.
+
+        if not callable(getattr(ibl_anatomy, 'decode_registered_contours', None)):
+            raise ValueError('The installed anatomy reader lacks the numerical contour API')
     environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated'
-    print(f'Using explicit development anatomy reader: {source}', flush=True)
+    print(
+        f'Using anatomy reader: {source if source is not None else source_pin("ibl-anatomy")}',
+        flush=True,
+    )
     script = 'scientific_workspace.py' if workspace else 'registered_contours.py'
     extra = ['--slice-renderer', 'contours'] if workspace else []
     run(
@@ -436,7 +445,9 @@ def main():
     benchmark = commands.add_parser('benchmark', help='benchmark D070 with the configured runtime')
     benchmark.add_argument('benchmark_args', nargs=argparse.REMAINDER)
     contours = commands.add_parser('contours', help='review the isolated shared contour prototype')
-    contours.add_argument('--anatomy-source', type=Path, required=True)
+    contours.add_argument(
+        '--anatomy-source', type=Path, help='explicit development reader override'
+    )
     contours.add_argument('--workspace', action='store_true', help='open the linked workspace')
     contours.add_argument('contour_args', nargs=argparse.REMAINDER)
     review = commands.add_parser(

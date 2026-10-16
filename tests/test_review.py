@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import ibl_anatomy
 from ibl_anatomy import bundled_surface_catalog
 from tools import review
 
@@ -475,3 +476,21 @@ def test_contour_workspace_scopes_shared_reader_and_uses_public_client(tmp_path,
                        'scientific_workspace.py', *arguments, '--slice-renderer', 'contours']
     assert kwargs['env']['PYTHONPATH'].split(review.os.pathsep)[0] == str(source / 'src')
     assert environment == {'PYTHONPATH': 'configured-native'}
+
+
+def test_contour_workspace_uses_installed_locked_reader(monkeypatch):
+    calls = []
+    monkeypatch.setattr(review, 'run', lambda command, **kwargs: calls.append((command, kwargs)))
+    environment = {'PYTHONPATH': 'configured-native'}
+    review.run_contours(None, ['--frames', '3'], [], environment, workspace=True)
+    command, kwargs = calls[0]
+    assert command[-2:] == ['--slice-renderer', 'contours']
+    assert kwargs['env']['PYTHONPATH'] == 'configured-native'
+    assert environment == {'PYTHONPATH': 'configured-native'}
+
+
+def test_contour_workspace_rejects_installed_reader_without_api(monkeypatch):
+    monkeypatch.delattr(ibl_anatomy, 'decode_registered_contours')
+    monkeypatch.setattr(review, 'run', lambda *_args, **_kwargs: pytest.fail('unexpected launch'))
+    with pytest.raises(ValueError, match='installed anatomy reader lacks'):
+        review.run_contours(None, [], [], {}, workspace=True)

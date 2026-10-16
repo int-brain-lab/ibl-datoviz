@@ -259,13 +259,12 @@ polygon set per panel with unlit catalog fills, joined strokes and requested 4x
 MSAA. The prototype has no picking, slice navigation, mapped-boundary unions or
 selection UI. Workspace defaults remain unchanged.
 
-The shared reader is initially an explicit development source, because it has not
-been adopted in the package lock. Supply paths; neither a sibling checkout nor a
-workstation layout is assumed:
+The shared reader is published and pinned in the package lock. Supply asset
+paths; neither a sibling source checkout nor a workstation layout is assumed:
 
 ```bash
 uv run --frozen tools/review.py contours \
-  --anatomy-source /path/to/ibl-anatomy -- \
+  -- \
   /path/to/allen-ccfv3-10um-bilateral-exact-599b5e0bbab1 \
   --regions build/atlas-d070/regions.json \
   --reference-space-id allen-ccf-2017 --grid-id allen-ccf-2017-10um \
@@ -273,8 +272,9 @@ uv run --frozen tools/review.py contours \
   --report build/contour-prototype/exact.json
 ```
 
-The launcher reuses the configured Datoviz environment and scopes the development
-reader to this child process. Remove `--offscreen` to open the static native
+The launcher reuses the configured Datoviz environment and the locked installed
+anatomy reader. An optional `--anatomy-source /path/to/ibl-anatomy` scopes a
+development reader to this child process. Remove `--offscreen` to open the static native
 review window; add `--frames 3` for bounded startup. Add `--zoom 3` for a central
 magnification, or `--samples 1` to compare single-sample rendering. Each receipt
 records source hashes, signed component-identity fingerprint, slice affines,
@@ -297,12 +297,12 @@ geometry hover and asynchronous section loading. Keep the existing default
 complete registered anatomy and intensity packs on the same grid; the bundled
 sampled assets do not provide unrestricted navigation.
 
-Until the reconciled anatomy reader is published and adopted, use an explicit
-compatible source checkout (commit `2e190e05b9516df99bbba61284036306681476d9`):
+The published numerical reader is pinned at
+`95ae2426965769d2592f239abb251bc621f1cedb`. No source override is required:
 
 ```sh
 uv run --frozen tools/review.py contours --workspace \
-  --anatomy-source /path/to/ibl-anatomy -- \
+  -- \
   /path/to/verified-atlas-assets \
   --volume-pack /path/to/50um-volume-pack \
   --intensity-pack /path/to/10um-intensity-pack \
@@ -313,8 +313,8 @@ uv run --frozen tools/review.py contours --workspace \
 
 Omit `--frames 3` for later interaction review. BWM `--workspace` or `--release`,
 repeated `--pid`, reviewed frame evidence and prepared `--region-values` remain
-available on this same client. The launcher scopes the development reader to
-its child process; it changes no environment, package pin or assets persistently.
+available on this same client. Optional `--anatomy-source` development overrides
+are scoped to the child process.
 
 Engineering evidence covers Allen/Beryl/Cosmos, all three orientations, selected
 parent unions, actual mouse hover, wheel and burst scrolling, stale requests,
