@@ -9,6 +9,89 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Autonomous contour, shared-reader and agent integration — October 17 2026
+
+The user accepted the current contour appearance and authorized implementation
+without waiting for further manual review. Work landed on the existing branches;
+no engine build, native pin, production-agent change, merge into Datoviz main or
+publication was performed.
+
+- Resolved the Mac `ibl-anatomy/main` merge conflict by retaining both public
+  contour and surface exports, committed as `2e190e0`. Fetched that merge from
+  `ssh mba` into local anatomy/main. Both trees are clean; the two source commits
+  remain unpublished. Anatomy passes **186 tests, zero skips**, including actual
+  three-orientation contours, source surfaces and ontology. All 57 public exports
+  resolve. Keep the installed anatomy pin until the reconciled commit is available
+  upstream; use only an explicit child-process source override meanwhile.
+- `093dbe0` provides immutable exact contour components, signed mapped IDs,
+  geometry containment with holes/islands and source-order boundary ties, interval
+  cancellation for mapped borders and selected parent unions. Independent actual
+  section checks cover all nine orientation/mapping combinations: zero mapped or
+  selected-union boundary discrepancies, and 1,728 exact picks matching label
+  oracles across the sampled 837 source paths.
+- `f9f82ac` integrates optional `slice_renderer="contours"` into the existing linked
+  AtlasViewer. Preparation uses its existing per-axis workers and latest-wins
+  requests; the owner retains accepted panel identities and immutable geometry.
+  Cursor/hover/selection use accepted geometry, including correct full-cell-edge
+  coordinates. Old mappings temporarily suppress interactions rather than
+  interpreting old geometry as new identities. Unknown pending geometry cannot
+  clear selection as if it were known background.
+- Two retained polygon buffers per axis avoid f77's append-only polygon,
+  composite and visual slot limits. Staging includes checked triangulation before
+  activation. Rejected dirty composites are quarantined at their source regions,
+  so frame preparation cannot resurrect them; rollback preserves authored hidden
+  visibility. Failure to restore closes the component. Native stress covers 160
+  replacements, empty restoration, holes and injected failures. The numerical
+  source cache is bounded by entry count and 32 MiB.
+- `2d05102`, `6aecd45` allow the same scientific client to read either a named
+  shared-reader workspace or an explicit BWM release, and launch contour mode
+  against explicit compatible registered/intensity packs. The optional regional
+  payload requires an explicit weighted-mean mapping reduction; it is not a
+  scientific choice inferred from available columns. The development reader is
+  scoped through `tools/review.py contours --workspace --anatomy-source ...`.
+- Incubation `ibl-ai-agent-next/main` now contains the
+  `datoviz-app-composition` skill, executable multi-PID/linked viewer template,
+  generic annotation/regional payload recipes and frame/reduction guards. It
+  composes public APIs without copying releases, adding another codec or reading
+  signals. Physical reader extraction remains a separate packaging decision.
+
+The real metadata-only two-PID release check used BWM ephys 1.1.0: insertion
+`a21bade7…` supplied 384 channels and 459 clusters, and `bf746764…` supplied 96
+channels and 2 clusters. Source validation remains **unknown**, while reviewed
+coordinate evidence was scoped to the exact release manifest and both PIDs.
+Tables retained exact selection through hide/show and Allen→Beryl changes;
+removing the first recording removed its table while retaining the second
+selection. A separate named-workspace linked template startup used its one
+registered PID and an AP physical plane. No signal reads or transfers occurred.
+Evidence is ignored under `build/agent-data-spike/`.
+
+Full package validation passes **1,059 tests with one optional registered 10 µm
+asset-root skip** on the supported anatomy pin. The explicit reconciled reader
+source also passed the full suite (1,057 tests before two final client declaration
+guards were added); the new guards pass focused tests. Both runs used the
+hash-verified immutable f77 native baseline through
+`build/endpoint-depth/run_pinned.py`. Ruff, strict MkDocs and whitespace checks pass. The high Sol 6.1
+architecture audit has no remaining contour P1/P2 findings; its separate regional
+aggregation finding is addressed by requiring the explicit reduction declaration.
+
+Actual private-Xvfb contour GUI checks at scale 1.5 cover Allen/Beryl/Cosmos,
+signed parent selection, exact hover, wheel and burst navigation; the latest
+request wins and all six native buffer handles remain fixed. The sampled run
+retained 9 decoded contour entries (7,950,912 bytes), used about 1.37 GiB peak
+process RSS, settled mapping/selection changes in roughly 0.48–0.88 seconds and a
+cold wheel change in roughly 2.29 seconds. These measurements do not establish
+full-corpus triangulation correctness or fluid scrolling. Screenshots/receipts
+are ignored under `build/contour-workspace/`. The public client also passed an
+actual three-frame startup against complete registered assets and context.
+
+Manual review is deliberately deferred. Exact contours remain opt-in; ordinary
+50 µm defaults and dense auto-slice remain available. Lazy contour sources report
+auto-slice unavailable rather than borrowing anchors from a different grid.
+Optional physical 3D planes retain categorical pixels from the same exact grid.
+Remaining work includes publishing/adopting the reconciled anatomy dependency,
+whole-corpus triangulation/performance checks, additional platform evidence and
+any separately authorized standalone data-library packaging.
+
 ## Shared contour reader and native prototype — October 17 2026
 
 The authorized first two stages now have an additive numerical reader in

@@ -458,9 +458,15 @@ validation remain separate facts. Common-clock mapping does not imply measured
 synchronization accuracy. Background results must carry source/request identities
 and be ignored after removal/close; workers stop before native scene destruction.
 
-An agent can later generate small apps through these same public interfaces and
-a dedicated authoring skill. That requires stable examples and review gates first,
-not an agent dependency in the viewer or a new plugin framework now.
+The incubation agent now has a dedicated `datoviz-app-composition` skill and
+executable multi-recording/linked-viewer template using these public interfaces.
+Engineering checks exercised both reader clients, source-scoped frame evidence,
+complete observation populations and selection/visibility/removal transitions.
+Prepared regional quantities require an explicit mapping-reduction choice; the
+agent does not infer a valid scientific aggregation from the existence of weights.
+This adds no agent dependency to the viewer and no second reader or plugin runtime.
+The shared reader remains in the incubation package; extracting a separate
+installable data distribution is still a distinct packaging decision.
 
 Datoviz remains responsible for generic rendering, controllers, picking and GUI
 primitives. IBL semantics stay in `ibl-datoviz` and shared anatomy/data packages.
