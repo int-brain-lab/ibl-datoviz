@@ -5,8 +5,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from ibl_anatomy import open_volume_pack
+from ibl_datoviz.contour_geometry import ContourComponent, ContourGeometry
 from ibl_datoviz.contour_visual import ContourVisual
 from tests import test_component_native
+from tests.test_volume_free_navigator import VOLUME
 
 native_components = test_component_native.native_components
 
@@ -103,3 +106,38 @@ def test_activation_failure_preserves_hidden_authored_visibility(native_componen
         layer.activate()
     np.testing.assert_array_equal(ctx.capture(), before)
     assert layer._active_visible is False
+
+
+def test_selection_only_reuses_immutable_native_geometry(native_components, monkeypatch):
+    ctx = native_components
+    layer = ContourVisual(ctx.dvz, ctx.scene, ctx.panel)
+    ctx.components.append(layer)
+    component = ContourComponent(-315, -315, [[0, 0], [1, 0], [1, 1], [0, 1]], (), False)
+    empty = np.empty((0, 2))
+    first = ContourGeometry('allen', (component,), empty, empty, empty, empty)
+    catalog = open_volume_pack(VOLUME).load_volumes().regions
+    selected = first.with_selection(catalog, (-315,))
+    assert selected.components[0].outer is first.components[0].outer
+    colors = {-315: (30, 160, 90)}
+    layer.stage(first, colors, np.eye(3), CORNERS)
+    layer.activate()
+    before = ctx.capture()
+    # A second style occupies the other retained buffer.
+    layer.stage(selected, colors, np.eye(3), CORNERS, opacity=0.5)
+    layer.activate()
+    monkeypatch.setattr(
+        ctx.dvz,
+        'dvz_polygons_set_region_geometry',
+        lambda *_: pytest.fail('cached geometry was uploaded'),
+    )
+    monkeypatch.setattr(
+        ctx.dvz,
+        'dvz_polygons_set_region_fill_color',
+        lambda *_: pytest.fail('cached palette was uploaded'),
+    )
+    layer.stage(selected, colors, np.eye(3), CORNERS)
+    layer.activate()
+    np.testing.assert_array_equal(ctx.capture(), before)
+    layer.stage(first, colors, np.eye(3), CORNERS)
+    layer.activate()
+    np.testing.assert_array_equal(ctx.capture(), before)

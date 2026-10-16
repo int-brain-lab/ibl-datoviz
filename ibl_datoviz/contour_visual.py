@@ -6,6 +6,8 @@ import ctypes
 
 import numpy as np
 
+from .contour_geometry import ContourComponent, ContourGeometry
+
 
 class ContourVisual:
     """Stage polygon geometry without consuming a scene slot on every slice.
@@ -39,7 +41,13 @@ class ContourVisual:
         polygons = dvz.dvz_polygons(self.scene, 0)
         if not polygons:
             raise RuntimeError('contour polygon allocation failed')
-        buffer = {'polygons': polygons, 'composite': None, 'count': 0}
+        buffer = {
+            'polygons': polygons,
+            'composite': None,
+            'count': 0,
+            'signature': None,
+            'geometry': None,
+        }
         # Retain partially allocated resources for deterministic cleanup on failure.
         self._buffers.append(buffer)
         composite = dvz.dvz_polygons_composite(polygons, 0)
@@ -77,6 +85,7 @@ class ContourVisual:
     def _quarantine(self, buffer):
         # Hiding a generated child alone is insufficient: the next render
         # prepares dirty composites and makes visible source regions reappear.
+        buffer['signature'] = buffer['geometry'] = None
         for slot in range(buffer['count']):
             self._check(
                 self.dvz.dvz_polygons_set_region_visible(buffer['polygons'], slot, False),
@@ -94,6 +103,60 @@ class ContourVisual:
             )
         self._visible(buffer, False)
 
+    @staticmethod
+    def _signature(geometry, colors, matrix, corners, opacity):
+        if not isinstance(geometry, ContourGeometry) or not all(
+            type(c) is ContourComponent for c in geometry.components
+        ):
+            return None
+        # Only validated bytes-backed immutable rings may use identity keys.
+        # Buffer geometry keeps them alive, preventing object ID recycling.
+        rings = tuple(
+            (c.atlas_id, c.allen_id, id(c.outer), tuple(map(id, c.holes)))
+            for c in geometry.components
+        )
+        palette = tuple((*colors[c.atlas_id], round(255 * opacity)) for c in geometry.components)
+        return rings, tuple(matrix.flat), tuple(np.asarray(corners).flat), palette
+
+    def _cached_buffer(self, signature):
+        if signature is None:
+            return None
+        return next((i for i, b in enumerate(self._buffers) if b['signature'] == signature), None)
+
+    def _fill_component(self, buffer, slot, component, matrix, corners, colors, opacity):
+        dvz = self.dvz
+        descriptor, storage = self._descriptor(component, matrix, corners)
+        if slot < buffer['count']:
+            self._check(
+                dvz.dvz_polygons_set_region_geometry(
+                    buffer['polygons'], slot, ctypes.byref(descriptor)
+                ),
+                'contour geometry',
+            )
+        else:
+            added = dvz.dvz_polygons_add_region(buffer['polygons'], ctypes.byref(descriptor))
+            if added != slot:
+                raise RuntimeError('contour component allocation failed')
+            buffer['count'] += 1
+        del storage  # Native setters have copied the borrowed rings.
+        self._check(
+            dvz.dvz_polygons_set_region_id(buffer['polygons'], slot, slot + 1),
+            'contour private identity',
+        )
+        self._check(
+            dvz.dvz_polygons_set_region_visible(buffer['polygons'], slot, True),
+            'contour component visibility',
+        )
+        color = dvz.DvzColor(*colors[component.atlas_id], round(255 * opacity))
+        self._check(
+            dvz.dvz_polygons_set_region_fill_color(buffer['polygons'], slot, color),
+            'contour color',
+        )
+        self._check(
+            dvz.dvz_polygons_set_region_stroke_width_px(buffer['polygons'], slot, 0),
+            'contour fill only',
+        )
+
     def stage(self, geometry, colors, svg_to_fraction, corners, *, opacity=1.0):
         """Prepare the inactive retained buffer, keeping the old display visible."""
         if self._closed:
@@ -107,47 +170,21 @@ class ContourVisual:
         if not count:
             self._staged = True
             return
+        matrix = np.asarray(svg_to_fraction, dtype=float).reshape(3, 3)
+        signature = self._signature(geometry, colors, matrix, corners, opacity)
+        cached = self._cached_buffer(signature)
+        if cached is not None:
+            self._pending, self._staged = cached, True
+            return
         while len(self._buffers) < 2:
             self._create_buffer()
         index = 1 if self._active == 0 else 0
         buffer, dvz = self._buffers[index], self.dvz
+        buffer['signature'] = buffer['geometry'] = None
         try:
             self._visible(buffer, False)
-            matrix = np.asarray(svg_to_fraction, dtype=float).reshape(3, 3)
             for slot, component in enumerate(geometry.components):
-                descriptor, storage = self._descriptor(component, matrix, corners)
-                if slot < buffer['count']:
-                    self._check(
-                        dvz.dvz_polygons_set_region_geometry(
-                            buffer['polygons'], slot, ctypes.byref(descriptor)
-                        ),
-                        'contour geometry',
-                    )
-                else:
-                    added = dvz.dvz_polygons_add_region(
-                        buffer['polygons'], ctypes.byref(descriptor)
-                    )
-                    if added != slot:
-                        raise RuntimeError('contour component allocation failed')
-                    buffer['count'] += 1
-                del storage  # Native setters have copied the borrowed rings.
-                self._check(
-                    dvz.dvz_polygons_set_region_id(buffer['polygons'], slot, slot + 1),
-                    'contour private identity',
-                )
-                self._check(
-                    dvz.dvz_polygons_set_region_visible(buffer['polygons'], slot, True),
-                    'contour component visibility',
-                )
-                color = dvz.DvzColor(*colors[component.atlas_id], round(255 * opacity))
-                self._check(
-                    dvz.dvz_polygons_set_region_fill_color(buffer['polygons'], slot, color),
-                    'contour color',
-                )
-                self._check(
-                    dvz.dvz_polygons_set_region_stroke_width_px(buffer['polygons'], slot, 0),
-                    'contour fill only',
-                )
+                self._fill_component(buffer, slot, component, matrix, corners, colors, opacity)
             # Drop surplus ring storage instead of retaining large old sections.
             placeholder = type(
                 'Placeholder', (), {'outer': np.array([[0, 0], [1, 0], [0, 1]]), 'holes': ()}
@@ -181,6 +218,10 @@ class ContourVisual:
                 self.close()
                 raise RuntimeError('contour staging rollback failed; visual closed') from error
             raise
+        buffer['signature'], buffer['geometry'] = (
+            signature,
+            geometry if signature is not None else None,
+        )
         self._pending, self._staged = index, True
 
     def activate(self, *, visible=True):

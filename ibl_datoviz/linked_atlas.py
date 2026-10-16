@@ -31,7 +31,7 @@ from .navigator import (
 )
 from .slice_input import SliceInputAdapter
 from .slice_planes import SlicePlanes
-from .slice_preparation import PreparedSliceLayers, SlicePreparation, prepare_slice_layers
+from .slice_preparation import PreparedSliceLayers, SlicePreparation
 from .slice_scheduler import SliceRequest, SliceScheduler
 from .viewer import AtlasViewer
 
@@ -490,7 +490,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             attach.controller_mode = self.dvz.DVZ_CONTROLLER_APPLY
             attach.coord_space = self.dvz.DVZ_VISUAL_COORD_DATA
             request = self._slice_request(axis)
-            payload = prepare_slice_layers(self.slice_composer, request)
+            payload = self._prepare_slice(request)
             anatomy_data, annotation_data = payload.anatomy, payload.annotation
             self._slice_planes.update(axis, request, payload)
             field = self.dvz.dvz_sampled_field_from_array(
@@ -528,85 +528,90 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._slice_shapes[axis] = anatomy_data.shape
             self._slice_images[axis] = image
 
-            annotation_field = self.dvz.dvz_sampled_field_from_array(
-                self.scene,
-                annotation_data,
-                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                dim=self.dvz.DVZ_FIELD_DIM_2D,
-            )
-            annotation_image = self.dvz.dvz_image(self.scene, 0)
-            if not annotation_image:
-                raise RuntimeError('dvz annotation image() failed')
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
-                    annotation_image, {'position': positions, 'texcoords': texcoords}
-                ),
-                f'{axis} annotation geometry upload',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_field(annotation_image, b'field', annotation_field),
-                'annotation field bind',
-            )
-            self._check(
-                self.dvz.dvz_image_set_sampling(
-                    annotation_image, self.dvz.DVZ_IMAGE_SAMPLING_NEAREST
-                ),
-                'annotation nearest sampling',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_depth_test(annotation_image, False),
-                'annotation depth disable',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_alpha_mode(annotation_image, self.dvz.DVZ_ALPHA_BLENDED),
-                'annotation alpha mode',
-            )
-            attach.z_layer = 1
-            self._check(
-                self.dvz.dvz_panel_add_visual(panel, annotation_image, ctypes.byref(attach)),
-                'annotation attach',
-            )
-            self._annotation_fields[axis] = annotation_field
-            self._annotation_images[axis] = annotation_image
+            if self.slice_renderer == 'raster':
+                annotation_field = self.dvz.dvz_sampled_field_from_array(
+                    self.scene,
+                    annotation_data,
+                    format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                    semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                    dim=self.dvz.DVZ_FIELD_DIM_2D,
+                )
+                annotation_image = self.dvz.dvz_image(self.scene, 0)
+                if not annotation_image:
+                    raise RuntimeError('dvz annotation image() failed')
+                self._check(
+                    self.dvz.dvz_visual_set_data_many(
+                        annotation_image, {'position': positions, 'texcoords': texcoords}
+                    ),
+                    f'{axis} annotation geometry upload',
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_field(annotation_image, b'field', annotation_field),
+                    'annotation field bind',
+                )
+                self._check(
+                    self.dvz.dvz_image_set_sampling(
+                        annotation_image, self.dvz.DVZ_IMAGE_SAMPLING_NEAREST
+                    ),
+                    'annotation nearest sampling',
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_depth_test(annotation_image, False),
+                    'annotation depth disable',
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_alpha_mode(
+                        annotation_image, self.dvz.DVZ_ALPHA_BLENDED
+                    ),
+                    'annotation alpha mode',
+                )
+                attach.z_layer = 1
+                self._check(
+                    self.dvz.dvz_panel_add_visual(panel, annotation_image, ctypes.byref(attach)),
+                    'annotation attach',
+                )
+                self._annotation_fields[axis] = annotation_field
+                self._annotation_images[axis] = annotation_image
 
-            hover_data = np.zeros_like(annotation_data)
-            hover_field = self.dvz.dvz_sampled_field_from_array(
-                self.scene,
-                hover_data,
-                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                dim=self.dvz.DVZ_FIELD_DIM_2D,
-            )
-            hover_image = self.dvz.dvz_image(self.scene, 0)
-            if not hover_image:
-                raise RuntimeError('dvz hover image() failed')
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
-                    hover_image, {'position': positions, 'texcoords': texcoords}
-                ),
-                f'{axis} hover geometry upload',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_field(hover_image, b'field', hover_field),
-                'hover field bind',
-            )
-            self._check(
-                self.dvz.dvz_image_set_sampling(hover_image, self.dvz.DVZ_IMAGE_SAMPLING_NEAREST),
-                'hover nearest sampling',
-            )
-            self._check(self.dvz.dvz_visual_set_depth_test(hover_image, False), 'hover depth')
-            self._check(
-                self.dvz.dvz_visual_set_alpha_mode(hover_image, self.dvz.DVZ_ALPHA_BLENDED),
-                'hover alpha mode',
-            )
-            attach.z_layer = 2
-            self._check(
-                self.dvz.dvz_panel_add_visual(panel, hover_image, ctypes.byref(attach)),
-                'hover attach',
-            )
-            self._hover_fields[axis] = hover_field
-            self._hover_images[axis] = hover_image
+                hover_data = np.zeros_like(annotation_data)
+                hover_field = self.dvz.dvz_sampled_field_from_array(
+                    self.scene,
+                    hover_data,
+                    format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                    semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                    dim=self.dvz.DVZ_FIELD_DIM_2D,
+                )
+                hover_image = self.dvz.dvz_image(self.scene, 0)
+                if not hover_image:
+                    raise RuntimeError('dvz hover image() failed')
+                self._check(
+                    self.dvz.dvz_visual_set_data_many(
+                        hover_image, {'position': positions, 'texcoords': texcoords}
+                    ),
+                    f'{axis} hover geometry upload',
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_field(hover_image, b'field', hover_field),
+                    'hover field bind',
+                )
+                self._check(
+                    self.dvz.dvz_image_set_sampling(
+                        hover_image, self.dvz.DVZ_IMAGE_SAMPLING_NEAREST
+                    ),
+                    'hover nearest sampling',
+                )
+                self._check(self.dvz.dvz_visual_set_depth_test(hover_image, False), 'hover depth')
+                self._check(
+                    self.dvz.dvz_visual_set_alpha_mode(hover_image, self.dvz.DVZ_ALPHA_BLENDED),
+                    'hover alpha mode',
+                )
+                attach.z_layer = 2
+                self._check(
+                    self.dvz.dvz_panel_add_visual(panel, hover_image, ctypes.byref(attach)),
+                    'hover attach',
+                )
+                self._hover_fields[axis] = hover_field
+                self._hover_images[axis] = hover_image
 
             boundaries = self.dvz.dvz_segment(self.scene, 0)
             if not boundaries:
@@ -682,7 +687,6 @@ class LinkedAtlasNavigator(AtlasViewer):
                 self._stage_contours(axis, payload, opacity=request.annotation_opacity)
                 self._contour_visuals[axis].activate(visible=request.annotation_visible)
                 self._accepted_contours[axis] = (request, payload)
-                self._hide_contour_rasters(axis)
                 self._refresh_boundaries(axis)
 
     def _slice_rgba(self, axis: str) -> NDArray[np.uint8]:
@@ -721,7 +725,7 @@ class LinkedAtlasNavigator(AtlasViewer):
     def _slice_layers(
         self, axis: str, index: int | None = None
     ) -> tuple[NDArray[np.uint8], NDArray[np.uint8]]:
-        payload = prepare_slice_layers(self.slice_composer, self._slice_request(axis, index))
+        payload = self._prepare_slice(self._slice_request(axis, index))
         return payload.anatomy, payload.annotation
 
     def _prepare_slice(self, request: SliceRequest) -> PreparedSliceLayers:
@@ -765,13 +769,14 @@ class LinkedAtlasNavigator(AtlasViewer):
             semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
             dim=self.dvz.DVZ_FIELD_DIM_2D,
         )
-        self.dvz.dvz_sampled_field_update_from_array(
-            self._annotation_fields[axis],
-            annotation,
-            format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-            semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-            dim=self.dvz.DVZ_FIELD_DIM_2D,
-        )
+        if self.slice_renderer == 'raster':
+            self.dvz.dvz_sampled_field_update_from_array(
+                self._annotation_fields[axis],
+                annotation,
+                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                dim=self.dvz.DVZ_FIELD_DIM_2D,
+            )
         starts, ends = self._map_boundary_segments(
             axis, payload.boundary_starts, payload.boundary_ends
         )
@@ -783,11 +788,6 @@ class LinkedAtlasNavigator(AtlasViewer):
         if self.slice_renderer == 'contours':
             self._contour_visuals[axis].activate(visible=request.annotation_visible)
             self._accepted_contours[axis] = (request, payload)
-            self._hide_contour_rasters(axis)
-
-    def _hide_contour_rasters(self, axis):
-        for visual in (self._annotation_images[axis], self._hover_images[axis]):
-            self._check(self.dvz.dvz_visual_set_visible(visual, False), 'contour raster hide')
 
     def _stage_contours(self, axis, payload, *, opacity):
         if payload.contours is None:
@@ -1141,7 +1141,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             if self._slice_loader is not None and self.view is not None:
                 self._slice_loader.submit(request)
             else:
-                payload = prepare_slice_layers(self.slice_composer, request)
+                payload = self._prepare_slice(request)
                 self._upload_slice_payload(request, payload)
         for axis in self._slice_fields:
             starts, ends = self._crosshair_positions(axis)
@@ -1157,11 +1157,10 @@ class LinkedAtlasNavigator(AtlasViewer):
     def _update_slice_geometry(self, axis: str) -> None:
         """Upload one slice's zoomed quad and aligned overlays."""
         positions, _ = self._slice_quad(axis)
-        for visual in (
-            self._slice_images[axis],
-            self._annotation_images[axis],
-            self._hover_images[axis],
-        ):
+        for images in (self._slice_images, self._annotation_images, self._hover_images):
+            if axis not in images:
+                continue
+            visual = images[axis]
             self._check(
                 self.dvz.dvz_visual_set_data(visual, 'position', positions),
                 f'{axis} slice zoom',

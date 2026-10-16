@@ -176,3 +176,19 @@ def test_unknown_pending_geometry_does_not_clear_existing_selection(viewer, monk
     app.set_cursor(next_cursor, select_region=True)
     assert app._contour_region_query() == (False, None)
     assert app.selection.regions == (('allen', -315),)
+
+
+def test_contours_omit_unused_panel_textures_but_keep_physical_plane_pixels(viewer):
+    assert viewer._annotation_fields == viewer._annotation_images == {}
+    assert viewer._hover_fields == viewer._hover_images == {}
+    assert set(viewer._slice_fields) == {'ap', 'ml', 'dv'}
+    for axis, accepted in viewer._accepted_contours.items():
+        request, payload = accepted
+        assert viewer._slice_planes._accepted[axis] == accepted
+        assert payload.annotation.shape == payload.anatomy.shape
+        assert payload.annotation.dtype == np.uint8
+        assert np.any(payload.annotation[..., 3])
+        assert request.renderer == 'contours'
+    viewer._slice_planes.show('ap')
+    assert viewer._slice_planes.visible_axes == ('ap',)
+    viewer._slice_planes.show('ap', False)

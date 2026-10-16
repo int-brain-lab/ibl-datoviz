@@ -280,3 +280,19 @@ def test_region_mask_uses_current_mapping_without_selecting_other_regions(volume
     assert mask.any()
     assert not mask.all()
     assert not composer.region_mask('dv', 1, ()).any()
+
+
+@pytest.mark.parametrize('layered', [False, True])
+def test_selection_without_dimming_skips_membership_mask(volumes, monkeypatch, layered):
+    composer = AtlasSliceComposer(volumes, 'allen')
+    compose = composer.compose_layers if layered else composer.compose
+    baseline = compose('dv', 1, selection_dim_factor=1.0)
+    monkeypatch.setattr(
+        np, 'isin', lambda *_args, **_kwargs: pytest.fail('unneeded selection mask'),
+    )
+    selected = compose('dv', 1, selected_region_ids=(997,), selection_dim_factor=1.0)
+    if layered:
+        for actual, expected in zip(selected, baseline, strict=True):
+            np.testing.assert_array_equal(actual, expected)
+    else:
+        np.testing.assert_array_equal(selected, baseline)

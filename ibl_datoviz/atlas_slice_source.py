@@ -126,7 +126,7 @@ def _rasterize(rings, height, width, view):
     x0, y0, vw, vh = view
     sx, sy = width / vw, height / vh
     for ring in rings:
-        points = np.asarray(ring, dtype=float)
+        points = np.array(ring, dtype=float, copy=True)
         points[:, 0] = (points[:, 0] - x0) * sx
         points[:, 1] = (points[:, 1] - y0) * sy
         ymin = max(0, int(np.ceil(points[:, 1].min() - 0.5)))
@@ -348,15 +348,29 @@ class AtlasSliceSource:
                 self._annotation_cache[key] = value
                 return value.copy()
         projection = self._projections[axis]
-        section = projection.load_slice(index)
         width, height = projection.slice_shape
         view = projection.manifest['view_box']
         result = np.zeros((height, width), dtype=np.uint16)
-        for item in section.paths:
-            rings = parse_svg_path(item.d)
-            row = self._by_id.get(int(item.atlas_ids['allen']))
+        with self._cache_lock:
+            numerical = self._contour_cache.get(key)
+        if numerical is not None:
+            # Contour preparation already validated this exact source section.
+            # Flattening classified outer/hole/island rings preserves even-odd
+            # parity and original path paint order without parsing SVG twice.
+            records = (
+                (
+                    path.atlas_ids['allen'],
+                    tuple(ring for c in path.components for ring in (c.outer, *c.holes)),
+                )
+                for path in numerical[0].paths
+            )
+        else:
+            section = projection.load_slice(index)
+            records = ((item.atlas_ids['allen'], parse_svg_path(item.d)) for item in section.paths)
+        for allen_id, rings in records:
+            row = self._by_id.get(int(allen_id))
             if row is None:
-                raise KeyError(f'unknown Allen atlas ID: {item.atlas_ids["allen"]}')
+                raise KeyError(f'unknown Allen atlas ID: {allen_id}')
             result[_rasterize(rings, height, width, view)] = row.index
         # SVG is plane (row=v, column=u); transport sections use raw atlas
         # array axes. Compare both affines to recover any projection-specific

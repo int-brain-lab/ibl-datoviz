@@ -182,3 +182,24 @@ def test_numpy_integer_section_is_normalized_for_strict_shared_reader(
     monkeypatch.setattr(projection, 'load_slice', strict)
     assert source.contour_slice('ap', np.int64(1)).paths
     assert decoder == [1]
+
+
+@pytest.mark.parametrize('axis', ['ap', 'ml', 'dv'])
+def test_annotation_reuses_exact_numeric_rings_without_mutation(source, monkeypatch, axis):
+    projection = source._projections[axis]
+    expected = source._annotation(axis, 0)
+    source.clear_cache()
+    section = projection.load_slice(0)
+    paths = ibl_anatomy.decode_registered_contours(section)
+    monkeypatch.setattr('ibl_anatomy.decode_registered_contours', lambda _: paths)
+    source.contour_slice(axis, 0)
+    before = [ring.copy() for p in paths for c in p.components for ring in (c.outer, *c.holes)]
+    monkeypatch.setattr(projection, 'load_slice', lambda *_: pytest.fail('duplicate section load'))
+    monkeypatch.setattr(
+        'ibl_datoviz.atlas_slice_source.parse_svg_path',
+        lambda *_: pytest.fail('duplicate SVG parse'),
+    )
+    np.testing.assert_array_equal(source._annotation(axis, 0), expected)
+    after = [ring for p in paths for c in p.components for ring in (c.outer, *c.holes)]
+    for old, new in zip(before, after, strict=True):
+        np.testing.assert_array_equal(old, new)

@@ -206,7 +206,7 @@ class AtlasSliceComposer:
         valid = self._valid[annotation]
         region_rgb = self._colors[annotation].astype(np.float32)
         selected = {abs(int(region_id)) for region_id in selected_region_ids if region_id}
-        if selected:
+        if selected and selection_dim_factor != 1:
             dim = valid & ~np.isin(np.abs(self._mapped_ids[annotation]), tuple(selected))
             region_rgb[dim] *= selection_dim_factor
         blended = rgb.astype(np.float32) * (1 - annotation_opacity)
@@ -254,7 +254,7 @@ class AtlasSliceComposer:
         anatomy = np.concatenate((anatomy_rgb, anatomy_alpha[..., None]), axis=2)
         region_rgb = self._colors[annotation].copy()
         selected = {abs(int(region_id)) for region_id in selected_region_ids if region_id}
-        if selected:
+        if selected and selection_dim_factor != 1:
             dim = valid & ~np.isin(np.abs(self._mapped_ids[annotation]), tuple(selected))
             region_rgb[dim] = np.rint(region_rgb[dim] * selection_dim_factor).astype(np.uint8)
         annotation_rgba = np.concatenate(
