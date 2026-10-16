@@ -44,18 +44,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     add_arguments(parser)
     parser.add_argument('--volume-pack', type=Path, required=True)
-    parser.add_argument('--release', type=Path)
+    sources = parser.add_mutually_exclusive_group()
+    sources.add_argument('--release', type=Path, help='existing BWM release directory')
+    sources.add_argument('--workspace', type=Path, help='existing shared-reader workspace')
     parser.add_argument('--pid', action='append', default=[])
     parser.add_argument('--frame-evidence', type=Path)
     parser.add_argument('--region-values', type=Path, help='prepared RegionValues JSON')
     parser.add_argument('--plane', action='append', choices=('ap', 'ml', 'dv'), default=[])
     args = parser.parse_args()
-    if bool(args.release) != bool(args.pid):
-        parser.error('--release and one or more distinct --pid values must be supplied together')
+    if bool(args.release or args.workspace) != bool(args.pid):
+        parser.error(
+            '--release or --workspace and one or more distinct --pid values must be '
+            'supplied together'
+        )
     if len(set(args.pid)) != len(args.pid):
         parser.error('duplicate insertion IDs are not supported')
-    if args.frame_evidence is not None and args.release is None:
-        parser.error('--frame-evidence requires --release')
+    if args.frame_evidence is not None and args.release is None and args.workspace is None:
+        parser.error('--frame-evidence requires --release or --workspace')
     options = prepare_viewer(args)
     volumes = open_volume_pack(args.volume_pack).load_volumes()
     options.update(layout='linked', volumes=volumes, render_volume=False)
@@ -64,8 +69,7 @@ def main():
         frame = WorldFrame(**json.loads(args.frame_evidence.read_text()))
         frame.require_verified()
     recordings = []
-    if args.release is not None:
-        args.workspace = None
+    if args.release is not None or args.workspace is not None:
         source = _source(args)
         recordings = [
             prepare_bwm_recording(source.insertion(pid), frame=frame) for pid in args.pid

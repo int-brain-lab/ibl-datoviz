@@ -50,16 +50,18 @@ def test_receipt_reports_actual_table_validation_and_snapshots_accepted_evidence
 
 
 @pytest.mark.parametrize('producer_declared', [True, False])
+@pytest.mark.parametrize('source_option', ['--release', '--workspace'])
 def test_cli_accepts_producer_metadata_or_explicit_legacy_evidence(
     prepared,
     producer_declared,
+    source_option,
     tmp_path,
     monkeypatch,
 ):
     arguments = [
         'ibl-recordings',
         str(tmp_path),
-        '--release',
+        source_option,
         str(tmp_path),
         '--pid',
         'insertion-a',
@@ -81,9 +83,13 @@ def test_cli_accepts_producer_metadata_or_explicit_legacy_evidence(
         path.write_text(json.dumps(client._frame_receipt(frame)))
         arguments.extend(['--frame-evidence', str(path)])
     monkeypatch.setattr(sys, 'argv', arguments)
-    monkeypatch.setattr(
-        client, '_source', lambda _args: SimpleNamespace(insertion=lambda _pid: prepared)
-    )
+    source_args = []
+
+    def source(args):
+        source_args.append((args.release, args.workspace))
+        return SimpleNamespace(insertion=lambda _pid: prepared)
+
+    monkeypatch.setattr(client, '_source', source)
     monkeypatch.setattr(client, 'prepare_viewer', lambda _args: {})
     reports = []
 
@@ -111,4 +117,8 @@ def test_cli_accepts_producer_metadata_or_explicit_legacy_evidence(
     assert accepted['provenance']['source_manifest_sha256'] == prepared.metadata.manifest_sha256
     assert accepted['provenance']['source_insertion_ids'] == ['insertion-a']
     assert report['recordings'][0]['source_validation_status'] == 'unknown'
+    assert source_args == [
+        (tmp_path if source_option == '--release' else None,
+         tmp_path if source_option == '--workspace' else None)
+    ]
     json.dumps(report)
