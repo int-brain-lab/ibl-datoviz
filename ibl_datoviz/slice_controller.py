@@ -106,6 +106,17 @@ class SliceController:
             raise ValueError('cursor units must be voxel or um')
         self.viewer.set_cursor(AtlasCursor(*values), select_region=select_region)
 
+    @property
+    def auto_slice(self):
+        """Whether subsequent Regions-list selections move all three slices."""
+        self._check()
+        return self.viewer._auto_slice.enabled
+
+    def set_auto_slice(self, enabled):
+        """Enable future region navigation without recentering the current selection."""
+        self._check()
+        self.viewer._auto_slice.set_enabled(enabled)
+
     def set_layers(self, *, anatomy=None, annotations=None, boundaries=None):
         """Change presentation in the existing slice panels."""
         self._check()

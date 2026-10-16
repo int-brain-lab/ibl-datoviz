@@ -64,6 +64,12 @@ class ViewportInputAdapter:
         event_type = pointer.type
         if event_type in (
             dvz.DVZ_POINTER_EVENT_PRESS,
+            getattr(dvz, 'DVZ_POINTER_EVENT_CLICK', -1),
+            getattr(dvz, 'DVZ_POINTER_EVENT_WHEEL', -1),
+        ) and hasattr(self.owner, '_cancel_auto_slice'):
+            self.owner._cancel_auto_slice()
+        if event_type in (
+            dvz.DVZ_POINTER_EVENT_PRESS,
             dvz.DVZ_POINTER_EVENT_DRAG_START,
             dvz.DVZ_POINTER_EVENT_DRAG,
             getattr(dvz, 'DVZ_POINTER_EVENT_WHEEL', -1),

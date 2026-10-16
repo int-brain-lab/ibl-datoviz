@@ -93,6 +93,14 @@ class LatestWinsExecutor(Generic[Key, Token, Result]):
                 state.active = True
                 self._executor.submit(self._run, key)
 
+    def cancel(self, key: Key) -> None:
+        """Discard pending and ready work, including any in-flight outcome."""
+        with self._lock:
+            state = self._states.get(key)
+            if state is not None:
+                state.generation += 1
+                state.pending = state.ready = state.error = None
+
     def _run(self, key: Key) -> None:
         while True:
             with self._lock:

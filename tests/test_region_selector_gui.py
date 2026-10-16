@@ -821,3 +821,42 @@ def test_folding_keeps_region_count_and_toolbar_anchor_stable(viewer):
     viewer._gui_callback(None, None, None)
     assert len(viewer._selector_model.visible_rows()) == expanded
     assert count in fake.texts
+
+
+def test_navigation_intent_retains_shift_endpoint_and_keyboard_activation(viewer):
+    host, fake = viewer
+    candidate = host._selector_gui.candidate()
+    # Disclosure/navigation alone has no slice navigation intent.
+    assert host._selector_gui.intents(candidate, [event(fake, 'ROW_CLICKED', -100)]) is None
+    candidate.set_all_expanded(True)
+    host._selector_gui.intents(candidate, [event(fake, 'ROW_CLICKED', -102)])
+    effect = host._selector_gui.intents(candidate, [event(fake, 'ROW_CLICKED', -101, flags=1)])
+    assert effect['kind'] == 'range' and effect['target'] == '-101'
+    assert candidate.anchor == '-102'  # The original range anchor is not the target.
+    candidate.apply({'op': 'focus', 'id': '-101'})
+    assert (
+        host._selector_gui.intents(
+            candidate, [event(fake, 'KEY_PRESSED', -101, detail=fake.DVZ_KEY_DOWN)]
+        )
+        is None
+    )
+    effect = host._selector_gui.intents(
+        candidate, [event(fake, 'KEY_PRESSED', -102, detail=fake.DVZ_KEY_ENTER)]
+    )
+    assert effect['id'] == '-102'
+
+
+@pytest.mark.parametrize('changes', [(True, False), (False, True), (False, False)])
+def test_only_winning_list_intent_can_trigger_navigation(viewer, monkeypatch, changes):
+    host, fake = viewer
+    received = []
+    monkeypatch.setattr(host, '_region_list_intent', lambda effect, _: received.append(effect))
+    monkeypatch.setattr(host, '_draw_data_tables_gui', lambda _: changes)
+    # Isolate host precedence: the production commit path is tested elsewhere.
+    monkeypatch.setattr(host, '_sync_selection_highlight', lambda **_: None)
+    candidate = host._selector_gui.candidate()
+    candidate.set_all_expanded(True)
+    monkeypatch.setattr(host._selector_gui, 'candidate', lambda: candidate)
+    fake.events = [event(fake, 'ROW_CLICKED', -101)]
+    host._draw_sidebar_gui(None)
+    assert bool(received) is not any(changes)

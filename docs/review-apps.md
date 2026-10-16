@@ -26,8 +26,20 @@ Right-click selects an observation; left-click selects anatomy. Anatomy particip
 in frontmost depth, so hide it to select points inside the brain. Check that the
 observation table follows while region selection remains independent.
 
-Move the AP/ML/DV cursor, switch mapping, change slice layers and toggle physical
-3D planes under Slices controls. Cursor movement must preserve observations and
+Observations starts docked below the central atlas workspace, between the Regions
+and Layers sidebars. The central toolbar provides Coronal (AP), Sagittal (ML)
+and Horizontal (DV) voxel sliders; the linked app omits the Explode control.
+
+**Auto-slice selected region** starts enabled. Select a row in Regions to move
+all three slices to an occupied voxel nearest that signed mapped region’s centroid.
+Toggle it off to keep the slices fixed while browsing regions. Enabling it does
+not recenter the existing selection. Direct brain clicks and programmatic selection
+leave the slices fixed; manual cursor movement cancels pending navigation. Regions
+with no occupied voxels leave the cursor unchanged. This feature uses the exact
+loaded dense annotation grid; lazy projection sources report it unavailable.
+
+Switch mapping, change slice layers and toggle physical 3D planes under Slices
+controls. Cursor movement must preserve observations and
 must not select a region implicitly. A visible path or physical plane explains
 why scene observation selection is unavailable. Hide it to restore the query route.
 Close/reopen tables, hide layers and reset the camera without losing identities.

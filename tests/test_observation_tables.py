@@ -297,13 +297,13 @@ def test_draw_uses_bool_window_contract_and_one_active_native_table(context, mon
     tables.show(second)
     windows, drawn, ended = [], [], []
 
-    def window(_gui, _title, opened, **_kwargs):
-        assert isinstance(opened, ctypes.c_bool)
-        ctypes.byref(opened)
-        windows.append(opened)
+    def window(_gui, title, opened, flags):
+        assert title == b'Observations' and flags == 0
+        assert isinstance(opened._obj, ctypes.c_bool)
+        windows.append(opened._obj)
         return True
 
-    viewer._sidebar = SimpleNamespace(_window=window)
+    monkeypatch.setattr(viewer.dvz, 'dvz_gui_begin', window, raising=False)
     monkeypatch.setattr(viewer.dvz, 'dvz_gui_text', lambda *_args: None, raising=False)
     monkeypatch.setattr(
         viewer.dvz, 'dvz_gui_end', lambda *_args: ended.append(True), raising=False

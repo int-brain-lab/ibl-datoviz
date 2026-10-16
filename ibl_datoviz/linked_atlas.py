@@ -18,6 +18,7 @@ from ibl_anatomy import (
 
 from .atlas import AtlasMesh
 from .atlas_slice_source import AtlasSliceSource
+from .auto_slice import AutoSliceNavigation
 from .navigator import (
     SLICE_DISPLAY_AXES,
     AtlasCursor,
@@ -180,6 +181,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self.volumes = volumes
         self.render_volume = bool(render_volume)
         self.volume = self.volume_field = None
+        self._auto_slice = None
         self.slice_source = slice_source
         self.slice_resolution_label = _resolution_label(slice_source.grid)
         self.volume_resolution_label = _resolution_label(volumes.grid) if render_volume else None
@@ -251,6 +253,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                     notify=self._notify_slice_ready,
                     max_workers=3,
                 )
+            self._auto_slice = AutoSliceNavigation(slice_source, notify=self._notify_slice_ready)
             self._slice_planes = SlicePlanes(self, slice_source, source_id=self._slice_source_id)
             self._create_slices()
             if self.render_volume:
@@ -766,6 +769,16 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def _drain_prepared_slices(self, _view, _user_data) -> None:
         """Apply prepared slice payloads on the Datoviz view owner thread."""
+        try:
+            self._drain_auto_slice()
+        except Exception as error:
+            # This method is also a native post callback: ctypes cannot forward
+            # upload failures to show(), so retain the error and stop the loop.
+            self._slice_error = self._gui_callback_error = error
+            self._close_pending = True
+            if getattr(self, 'app', None) is not None:
+                self.dvz.dvz_app_stop(self.app)
+            return
         if self._slice_loader is None or self._closed:
             return
         try:
@@ -1091,6 +1104,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         # Validate the complete candidate before changing any retained/control state.
         for axis, value in zip(('ap', 'ml', 'dv'), current, strict=True):
             cursor.replace(axis, value, self.slice_source.grid.shape)
+        self._cancel_auto_slice()
         old_cursor = self.cursor
         before = self.slices._snapshot()
         snapshot = self._surface_transaction_snapshot()
@@ -1258,6 +1272,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._require_open()
         if palette is not None:
             raise ValueError('linked atlas slices require the verified catalog palette')
+        self._cancel_auto_slice()
         snapshot = self._surface_transaction_snapshot()
         previous_mapping = self.slice_composer.mapping
         widgets = tuple(
@@ -1280,6 +1295,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self.selection._publish('mapping')
 
     def _apply_selected_region_ids(self, region_ids, **kwargs) -> None:
+        self._cancel_auto_slice()
         snapshot = self._surface_transaction_snapshot()
         self.selection._hold_events += 1
         try:
@@ -1320,6 +1336,55 @@ class LinkedAtlasNavigator(AtlasViewer):
         else:
             self._hovered_region_label = None
 
+    def _cancel_auto_slice(self):
+        if getattr(self, '_auto_slice', None) is not None:
+            self._auto_slice.cancel()
+
+    def _region_list_intent(self, effect, candidate):
+        if self._auto_slice is None:
+            return
+        target = effect.get('target', effect.get('id'))
+        row = candidate.by_id.get(target)
+        selected = self._selected_region_ids
+        signed_id = next(
+            (value for value in selected if row is not None and abs(value) == abs(row.atlas_id)),
+            None,
+        )
+        # A deselection or clear cancels old work without jumping to another row.
+        if target not in candidate.selected:
+            signed_id = None
+        self._auto_slice.request(self.mapping, signed_id)
+
+    def _drain_auto_slice(self, *_args):
+        if getattr(self, '_auto_slice', None) is None or self._closed:
+            return
+        anchor = self._auto_slice.drain()
+        if anchor is not None:
+            self.set_cursor(AtlasCursor(*anchor), select_region=False)
+
+    def _draw_viewport_toolbar_gui(self, gui):
+        super()._draw_viewport_toolbar_gui(gui)
+        enabled = ctypes.c_bool(self._auto_slice.enabled)
+        self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
+        if self.dvz.dvz_gui_checkbox(gui, b'Auto-slice selected region', ctypes.byref(enabled)):
+            self.slices.set_auto_slice(enabled.value)
+        changed = False
+        labels = (b'Coronal (AP)', b'Sagittal (ML)', b'Horizontal (DV)')
+        width, _ = self._sidebar.available(gui)
+        for axis, size, label in zip(
+            ('ap', 'ml', 'dv'), self.slice_source.grid.shape, labels, strict=True
+        ):
+            self.dvz.dvz_gui_set_next_item_width(gui, max(40.0, width - 150.0 * self.ui_scale))
+            changed |= self.dvz.dvz_gui_slider_int(
+                gui, label, ctypes.byref(self._cursor_controls[axis]), 0, size - 1
+            )
+        if changed:
+            self.set_cursor(
+                AtlasCursor(*(self._cursor_controls[a].value for a in ('ap', 'ml', 'dv')))
+            )
+        if self._auto_slice.status:
+            self.dvz.dvz_gui_text(gui, self._auto_slice.status.encode())
+
     def _draw_cursor_gui(self, gui) -> None:
         """Draw compact, always-visible cursor and selection controls."""
         world = self.cursor.world_um(self.slice_source)
@@ -1338,16 +1403,6 @@ class LinkedAtlasNavigator(AtlasViewer):
             f'ML {world[0]:.0f} · AP {world[1]:.0f} · DV {world[2]:.0f} um'.encode(),
         )
         self.dvz.dvz_gui_text(gui, region.encode())
-        changed = False
-        for axis, size in zip(('ap', 'ml', 'dv'), self.slice_source.grid.shape, strict=True):
-            changed |= self.dvz.dvz_gui_slider_int(
-                gui, axis.upper().encode(), ctypes.byref(self._cursor_controls[axis]), 0, size - 1
-            )
-        if changed:
-            self.set_cursor(
-                AtlasCursor(*(self._cursor_controls[axis].value for axis in ('ap', 'ml', 'dv'))),
-                select_region=False,
-            )
         if row is not None and row.atlas_id != 0:
             selected = self._selected_region_ids == (row.atlas_id,)
             action = 'Deselect' if selected else 'Select'
@@ -1478,6 +1533,7 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def _process_gui_frame(self) -> None:
         super()._process_gui_frame()
+        self._drain_auto_slice()
         if self._slice_loader is not None:
             self._drain_prepared_slices(self.view, None)
 
@@ -1533,6 +1589,9 @@ class LinkedAtlasNavigator(AtlasViewer):
         if getattr(self, '_gui_callback_depth', 0):
             super().close()
             return
+        if getattr(self, '_auto_slice', None) is not None:
+            self._auto_slice.close()
+            self._auto_slice = None
         if getattr(self, '_slice_loader', None) is not None:
             self._slice_loader.close()
             self._slice_loader = None

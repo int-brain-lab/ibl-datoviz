@@ -103,9 +103,6 @@ def draw_layers_gui(viewer, gui):
     if not viewer.layers and quantity is None:
         return
     dvz = viewer.dvz
-    dvz.dvz_gui_dock_window_once(
-        gui, b'Layers', dvz.DVZ_GUI_DOCK_SLOT_RIGHT, 340 * viewer.ui_scale
-    )
     visible = dvz.dvz_gui_begin(gui, b'Layers', None, 0)
     try:
         if not visible:

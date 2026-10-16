@@ -288,7 +288,9 @@ class RegionSelectorGui:
         events = sorted(
             events, key=lambda event: event.type != dvz.DVZ_GUI_DATA_EVENT_FOCUS_CHANGED
         )
+        selection_intent = None
         for event in events:
+            effect = None
             region_id = str(decode_region_key(event.row_key)) if event.row_key else None
             flags = int(event.flags)
             modifiers = {
@@ -297,12 +299,12 @@ class RegionSelectorGui:
                 'shift': bool(flags & 1),
             }
             if event.type == dvz.DVZ_GUI_DATA_EVENT_ROW_CLICKED:
-                candidate.activate(region_id, **modifiers)
+                effect = candidate.activate(region_id, **modifiers)
             elif event.type == dvz.DVZ_GUI_DATA_EVENT_DISCLOSURE_CLICKED:
                 candidate.toggle_branch(region_id)
             elif event.type == dvz.DVZ_GUI_DATA_EVENT_KEY_PRESSED and event.detail in key_names:
                 candidate._focus_requested = True
-                candidate.navigate(
+                effect = candidate.navigate(
                     key_names[event.detail], ctrl=modifiers['ctrl'], meta=modifiers['meta']
                 )
                 candidate.apply({'op': 'hover', 'id': candidate.focus})
@@ -317,3 +319,6 @@ class RegionSelectorGui:
                     candidate.apply({'op': 'hover', 'id': region_id})
                 elif candidate.hover == region_id:
                     candidate.apply({'op': 'hover', 'id': None})
+            if effect is not None:
+                selection_intent = effect
+        return selection_intent

@@ -9,6 +9,39 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Workspace docking and region navigation — October 16 2026
+
+Implemented the user's workspace review requests on `feature/datoviz-v04`:
+
+- Default Observations docking occupies only the center column below the atlas;
+  Regions and Layers dock first on the sides. Windows remain movable and the
+  table retains its native boolean close/reopen contract.
+- The linked toolbar omits Explode and exposes Coronal (AP), Sagittal (ML) and
+  Horizontal (DV) voxel sliders beside a default-on auto-slice checkbox.
+- Auto-slice follows explicit Regions-list activation (including keyboard and
+  shift-range endpoints), preserving observation and region selection domains.
+  It computes the occupied voxel nearest the signed mapped region centroid from
+  the exact loaded dense annotation grid, with deterministic AP/ML/DV ties.
+  Lazy projection sources and regions without occupied voxels keep the cursor
+  fixed with an explicit status. No web companion grid is reused.
+- Bounded CPU lookup runs through the existing latest-wins executor pattern.
+  Manual navigation, direct scene gestures, programmatic region selection,
+  deselection, mapping changes and disabling the option discard pending intent.
+  Enabling affects future selections only. Shutdown joins the worker; native
+  post callbacks retain and report upload failures through normal app shutdown.
+  Table selections keep their established precedence over simultaneous list input.
+
+Validation: **960 passed, 1 skipped** (optional registered 10 µm asset), Ruff and
+strict MkDocs passed. Tests used the existing isolated f77 source checkout paired
+with the hash-verified supported baseline binary through
+`build/endpoint-depth/run_pinned.py`; no native revision, pin or configuration
+changed. Real private-Xvfb mouse checks at UI scale 1.5 verified docking bounds,
+projection slider movement, checkbox off/on, and Regions → worker → native post
+navigation: selecting Beryl MOp (-985) reached occupied anchor (86, 71, 47) while
+retaining observation 0; selecting MOs with auto-slice off preserved that cursor.
+Screenshots and receipts are ignored under `build/region-navigation/`. Human
+Linux/macOS review remains pending; use `just review workspace --ui-scale 1.5`.
+
 ## Integrated scientific workspace checkpoint — October 16 2026
 
 The user authorized sustained implementation through a reviewable linked

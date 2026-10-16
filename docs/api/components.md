@@ -130,6 +130,18 @@ textures may still be loading after the request/cursor event. Failed native
 updates restore cursor/controls and supersede rejected requests; callback errors
 are recorded after commit, and callbacks cannot mutate the viewer reentrantly.
 
+The linked toolbar exposes three projection sliders and a default-on auto-slice
+checkbox. `app.slices.auto_slice` reads this setting;
+`app.slices.set_auto_slice(False)` disables navigation for subsequent Regions-list
+activations. Enabling it does not move the current cursor. Region-list selections
+prepare an occupied voxel nearest the selected signed mapped region’s centroid
+on the loaded dense annotation grid, then update all three slices on the owner
+thread. Direct scene clicks, programmatic region selection and manual navigation
+do not trigger auto-slicing; they cancel older pending intent. Deselecting a row
+or changing mapping also discards stale work. Missing occupied voxels and lazy
+projection sources leave the cursor unchanged and report the reason in the toolbar.
+No companion from another atlas grid is substituted.
+
 Physical planes use the exact accepted request index and pixels, with separate
 linear grayscale and nearest categorical textures. They retain depth testing and
 own their resources until hidden or the viewer closes. Plane geometry respects

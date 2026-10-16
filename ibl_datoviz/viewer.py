@@ -1901,16 +1901,7 @@ class AtlasViewer:
     def _draw_gui_frame(self, gui) -> None:
         """Draw one GUI frame with balanced native window and child scopes."""
         self._process_gui_frame()
-        self.dvz.dvz_gui_dock_window_once(
-            gui,
-            b'Regions',
-            self.dvz.DVZ_GUI_DOCK_SLOT_LEFT,
-            self.sidebar_width * self.ui_scale,
-        )
-        if self.viewport is not None:
-            self.dvz.dvz_gui_dock_window_once(
-                gui, b'3D atlas', self.dvz.DVZ_GUI_DOCK_SLOT_CENTER, 0.0
-            )
+        self._dock_gui_windows(gui)
         # Dear ImGui NoScrollbar | NoScrollWithMouse: child panes own scrolling.
         visible = self.dvz.dvz_gui_begin(gui, b'Regions', None, (1 << 3) | (1 << 4))
         try:
@@ -1942,6 +1933,36 @@ class AtlasViewer:
         if getattr(self, 'tables', None) is not None:
             self.tables.draw(gui)
 
+    def _dock_gui_windows(self, gui) -> None:
+        """Split sidebars before the central observation dock, preserving user moves."""
+        self.dvz.dvz_gui_dock_window_once(
+            gui,
+            b'Regions',
+            self.dvz.DVZ_GUI_DOCK_SLOT_LEFT,
+            self.sidebar_width * self.ui_scale,
+        )
+        registry = getattr(self, '_regional_quantities', None)
+        quantity = registry.handle if registry is not None else None
+        if self.layers or quantity is not None:
+            self.dvz.dvz_gui_dock_window_once(
+                gui,
+                b'Layers',
+                self.dvz.DVZ_GUI_DOCK_SLOT_RIGHT,
+                340 * self.ui_scale,
+            )
+        tables = getattr(self, 'tables', None)
+        if tables is not None and tables.visible:
+            self.dvz.dvz_gui_dock_window_once(
+                gui,
+                b'Observations',
+                self.dvz.DVZ_GUI_DOCK_SLOT_BOTTOM,
+                280 * self.ui_scale,
+            )
+        if self.viewport is not None:
+            self.dvz.dvz_gui_dock_window_once(
+                gui, b'3D atlas', self.dvz.DVZ_GUI_DOCK_SLOT_CENTER, 0.0
+            )
+
     def _draw_sidebar_gui(self, gui) -> None:
         """Keep the browser permanent; scene controls live in an ordinary window."""
         try:
@@ -1969,7 +1990,7 @@ class AtlasViewer:
                 self._check(result, 'region selector draw')
                 if dropped:
                     raise RuntimeError('region selector input batch dropped')
-            self._selector_gui.intents(candidate, events)
+            selection_intent = self._selector_gui.intents(candidate, events)
         except Exception:
             self._restore_sidebar_feedback()
             raise
@@ -1978,6 +1999,7 @@ class AtlasViewer:
         try:
             if self._sidebar.footer(gui):
                 candidate.set_selected(())
+                selection_intent = {'kind': 'clear'}
             self._sync_selection_highlight(
                 tree_changed=candidate.selected != self._selector_model.selected,
                 table_changed=table_changed,
@@ -1987,7 +2009,12 @@ class AtlasViewer:
         except Exception:
             self._restore_sidebar_feedback()
             raise
+        if selection_intent is not None and not (table_changed or region_table_changed):
+            self._region_list_intent(selection_intent, candidate)
         self._sidebar.details(gui)
+
+    def _region_list_intent(self, effect, candidate):
+        """Handle optional navigation only after a successful selection commit."""
 
     def _restore_sidebar_feedback(self):
         """Restore retained widgets after a partially failing frame update."""
@@ -2008,16 +2035,17 @@ class AtlasViewer:
 
     def _draw_viewport_toolbar_gui(self, gui) -> None:
         """Keep frequent 3-D presentation actions beside the atlas."""
-        self.dvz.dvz_gui_set_next_item_width(gui, 160.0)
-        if self.dvz.dvz_gui_slider_float(
-            gui,
-            b'Explode selection' if self.anatomy_presentation == 'major' else b'Explode',
-            ctypes.byref(self._explode_control),
-            0.0,
-            1.0,
-        ):
-            self.set_explode(self._explode_control.value)
-        self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
+        if self.layout != 'linked':
+            self.dvz.dvz_gui_set_next_item_width(gui, 160.0)
+            if self.dvz.dvz_gui_slider_float(
+                gui,
+                b'Explode selection' if self.anatomy_presentation == 'major' else b'Explode',
+                ctypes.byref(self._explode_control),
+                0.0,
+                1.0,
+            ):
+                self.set_explode(self._explode_control.value)
+            self.dvz.dvz_gui_same_line(gui, 0.0, 8.0)
         if self.dvz.dvz_gui_button(gui, b'Reset view') and self.arcball is not None:
             self.camera.reset()
         if self.anatomy_presentation == 'detailed' and self.selection_presentation != 'legacy':

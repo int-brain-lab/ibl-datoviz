@@ -182,6 +182,11 @@ class ObservationTables:
         """Return retained table owners in creation order."""
         return tuple(self._tables)
 
+    @property
+    def visible(self):
+        """Return whether the owned observation window is currently requested."""
+        return bool(self._tables and self._opened.value)
+
     def show(self, layer):
         """Open one attached layer's full population without loading signal data."""
         self.viewer.selection._check_mutation()
@@ -243,13 +248,13 @@ class ObservationTables:
 
     def draw(self, gui):
         """Draw nonmodal tables and route native row selection through the controller."""
-        if not self._tables or not self._opened.value:
+        if not self.visible:
             return
-        visible = self.viewer._sidebar._window(
+        visible = self.viewer.dvz.dvz_gui_begin(
             gui,
             b'Observations',
-            self._opened,
-            details=True,
+            ctypes.byref(self._opened),
+            0,
         )
         try:
             if visible:
