@@ -19,6 +19,7 @@ from ibl_anatomy import (
 from .atlas import AtlasMesh
 from .atlas_slice_source import AtlasSliceSource
 from .auto_slice import AutoSliceNavigation
+from .contour_visual import ContourVisual
 from .navigator import (
     SLICE_DISPLAY_AXES,
     AtlasCursor,
@@ -105,6 +106,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         atlas=None,
         layout='linked',
         slice_source=None,
+        slice_renderer='raster',
         render_volume: bool = True,
         mapping: str = 'allen',
         width: int = 1280,
@@ -130,6 +132,15 @@ class LinkedAtlasNavigator(AtlasViewer):
         slice_source = volumes if slice_source is None else slice_source
         if slice_source is None:
             raise ValueError('volume-free navigation requires an explicit slice_source')
+        if slice_renderer not in ('raster', 'contours'):
+            raise ValueError('slice_renderer must be raster or contours')
+        if slice_renderer == 'contours' and not callable(
+            getattr(slice_source, 'contour_slice', None)
+        ):
+            raise ValueError('contours require an exact registered contour slice source')
+        self.slice_renderer = slice_renderer
+        self._contour_visuals = {}
+        self._accepted_contours = {}
         if volumes is not None and mesh.reference_space != volumes.regions.reference_space_id:
             raise ValueError('mesh and volume reference spaces differ')
         if mesh.reference_space != slice_source.regions.reference_space_id:
@@ -430,6 +441,13 @@ class LinkedAtlasNavigator(AtlasViewer):
                 panel, self.dvz.DvzColor(*self.slice_background, 255)
             )
         self._configure_3d_camera()
+        if self.slice_renderer == 'contours':
+            for panel in self.slice_panels.values():
+                msaa = self.dvz.dvz_msaa_desc()
+                msaa.enabled, msaa.sample_count = True, 4
+                self._check(
+                    self.dvz.dvz_panel_set_msaa(panel, ctypes.byref(msaa)), 'contour slice MSAA'
+                )
         for panel in self.slice_panels.values():
             self._check(
                 self.dvz.dvz_panel_set_domain(panel, self.dvz.DVZ_DIM_X, -1.0, 1.0),
@@ -659,6 +677,13 @@ class LinkedAtlasNavigator(AtlasViewer):
                 'slice crosshair attach',
             )
             self._crosshairs[axis] = crosshair
+            if self.slice_renderer == 'contours':
+                self._contour_visuals[axis] = ContourVisual(self.dvz, self.scene, panel)
+                self._stage_contours(axis, payload, opacity=request.annotation_opacity)
+                self._contour_visuals[axis].activate(visible=request.annotation_visible)
+                self._accepted_contours[axis] = (request, payload)
+                self._hide_contour_rasters(axis)
+                self._refresh_boundaries(axis)
 
     def _slice_rgba(self, axis: str) -> NDArray[np.uint8]:
         index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
@@ -675,7 +700,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         if index is None:
             index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
         selected_ids = (
-            self._signed_focus_ids() if getattr(self, 'tree_model', None) is not None
+            self._signed_focus_ids()
+            if getattr(self, 'tree_model', None) is not None
             else tuple(self._selected_region_ids)
         )
         return SliceRequest(
@@ -689,6 +715,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             annotation_visible=self.annotation_visible,
             selected_region_ids=selected_ids,
             selection_dim_factor=1.0,
+            renderer=self.slice_renderer,
         )
 
     def _slice_layers(
@@ -713,6 +740,17 @@ class LinkedAtlasNavigator(AtlasViewer):
     def _upload_slice_payload(self, request: SliceRequest, payload: PreparedSliceLayers) -> None:
         """Upload one fully prepared slice payload on the view owner thread."""
         axis = request.axis
+        if self.slice_renderer == 'contours':
+            if (
+                request.source_id != self._slice_source_id
+                or request.mapping != self.mapping
+                or request.renderer != self.slice_renderer
+                or request.revision != self._slice_revisions[axis]
+            ):
+                return
+            if payload.contours is None or payload.contours.mapping != request.mapping:
+                raise ValueError('contour payload differs from its captured request')
+            self._stage_contours(axis, payload, opacity=request.annotation_opacity)
         anatomy, annotation = payload.anatomy, payload.annotation
         expected = self._slice_shapes[axis]
         if anatomy.shape != expected or annotation.shape != expected:
@@ -742,9 +780,36 @@ class LinkedAtlasNavigator(AtlasViewer):
         )
         self._upload_selection_outline(axis, payload)
         self._slice_planes.update(axis, request, payload)
+        if self.slice_renderer == 'contours':
+            self._contour_visuals[axis].activate(visible=request.annotation_visible)
+            self._accepted_contours[axis] = (request, payload)
+            self._hide_contour_rasters(axis)
+
+    def _hide_contour_rasters(self, axis):
+        for visual in (self._annotation_images[axis], self._hover_images[axis]):
+            self._check(self.dvz.dvz_visual_set_visible(visual, False), 'contour raster hide')
+
+    def _stage_contours(self, axis, payload, *, opacity):
+        if payload.contours is None:
+            raise ValueError('exact contour geometry is missing')
+        colors = {
+            row.atlas_id: tuple(bytes.fromhex(row.color_hex.removeprefix('#')))
+            for row in self.catalog.physical(payload.contours.mapping)
+        }
+        corners, _ = self._slice_quad(axis)
+        self._contour_visuals[axis].stage(
+            payload.contours,
+            colors,
+            payload.svg_to_fraction,
+            corners,
+            opacity=opacity,
+        )
 
     def _refresh_hover_overlays(self, axes=None) -> None:
         """Update lightweight region-tint layers without recomposing base slices."""
+        if self.slice_renderer == 'contours':
+            # Exact geometry supplies hover identity; no raster tint/lookup on the owner thread.
+            return
         if not self._hover_fields:
             return
         refresh_axes = tuple(self._hover_fields) if axes is None else tuple(axes)
@@ -800,14 +865,23 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._slice_error = None
             self.dvz.dvz_view_request_frame(self.view)
 
+    def _slice_fraction(self, axis, index):
+        if self.slice_renderer == 'raster':
+            return slice_index_fraction(self.slice_source.grid, axis, index)
+        grid = self.slice_source.grid
+        column, row = grid.array_axes.index(axis), grid.world_axes.index(axis)
+        fraction = (index + 0.5) / grid.shape[column]
+        matrix = np.asarray(grid.index_to_world_um_matrix).reshape(4, 4)
+        return float(fraction if matrix[row, column] > 0 else 1 - fraction)
+
     def _crosshair_positions(self, axis: str) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
         positions, _ = self._slice_quad(axis)
         x0, y0 = positions[0, :2]
         x1, y1 = positions[3, :2]
         coordinates = dict(zip(('ap', 'ml', 'dv'), self.cursor.as_index(), strict=True))
         x_axis, y_axis = SLICE_DISPLAY_AXES[axis]
-        x_fraction = slice_index_fraction(self.slice_source.grid, x_axis, coordinates[x_axis])
-        y_fraction = slice_index_fraction(self.slice_source.grid, y_axis, coordinates[y_axis])
+        x_fraction = self._slice_fraction(x_axis, coordinates[x_axis])
+        y_fraction = self._slice_fraction(y_axis, coordinates[y_axis])
         x = x0 + x_fraction * (x1 - x0)
         y = y0 + y_fraction * (y1 - y0)
         starts = np.array([[x, y0, 0.02], [x0, y, 0.02]], dtype=np.float32)
@@ -830,7 +904,11 @@ class LinkedAtlasNavigator(AtlasViewer):
         composer = self.slice_composer if composer is None else composer
         if index is None:
             index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
-        starts, ends = composer.boundary_segments(axis, index)
+        if self.slice_renderer == 'contours' and axis in self._accepted_contours:
+            payload = self._accepted_contours[axis][1]
+            starts, ends = payload.boundary_starts, payload.boundary_ends
+        else:
+            starts, ends = composer.boundary_segments(axis, index)
         return self._map_boundary_segments(axis, starts, ends)
 
     def _map_boundary_segments(
@@ -860,12 +938,12 @@ class LinkedAtlasNavigator(AtlasViewer):
     def _upload_selection_outline(self, axis, payload=None):
         if payload is not None:
             self._selection_contours[axis] = (payload.selection_starts, payload.selection_ends)
-        starts, ends = self._map_boundary_segments(
-            axis, *self._selection_contours[axis]
-        )
+        starts, ends = self._map_boundary_segments(axis, *self._selection_contours[axis])
         for visual, color, width in zip(
-            self._selection_visuals[axis], ((7, 16, 25, 255), (255, 255, 255, 255)),
-            (4.0, 1.5), strict=True,
+            self._selection_visuals[axis],
+            ((7, 16, 25, 255), (255, 255, 255, 255)),
+            (4.0, 1.5),
+            strict=True,
         ):
             self._upload_boundaries(
                 visual, starts, ends, 'slice selection outline', color=color, width=width
@@ -885,7 +963,8 @@ class LinkedAtlasNavigator(AtlasViewer):
                             self._boundary_rgba() if color is None else color, (count, 1)
                         ).astype(np.uint8),
                         'stroke_width_px': np.full(
-                            count, self.boundary_width_px if width is None else width,
+                            count,
+                            self.boundary_width_px if width is None else width,
                             dtype=np.float32,
                         ),
                     },
@@ -1087,6 +1166,10 @@ class LinkedAtlasNavigator(AtlasViewer):
                 self.dvz.dvz_visual_set_data(visual, 'position', positions),
                 f'{axis} slice zoom',
             )
+        if self.slice_renderer == 'contours' and axis in self._accepted_contours:
+            request, payload = self._accepted_contours[axis]
+            self._stage_contours(axis, payload, opacity=request.annotation_opacity)
+            self._contour_visuals[axis].activate(visible=request.annotation_visible)
         self._refresh_boundaries(axis)
         self._upload_selection_outline(axis)
         starts, ends = self._crosshair_positions(axis)
@@ -1123,11 +1206,14 @@ class LinkedAtlasNavigator(AtlasViewer):
             for axis, value in zip(('ap', 'ml', 'dv'), current, strict=True):
                 self._cursor_controls[axis].value = value
             if select_region:
-                row = cursor.region(self.slice_source, self.mapping)
-                ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
-                self._apply_selected_region_ids(
-                    ids, update_tree=True, update_table=True, clear_mesh=True
-                )
+                ids = self._cursor_selection_ids()
+                if ids is not None:
+                    self._apply_selected_region_ids(
+                        ids, update_tree=True, update_table=True, clear_mesh=True
+                    )
+                else:
+                    # Pending geometry is unknown, not confirmed background.
+                    self._refresh_slices()
             else:
                 changed_axes = tuple(
                     axis
@@ -1172,13 +1258,75 @@ class LinkedAtlasNavigator(AtlasViewer):
         x1, y1 = positions[3, :2]
         if x < x0 or x > x1 or y < y0 or y > y1:
             return None
+        cursor = self.cursor
+        if self.slice_renderer == 'contours':
+            accepted = self._accepted_contours.get(axis)
+            if accepted is None or accepted[0].mapping != self.mapping:
+                return None
+            cursor = cursor.replace(axis, accepted[0].index, self.slice_source.grid.shape)
+            grid = self.slice_source.grid
+            matrix = np.asarray(grid.index_to_world_um_matrix).reshape(4, 4)
+            for name, fraction in zip(
+                SLICE_DISPLAY_AXES[axis], ((x - x0) / (x1 - x0), (y - y0) / (y1 - y0)), strict=True
+            ):
+                column, row = grid.array_axes.index(name), grid.world_axes.index(name)
+                raw_fraction = 1 - fraction if matrix[row, column] < 0 else fraction
+                # Quad edges represent half cells. Boundary ties choose the
+                # increasing array-index cell, with the exterior edge clamped.
+                index = int(
+                    np.clip(np.floor(raw_fraction * grid.shape[column]), 0, grid.shape[column] - 1)
+                )
+                cursor = cursor.replace(name, index, grid.shape)
+            return cursor
         return cursor_from_slice_fraction(
-            self.cursor,
+            cursor,
             axis,
             float((x - x0) / (x1 - x0)),
             float((y - y0) / (y1 - y0)),
             self.slice_source.grid,
         )
+
+    def _cursor_selection_ids(self):
+        if self.slice_renderer == 'contours':
+            available, region_id = self._contour_region_query()
+            if not available:
+                return None
+            return () if region_id is None else (region_id,)
+        row = self.cursor.region(self.slice_source, self.mapping)
+        return () if row is None or row.atlas_id == 0 else (row.atlas_id,)
+
+    def _contour_region_under_cursor(self):
+        return self._contour_region_query()[1]
+
+    def _contour_region_query(self):
+        coordinates = dict(zip(('ap', 'ml', 'dv'), self.cursor.as_index(), strict=True))
+        for axis, (request, _) in self._accepted_contours.items():
+            if request.index != coordinates[axis] or request.mapping != self.mapping:
+                continue
+            x_axis, y_axis = SLICE_DISPLAY_AXES[axis]
+            corners, _ = self._slice_quad(axis)
+            fraction = np.asarray(
+                (
+                    self._slice_fraction(x_axis, coordinates[x_axis]),
+                    self._slice_fraction(y_axis, coordinates[y_axis]),
+                )
+            )
+            point = corners[0, :2] + fraction * (corners[3, :2] - corners[0, :2])
+            return True, self._contour_region_at(axis, *point)
+        return False, None
+
+    def _contour_region_at(self, axis, x, y):
+        accepted = self._accepted_contours.get(axis)
+        if accepted is None or accepted[0].mapping != self.mapping:
+            return None
+        corners, _ = self._slice_quad(axis)
+        low, high = corners[0, :2], corners[3, :2]
+        fraction = (np.asarray((x, y)) - low) / (high - low)
+        if np.any(fraction < 0) or np.any(fraction > 1):
+            return None
+        inverse = np.linalg.inv(np.asarray(accepted[1].svg_to_fraction).reshape(3, 3))
+        svg = inverse @ (*fraction, 1)
+        return accepted[1].contours.region_at(*svg[:2])
 
     def _set_slice_hover(self, axis: str | None, x: float = 0.0, y: float = 0.0) -> bool:
         """Update the transient slice marker and region readout."""
@@ -1186,16 +1334,26 @@ class LinkedAtlasNavigator(AtlasViewer):
         row = None
         label = None
         if cursor is not None:
-            cached_lookup = getattr(self.slice_source, 'cached_annotation_index_at_world', None)
-            source_index = (
-                cached_lookup(cursor.world_um(self.slice_source), preferred_axis=axis)
-                if cached_lookup is not None
-                else cursor.source_index(self.slice_source)
-            )
-            if source_index is None:
-                label = 'loading…'
+            if self.slice_renderer == 'contours':
+                region_id = self._contour_region_at(axis, x, y)
+                row = next(
+                    (r for r in self.catalog.physical(self.mapping) if r.atlas_id == region_id),
+                    None,
+                )
             else:
-                row = mapped_region(self.slice_source, source_index, self.mapping)
+                cached_lookup = getattr(
+                    self.slice_source, 'cached_annotation_index_at_world', None
+                )
+                source_index = (
+                    cached_lookup(cursor.world_um(self.slice_source), preferred_axis=axis)
+                    if cached_lookup is not None
+                    else cursor.source_index(self.slice_source)
+                )
+                if source_index is None:
+                    label = 'loading…'
+                else:
+                    row = mapped_region(self.slice_source, source_index, self.mapping)
+            if label is None:
                 label = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
         region_ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
         if cursor is None:
@@ -1228,8 +1386,14 @@ class LinkedAtlasNavigator(AtlasViewer):
     def toggle_cursor_region_selection(self) -> None:
         """Toggle the region under the current AP/ML/DV cursor."""
         self._require_open()
-        row = self.cursor.region(self.slice_source, self.mapping)
-        ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
+        if self.slice_renderer == 'contours':
+            available, region_id = self._contour_region_query()
+            if not available:
+                return
+            ids = () if region_id is None else (region_id,)
+        else:
+            row = self.cursor.region(self.slice_source, self.mapping)
+            ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
         if ids == self._selected_region_ids:
             ids = ()
         self._apply_selected_region_ids(ids, update_tree=True, update_table=True, clear_mesh=True)
@@ -1368,15 +1532,22 @@ class LinkedAtlasNavigator(AtlasViewer):
             self.slices.set_auto_slice(enabled.value)
         if self._auto_slice.status:
             self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
-            self.dvz.dvz_gui_text(gui, self._auto_slice.status.encode())
+            if self._auto_slice.navigation.available:
+                self.dvz.dvz_gui_text(gui, self._auto_slice.status.encode())
+            else:
+                self.dvz.dvz_gui_text(gui, b'Unavailable for this source')
+                self.dvz.dvz_gui_same_line(gui, 0.0, 4.0 * self.ui_scale)
+                self._sidebar.icon(
+                    gui, b'##auto_slice_source_info', 'INFO', self._auto_slice.status
+                )
         changed = False
         labels = (b'Coronal (AP)', b'Sagittal (ML)', b'Horizontal (DV)')
         width, _ = self._sidebar.available(gui)
         gap = 12.0 * self.ui_scale
         slider_width = max(1.0, (width - 2.0 * gap) / 3.0 - 150.0 * self.ui_scale)
-        for index, (axis, size, label) in enumerate(zip(
-            ('ap', 'ml', 'dv'), self.slice_source.grid.shape, labels, strict=True
-        )):
+        for index, (axis, size, label) in enumerate(
+            zip(('ap', 'ml', 'dv'), self.slice_source.grid.shape, labels, strict=True)
+        ):
             if index:
                 self.dvz.dvz_gui_same_line(gui, 0.0, gap)
             self.dvz.dvz_gui_set_next_item_width(gui, slider_width)
@@ -1391,7 +1562,13 @@ class LinkedAtlasNavigator(AtlasViewer):
     def _draw_cursor_gui(self, gui) -> None:
         """Draw compact, always-visible cursor and selection controls."""
         world = self.cursor.world_um(self.slice_source)
-        row = self.cursor.region(self.slice_source, self.mapping)
+        if self.slice_renderer == 'contours':
+            region_id = self._contour_region_under_cursor()
+            row = next(
+                (r for r in self.catalog.physical(self.mapping) if r.atlas_id == region_id), None
+            )
+        else:
+            row = self.cursor.region(self.slice_source, self.mapping)
         region = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
         volume_label = (
             f'3-D {self.volume_resolution_label}' if self.render_volume else '3-D volume disabled'
@@ -1592,6 +1769,10 @@ class LinkedAtlasNavigator(AtlasViewer):
         if getattr(self, '_gui_callback_depth', 0):
             super().close()
             return
+        for visual in getattr(self, '_contour_visuals', {}).values():
+            visual.close()
+        self._contour_visuals = {}
+        self._accepted_contours = {}
         if getattr(self, '_auto_slice', None) is not None:
             self._auto_slice.close()
             self._auto_slice = None

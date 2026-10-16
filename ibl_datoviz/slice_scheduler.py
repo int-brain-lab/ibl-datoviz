@@ -43,9 +43,12 @@ class SliceRequest:
     annotation_visible: bool = True
     selected_region_ids: tuple[int, ...] = ()
     selection_dim_factor: float = 1.0
+    renderer: str = 'raster'
 
     def __post_init__(self) -> None:
         """Validate the immutable request at its construction boundary."""
+        if self.renderer not in ('raster', 'contours'):
+            raise ValueError('slice renderer must be raster or contours')
         if self.axis not in ('ap', 'ml', 'dv'):
             raise ValueError(f'unknown slice axis: {self.axis!r}')
         if not isinstance(self.index, int) or isinstance(self.index, bool):

@@ -78,6 +78,7 @@ def test_owner_request_captures_state_before_worker_runs(source):
     viewer.cursor = AtlasCursor(2, 2, 1)
     viewer._slice_revisions = {'dv': 3}
     viewer._slice_source_id = 'registered-10um'
+    viewer.slice_renderer = 'raster'
     viewer.mapping = 'allen'
     viewer.annotation_opacity = 0.4
     viewer.anatomy_visible = True

@@ -184,6 +184,9 @@ class AtlasSliceSource:
         self._annotation_cache: OrderedDict[tuple[str, int], NDArray[np.uint16]] = OrderedDict()
         self._cache_lock = RLock()
         self._cache_limit = section_cache_size
+        self._contour_cache = OrderedDict()
+        self._contour_cache_bytes = 0
+        self._contour_cache_limit = 32 * 1024 * 1024
         if not all(self.reference_space_id == p.reference_space_id for p in projections.values()):
             raise ValueError('intensity and registered projection reference spaces differ')
         if not all(self.grid_id == p.grid_id for p in projections.values()):
@@ -245,6 +248,8 @@ class AtlasSliceSource:
         self._pack.clear_cache()
         with self._cache_lock:
             self._annotation_cache.clear()
+            self._contour_cache.clear()
+            self._contour_cache_bytes = 0
 
     def _validate_affine(self, axis, projection) -> None:
         # A registered plane must agree with the volume's world transform at
@@ -280,6 +285,60 @@ class AtlasSliceSource:
                 projection.index_to_world((s, u, v)), self.grid.index_to_world(idx), atol=1e-5
             ):
                 raise ValueError(f'projection {axis} affine differs from intensity grid')
+
+    def contour_cache_info(self):
+        """Return bounded shared numerical section entries and retained ring bytes."""
+        with self._cache_lock:
+            return len(self._contour_cache), self._contour_cache_bytes
+
+    def contour_slice(self, axis, index):
+        """Decode exact shared components; never substitute another grid or section."""
+        from .contour_source import (  # noqa: PLC0415 - optional geometry path.
+            ContourSection,
+            projection_fraction_transform,
+        )
+
+        try:
+            from ibl_anatomy import decode_registered_contours  # noqa: PLC0415
+        except ImportError as error:
+            raise RuntimeError(
+                'contour rendering requires the shared numerical contour reader; '
+                'provide an explicit compatible anatomy source'
+            ) from error
+        if axis not in self._projections:
+            raise ValueError('slice axis must be ap, ml or dv')
+        if isinstance(index, bool) or not isinstance(index, (int, np.integer)):
+            raise TypeError('contour section index must be an integer')
+        if not 0 <= index < self.grid.shape[self.grid.array_axes.index(axis)]:
+            raise IndexError('contour section index is outside the grid')
+        index = int(index)
+        key = axis, index
+        with self._cache_lock:
+            cached = self._contour_cache.pop(key, None)
+            if cached is not None:
+                self._contour_cache[key] = cached
+                return cached[0]
+        projection = self._projections[axis]
+        section = projection.load_slice(index)
+        if section.slice_index != index:
+            raise ValueError('registered contour section differs from requested index')
+        paths = tuple(decode_registered_contours(section))
+        size = sum(r.nbytes for p in paths for c in p.components for r in (c.outer, *c.holes))
+        result = ContourSection(paths, projection_fraction_transform(self.grid, axis, projection))
+        with self._cache_lock:
+            if size <= self._contour_cache_limit:
+                previous = self._contour_cache.pop(key, None)
+                if previous is not None:
+                    self._contour_cache_bytes -= previous[1]
+                self._contour_cache[key] = result, size
+                self._contour_cache_bytes += size
+                while (
+                    len(self._contour_cache) > self._cache_limit
+                    or self._contour_cache_bytes > self._contour_cache_limit
+                ):
+                    _, (_, removed) = self._contour_cache.popitem(last=False)
+                    self._contour_cache_bytes -= removed
+        return result
 
     def _annotation(self, axis: str, index: int) -> NDArray[np.uint16]:
         key = (axis, index)

@@ -142,6 +142,33 @@ or changing mapping also discards stale work. Missing occupied voxels and lazy
 projection sources leave the cursor unchanged and report the reason in the toolbar.
 No companion from another atlas grid is substituted.
 
+An explicit registered source may opt into `slice_renderer="contours"` at linked
+viewer construction. The shared numerical reader supplies exact source rings;
+retained native polygon fills use the mapped catalog colors and 4× MSAA. Shared
+borders disappear when their signed mapped identities agree. Selected parent
+outlines expand signed descendants and remove internal selected borders. This is
+an exact voxel-edge representation, not interpolated or smoothed anatomy.
+
+Preparation runs through the existing per-axis latest-wins workers. Each panel
+retains its accepted request and immutable numerical geometry. Hover and cursor
+selection resolve against that displayed geometry, including holes and islands;
+a pending request never silently changes the displayed section's identity.
+Mapping transitions temporarily suppress interactions against an old mapping.
+Quad edges represent voxel edges, cursor centers use `(index + 0.5) / size`, and
+cursor boundary ties choose the increasing array index (outer edges clamp).
+Exact contour-edge picking follows the shared path paint order, with boundary
+points included and the last containing component winning.
+
+This mode requires an explicit compatible numerical anatomy reader and an exact
+registered slice source; it never substitutes 50 µm volumes for missing registered
+sections. The supported anatomy pin remains unchanged until reconciled reader
+commit `2e190e05b9516df99bbba61284036306681476d9` is published. The process-scoped
+[workspace launcher](../review-apps.md#integrated-exact-contour-workspace) supports
+local validation meanwhile. Optional physical 3D planes still use categorical
+pixels from the same exact source/grid; only the three 2D annotations use polygons.
+Auto-slice reports unavailable for lazy projection sources instead of guessing an
+anchor from a different grid.
+
 Physical planes use the exact accepted request index and pixels, with separate
 linear grayscale and nearest categorical textures. They retain depth testing and
 own their resources until hidden or the viewer closes. Plane geometry respects
