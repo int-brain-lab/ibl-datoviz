@@ -16,6 +16,7 @@ from ibl_datoviz.slice_preparation import (
 from ibl_datoviz.slice_scheduler import SliceRequest, SliceScheduler
 from ibl_datoviz.viewer import AtlasViewer
 from tests import FIXTURES
+from tests.test_contour_workspace import ExactSource
 
 VOLUME_FIXTURE = FIXTURES / 'volume-pack-v1' / 'pack'
 
@@ -210,3 +211,73 @@ def test_boundary_visibility_failure_is_checked():
     empty = np.empty((0, 3), dtype=np.float32)
     with pytest.raises(RuntimeError, match='boundaries visibility'):
         viewer._upload_boundaries(object(), empty, empty, 'boundaries')
+
+
+def test_contour_selection_and_warm_return_share_owned_geometry(monkeypatch):
+    source = ExactSource()
+    calls = []
+    original = source.contour_slice
+
+    def counted(axis, index):
+        calls.append((axis, index))
+        return original(axis, index)
+
+    monkeypatch.setattr(source, 'contour_slice', counted)
+    worker = SlicePreparation(source, 'allen')
+    request = SliceRequest('dv', 1, 1, renderer='contours')
+    first = worker(request)
+    selected = worker(replace(request, revision=2, selected_region_ids=(315,)))
+    assert calls == [('dv', 1)]
+    assert first.boundary_starts is selected.boundary_starts
+    assert first.contours.components[0].outer is selected.contours.components[0].outer
+    assert not any(component.selected for component in first.contours.components)
+    worker(replace(request, index=2, revision=3))
+    returned = worker(replace(request, revision=4))
+    assert calls == [('dv', 1), ('dv', 2)]
+    assert returned.contours is first.contours
+    assert returned.boundary_starts is first.boundary_starts
+    with pytest.raises(ValueError):
+        returned.boundary_starts.setflags(write=True)
+
+
+def test_contour_cache_is_bounded_by_entry_count_and_total_owned_bytes():
+    source = ExactSource()
+    worker = SlicePreparation(source, 'allen', contour_cache_entries=1)
+    request = SliceRequest('dv', 1, 1, renderer='contours')
+    first = worker(request)
+    worker(replace(request, index=2, revision=2))
+    assert worker.contour_cache_info()['dv'][0] == 1
+    assert worker(request).contours is not first.contours
+    tiny = SlicePreparation(source, 'allen', contour_cache_bytes=1)
+    assert tiny(request).contours.components
+    assert tiny.contour_cache_info()['dv'] == (0, 0)
+    # An outstanding accepted payload stays valid after its cache entry is evicted.
+    assert first.contours.region_at(*first.contours.components[0].outer[0]) is not None
+
+
+def test_contour_cache_keeps_mapping_source_and_axis_scopes_separate():
+    worker = SlicePreparation(ExactSource(), 'allen')
+    request = SliceRequest('dv', 1, 1, renderer='contours', source_id='source-a')
+    first = worker(request)
+    other_source = worker(replace(request, source_id='source-b', revision=2))
+    other_mapping = worker(replace(request, mapping='cosmos', revision=3))
+    assert first.contours is not other_source.contours
+    assert other_mapping.contours.mapping == 'cosmos'
+    worker(replace(request, axis='ap', revision=4))
+    counts = worker.contour_cache_info()
+    assert counts['dv'][0] == 3 and counts['ap'][0] == 1
+    assert all(total <= 16 * 1024 * 1024 for _, total in counts.values())
+
+
+def test_contour_cache_evicts_by_bytes_before_its_entry_count_limit():
+    source = ExactSource()
+    request = SliceRequest('dv', 1, 1, renderer='contours', source_id='first')
+    sizing = SlicePreparation(source, 'allen')
+    sizing(request)
+    budget = sizing.contour_cache_info()['dv'][1] + 1
+    worker = SlicePreparation(source, 'allen', contour_cache_bytes=budget)
+    first = worker(request)
+    worker(replace(request, source_id='other', revision=2))
+    count, retained = worker.contour_cache_info()['dv']
+    assert count == 1 and retained <= budget
+    assert worker(request).contours is not first.contours

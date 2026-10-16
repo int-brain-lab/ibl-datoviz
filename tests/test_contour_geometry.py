@@ -63,6 +63,34 @@ def test_owned_immutable_rings_and_boundaries_detach_source_storage(catalog):
     assert geometry.components[0].atlas_id == geometry.components[0].allen_id == 315
 
 
+def test_selection_changes_reuse_validated_rings_without_rewalking_edges(catalog, monkeypatch):
+    sources = [path(315, component(rectangle(0, 0, 2, 2))),
+               path(8, component(rectangle(2, 0, 4, 2)))]
+    base = prepare_contour_geometry(sources, catalog, 'allen')
+
+    def no_revalidation(*_args):
+        raise AssertionError('cached selection must not revalidate or walk source rings')
+
+    monkeypatch.setattr('ibl_datoviz.contour_geometry._ring', no_revalidation)
+    monkeypatch.setattr('ibl_datoviz.contour_geometry._edges', no_revalidation)
+    selected = base.with_selection(catalog, (8,))
+    assert selected.boundary_starts is base.boundary_starts
+    assert selected.boundary_ends is base.boundary_ends
+    for original, highlighted in zip(base.components, selected.components, strict=True):
+        assert original.outer is highlighted.outer
+        assert original.holes is highlighted.holes
+        assert highlighted.selected and not original.selected
+    assert len(selected.selection_starts) == 4
+    assert selected.with_selection(catalog, (8,)) is selected
+    cleared = selected.with_selection(catalog, ())
+    assert not len(cleared.selection_starts)
+    assert not any(component.selected for component in cleared.components)
+    assert cleared.components[0].outer is base.components[0].outer
+    for _, intervals in base._region_intervals:
+        with pytest.raises(ValueError):
+            intervals.setflags(write=True)
+
+
 def test_holes_nested_islands_and_exact_boundary_policy(catalog):
     source = path(
         315,
