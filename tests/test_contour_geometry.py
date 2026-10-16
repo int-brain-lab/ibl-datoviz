@@ -7,7 +7,11 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_volume_pack
-from ibl_datoviz.contour_geometry import prepare_contour_geometry, selected_descendants
+from ibl_datoviz.contour_geometry import (
+    _normalize_intervals,
+    prepare_contour_geometry,
+    selected_descendants,
+)
 from tests.test_volume_free_navigator import VOLUME
 
 
@@ -144,6 +148,65 @@ def test_different_region_border_drawn_once_and_selected_union_has_no_internal_b
     assert len(geometry.boundary_starts) == 5
     assert len(geometry.selection_starts) == 4
     assert all(row.selected for row in geometry.components)  # 315 is child of signed parent8.
+
+
+def test_interval_vectorization_preserves_lexicographic_segment_order(catalog):
+    geometry = prepare_contour_geometry([
+        path(315, component(rectangle(0, 0, 2, 2))),
+        path(8, component(rectangle(2, 0, 4, 2))),
+    ], catalog, 'allen', [8])
+    np.testing.assert_array_equal(
+        geometry.boundary_starts, [[0, 0], [0, 2], [0, 0], [2, 0], [4, 0]],
+    )
+    np.testing.assert_array_equal(
+        geometry.boundary_ends, [[4, 0], [4, 2], [0, 2], [2, 2], [4, 2]],
+    )
+    np.testing.assert_array_equal(
+        geometry.selection_starts, [[0, 0], [0, 2], [0, 0], [4, 0]],
+    )
+
+
+@pytest.mark.parametrize('parity', [True, False])
+def test_vectorized_interval_sweep_matches_unit_occupancy_oracle(parity):
+    random = np.random.default_rng(139)
+    for _ in range(200):
+        count = int(random.integers(0, 40))
+        axes = random.integers(0, 2, count)
+        fixed = random.integers(-2, 3, count)
+        low = random.integers(-4, 4, count)
+        edges = np.column_stack((axes, fixed, low, low + random.integers(1, 6, count)))
+        occupancy = {}
+        for axis, coordinate, start, end in edges:
+            for point in range(start, end):
+                key = int(axis), int(coordinate), point
+                occupancy[key] = occupancy.get(key, 0) + 1
+        expected = {
+            key for key, value in occupancy.items() if (value % 2 if parity else value > 0)
+        }
+        normalized = _normalize_intervals(edges, parity=parity)
+        actual = {
+            (int(axis), int(coordinate), point)
+            for axis, coordinate, start, end in normalized for point in range(start, end)
+        }
+        assert actual == expected
+        assert normalized.tolist() == sorted(normalized.tolist())
+        for previous, current in zip(normalized, normalized[1:], strict=False):
+            if np.array_equal(previous[:2], current[:2]):
+                assert previous[3] < current[2]  # Adjacent spans must coalesce.
+
+
+def test_large_signed_half_grid_spans_do_not_expand_or_overflow(catalog):
+    extent = 2**51
+    geometry = prepare_contour_geometry([
+        path(315, component(rectangle(-extent, -0.5, 0, 0.5))),
+        path(8, component(rectangle(0, -0.5, extent, 0.5))),
+    ], catalog, 'allen', [8])
+    assert len(geometry.boundary_starts) == 5
+    assert len(geometry.selection_starts) == 4
+    np.testing.assert_array_equal(geometry.selection_starts[:2],
+                                  [[-extent, -0.5], [-extent, 0.5]])
+    np.testing.assert_array_equal(geometry.selection_ends[:2],
+                                  [[extent, -0.5], [extent, 0.5]])
 
 
 def test_partial_overlaps_at_t_junction_cancel_without_unit_grid_expansion(catalog):

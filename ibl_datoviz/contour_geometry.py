@@ -219,39 +219,19 @@ class ContourGeometry:
 
 
 def _edges(component):
+    arrays = []
     for ring in (component.outer, *component.holes):
         points = np.rint(ring * 2).astype(np.int64)
-        for a, b in zip(points, np.roll(points, -1, axis=0), strict=True):
-            if a[1] == b[1]:
-                yield 0, int(a[1]), min(int(a[0]), int(b[0])), max(int(a[0]), int(b[0]))
-            else:
-                yield 1, int(a[0]), min(int(a[1]), int(b[1])), max(int(a[1]), int(b[1]))
-
-
-def _add(lines, axis, fixed, low, high):
-    events = lines[axis, fixed]
-    events[low] += 1
-    events[high] -= 1
-
-
-def _intervals(lines, *, parity):
-    """Normalize partial overlaps without expanding long edges into grid steps."""
-    for (axis, fixed), events in sorted(lines.items()):
-        previous, count, run = None, 0, None
-        for position, delta in sorted(events.items()):
-            active = count % 2 != 0 if parity else count > 0
-            if previous is not None:
-                if active and run is None:
-                    run = previous
-                elif not active and run is not None:
-                    yield axis, fixed, run, previous
-                    run = None
-            count += delta
-            previous = position
-        if run is not None:
-            yield axis, fixed, run, previous
-        if count:
-            raise ValueError('unbalanced contour edge intervals')
+        following = np.roll(points, -1, axis=0)
+        horizontal = points[:, 1] == following[:, 1]
+        first = np.where(horizontal, points[:, 0], points[:, 1])
+        last = np.where(horizontal, following[:, 0], following[:, 1])
+        arrays.append(np.column_stack((
+            np.logical_not(horizontal).astype(np.int64),
+            np.where(horizontal, points[:, 1], points[:, 0]),
+            np.minimum(first, last), np.maximum(first, last),
+        )))
+    return np.concatenate(arrays)
 
 
 def _segments(intervals):
@@ -266,33 +246,50 @@ def _segments(intervals):
     return _array(starts), _array(ends)
 
 
-def _selected_intervals(per_region, selected):
-    """XOR exact integer interval endpoints without Python dictionaries per edge."""
-    arrays = [edges for atlas_id, edges in per_region if atlas_id in selected and len(edges)]
-    if not arrays:
+def _normalize_intervals(edges, *, parity):
+    """Normalize exact interval events, preserving lexicographic segment order."""
+    if not len(edges):
         return np.empty((0, 4), dtype=np.int64)
-    edges = np.concatenate(arrays)
     events = np.concatenate((edges[:, :3], edges[:, (0, 1, 3)]))
-    events = events[np.lexsort((events[:, 2], events[:, 1], events[:, 0]))]
+    order = np.lexsort((events[:, 2], events[:, 1], events[:, 0]))
+    events = events[order]
     changed = np.any(events[1:] != events[:-1], axis=1)
     starts = np.flatnonzero(np.r_[True, changed])
-    counts = np.diff(np.r_[starts, len(events)])
-    # An even number of starts/ends at one point never changes parity. Dropping
-    # it also coalesces adjacent spans exactly as the original sweep does.
-    endpoints = events[starts[counts % 2 != 0]]
+    if parity:
+        counts = np.diff(np.r_[starts, len(events)])
+        # Even endpoint multiplicity cannot change XOR membership. Dropping it
+        # also coalesces adjacent spans exactly as the original sweep does.
+        endpoints = events[starts[counts % 2 != 0]]
+    else:
+        deltas = np.ones(2 * len(edges), dtype=np.int64)
+        deltas[len(edges):] = -1
+        counts = np.cumsum(np.add.reduceat(deltas[order], starts), dtype=np.int64)
+        unique = events[starts]
+        line_ends = np.r_[np.any(unique[1:, :2] != unique[:-1, :2], axis=1), True]
+        if np.any(counts < 0) or np.any(counts[line_ends] != 0):
+            raise ValueError('unbalanced contour edge intervals')
+        # Every line is balanced, so cumulative counts restart at zero without
+        # subtracting coordinates or expanding any long half-grid edge.
+        previous = np.r_[0, counts[:-1]]
+        endpoints = unique[(previous > 0) != (counts > 0)]
     if len(endpoints) % 2 or np.any(endpoints[::2, :2] != endpoints[1::2, :2]):
-        raise ValueError('unbalanced selected contour edge intervals')
+        raise ValueError('unbalanced contour edge intervals')
     return np.column_stack((endpoints[::2], endpoints[1::2, 2]))
 
 
+def _selected_intervals(per_region, selected):
+    arrays = [edges for atlas_id, edges in per_region if atlas_id in selected and len(edges)]
+    edges = np.concatenate(arrays) if arrays else np.empty((0, 4), dtype=np.int64)
+    return _normalize_intervals(edges, parity=True)
+
+
 def _mapped_intervals(components):
-    per_region = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    per_region = defaultdict(list)
     for component in components:
-        for edge in _edges(component):
-            _add(per_region[component.atlas_id], *edge)
+        per_region[component.atlas_id].append(_edges(component))
     result = []
-    for atlas_id, lines in per_region.items():
-        edges = np.asarray(tuple(_intervals(lines, parity=True)), dtype=np.int64).reshape(-1, 4)
+    for atlas_id, arrays in per_region.items():
+        edges = _normalize_intervals(np.concatenate(arrays), parity=True)
         immutable = np.frombuffer(edges.tobytes(), dtype=np.int64).reshape(edges.shape)
         result.append((atlas_id, immutable))
     return tuple(result)
@@ -325,11 +322,9 @@ def prepare_contour_geometry(paths, catalog, mapping, selected_region_ids=()):
             )
             components.append(component)
     per_region = _mapped_intervals(components)
-    combined = defaultdict(lambda: defaultdict(int))
-    for _, edges in per_region:
-        for edge in edges:
-            _add(combined, *map(int, edge))
-    starts, ends = _segments(_intervals(combined, parity=False))
+    arrays = [edges for _, edges in per_region if len(edges)]
+    combined = np.concatenate(arrays) if arrays else np.empty((0, 4), dtype=np.int64)
+    starts, ends = _segments(_normalize_intervals(combined, parity=False))
     geometry = ContourGeometry(
         mapping, tuple(components), starts, ends, np.empty((0, 2)), np.empty((0, 2)),
     )
