@@ -323,9 +323,12 @@ axis avoid the pinned engine's append-only scene slot limits. A native 160-updat
 stress check confirms retained reuse. Source geometry cache is bounded by both
 entry count and 32 MiB. Missing sections and unsupported geometry fail explicitly.
 
-The measured Linux run used roughly 1.37 GiB peak process RSS; cold wheel settling
-was about 2.3 seconds, while mapped/selection updates settled in about 0.5–0.9
-seconds. These are bounded engineering measurements on one machine, not scrolling
-performance guarantees. Screenshots and receipts remain under ignored
-`build/contour-workspace/`; whole-corpus triangulation and further platform checks
-remain separate from these sampled tests.
+After optimization, three-process controlled Linux medians were 606 ms for a
+cold AP change, 87 ms for a cached return, 169 ms for parent selection and
+358–372 ms for mapping changes. Median host RSS was about 1,061 MiB, with a
+1,249 MiB peak. These are bounded measurements, not scrolling guarantees; the
+active-hover mouse workflow is separate. The complete 3,260-section native CPU
+triangulation pass has no failed components and exact outer-minus-holes areas.
+See [performance evidence and limitations](CONTOUR_PERFORMANCE.md) for source
+hashes, memory attribution, differential tests and further native opportunities.
+Manual Linux review and macOS rendering evidence remain separate gates.

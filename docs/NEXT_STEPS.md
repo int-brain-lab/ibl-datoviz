@@ -9,6 +9,81 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Published reader and contour performance — October 17 2026
+
+This checkpoint supersedes the unpublished-reader and performance limitations in
+older entries below. The user authorized publication, deep timing/memory work,
+subagent exploration and postponing manual review.
+
+- Published reconciled anatomy `2e190e0`, then optimized reader
+  `95ae2426965769d2592f239abb251bc621f1cedb`, on anatomy/main. The package lock and
+  CI fixture checkout now use that immutable revision. Contour review uses the
+  installed locked reader by default; `--anatomy-source` remains an optional
+  child-process development override. A fresh empty-cache frozen environment
+  fetched the public anatomy and Datoviz commits without source overrides; a
+  freshly built installed wheel passed the isolated CPU installation check.
+- Reader decoding across all 3,260 sections is byte-identical in geometry,
+  identities, component order and holes, with aggregate CPU time 1,172→328 s
+  (3.57×). Anatomy passes 197 tests, zero skips. The independent high Sol 6.1
+  audits found no remaining P1/P2 issues in reader arithmetic or package caches,
+  exact interval vectorization and teardown.
+- Native CPU triangulation passes every section: 1,373,858 components, 62,968
+  holes and 109,809,314 triangles, with valid coordinates/index bounds and exact
+  per-component outer-minus-holes area. Four workers took 117.46 s, peak worker
+  RSS 82.31 MiB. This establishes triangulation/area, not whole-corpus pixels or
+  overlap-free spatial coverage.
+- `9514665` adds bounded immutable geometry caches and selection interval reuse;
+  `739e495` reuses source geometry for rasterization and retained native fills,
+  removes unused contour-panel textures and skips ineffective dimming masks.
+  `b09fc82` vectorizes exact integer edge sweeps; `83d885e` releases preparation
+  caches after workers join. Public constructors retain owned-storage validation.
+  `adafdd0` stops superseded work between decode, geometry and raster phases,
+  and releases executor callbacks after worker shutdown. The actual-wheel trace
+  accepted its final payload at 683 ms instead of 956 ms, preserving all input
+  steps and fixed polygon buffers.
+  Source/mapping/axis/index keys, byte budgets, native failure quarantine,
+  accepted-section identity and shared source lifetimes are preserved.
+- Three fresh-process controlled medians: construction 3,759→1,890 ms, cold AP
+  change 1,209→606 ms, cached return 263→87 ms, parent selection 1,038→169 ms,
+  Beryl 537→358 ms, Cosmos 600→372 ms. Median host RSS 1,124→1,061 MiB and peak
+  1,350→1,249 MiB; allocator variation and workload scope are recorded in the
+  [performance report](CONTOUR_PERFORMANCE.md). Pixel comparisons for selection
+  and Beryl are exact. Active-hover wheel/burst checks are separate workloads.
+- A separate PID-based NVIDIA inventory reports 208 MiB for warm 4× contours,
+  unchanged by this batch; 1× contours use 190 MiB and registered raster 254 MiB.
+  Retain the accepted 4× quality. Native candidates are duplicate triangulation,
+  topology rebuilds on color changes, zero-width stroke preparation and transient
+  fill copies. The native scene's 109 MiB struct is mostly virtual reservation;
+  scene allocation adds less than 1 MiB RSS. No engine build or baseline upgrade
+  was made.
+- Confirmed a native P2 in hash-verified f77: each gesture handler re-emits the
+  unchanged wheel event to union subscribers. With the window and GUI viewport
+  handlers, one raw wheel event is delivered three times, advancing six slices.
+  `tools/diagnose_wheel_routing.py` reproduces it without a GPU context or XTest.
+  Correct native pass-through forwarding and handler ownership before considering
+  a validated baseline upgrade; no sensitivity/deduplication workaround was added.
+  The pre-wheel mapping trace also logs `CreateBuffer InvalidState`; captures and
+  request checks pass, but this warning remains a separate unresolved engine gate.
+
+Final package validation on **both Python 3.11 and 3.13: 1,087 passed, one
+optional registered-asset-root skip per run**, using the hash-verified original
+f77 binary and isolated f77 Python facade. Fresh installed-wheel CPU checks also
+pass on both Python versions.
+Ruff, strict MkDocs, source/wheel builds and whitespace checks pass. The configured
+external Datoviz checkout is still at `54c9ce1`, while the supported baseline is
+`f77b5d0`; ordinary `just doctor --strict` correctly rejects that known drift.
+Checks used `build/endpoint-depth/run_pinned.py` without changing the external
+checkout, native library, setup configuration or supported native pin.
+
+Manual Linux review remains deferred; macOS rendering evidence remains a release
+gate. Exact contours stay opt-in and the dense 50 µm defaults remain available.
+Cold slices are faster but still not fluid scrolling. A lazy physical-plane
+raster path and unchanged-image reuse are the next client candidates; they need
+explicit preparation/accepted-section contract tests. Physical extraction of the
+shared data reader remains a separate packaging decision. Its audit identifies
+NumPy's missing base dependency and a moderate extraction with compatibility
+re-exports; no production-agent change or second reader implementation was made.
+
 ## Autonomous contour, shared-reader and agent integration — October 17 2026
 
 The user accepted the current contour appearance and authorized implementation
