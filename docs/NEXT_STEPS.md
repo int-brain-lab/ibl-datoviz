@@ -74,6 +74,13 @@ hash-verified immutable f77 native baseline through
 architecture audit has no remaining contour P1/P2 findings; its separate regional
 aggregation finding is addressed by requiring the explicit reduction declaration.
 
+The incubation agent's complete unit suite passes **374 tests, 13 local-data
+tests intentionally deselected**; its five focused app-template tests include
+source/frame and explicit mapping-reduction gates. Source and wheel builds pass,
+and the new wheel passes the existing isolated Python 3.13 CPU installation
+check with all three contour modules included and no native bindings imported.
+Receipts are ignored under `build/contour-workspace/`.
+
 Actual private-Xvfb contour GUI checks at scale 1.5 cover Allen/Beryl/Cosmos,
 signed parent selection, exact hover, wheel and burst navigation; the latest
 request wins and all six native buffer handles remain fixed. The sampled run
