@@ -96,6 +96,12 @@ class RegionSelector:
         self.values = dict(initial.get('values', {}))
         self.regions = tuple(regions)
         self._build_hierarchy()
+        # Each stage retains just its latest immutable inputs/output. Shallow
+        # frame copies share those entries; a miss replaces only the candidate's
+        # entry, so rejected frames cannot invalidate committed presentation.
+        self._context_cache = None
+        self._projection_cache = None
+        self._visible_cache = None
         self._reset_search_folding()
         self._repair_focus()
 
@@ -169,6 +175,12 @@ class RegionSelector:
             rows = projected
         self.hierarchy = tuple(rows)
         self.row_by_id = {row.region.id: row for row in rows}
+        self.atlas_id_to_region_id = {abs(region.atlas_id): region.id for region in self.regions}
+        self._ranked_leaves = tuple(
+            row for row in self.hierarchy if not row.branch and row.region.mapping_member
+        )
+        position = {region.id: i for i, region in enumerate(self.regions)}
+        self._leaf_positions = tuple(position[row.region.id] for row in self._ranked_leaves)
 
     @property
     def order(self):
@@ -177,6 +189,8 @@ class RegionSelector:
 
     def _context(self):
         term = self.query.lower()
+        if self._context_cache is not None and self._context_cache[0] == term:
+            return self._context_cache[1]
         matches = {
             region.id
             for region in self.regions
@@ -195,7 +209,9 @@ class RegionSelector:
                 if parent in matches:
                     retained.add(region.id)
                 parent = self.by_id[parent].parent_id
-        return matches, retained, required
+        context = frozenset(matches), frozenset(retained), frozenset(required)
+        self._context_cache = term, context
+        return context
 
     @property
     def active_collapsed(self):
@@ -214,39 +230,62 @@ class RegionSelector:
 
     def projected_rows(self):
         """Project anatomy or ranked leaves with stable semantic identities."""
-        if self.order == 'anatomy':
+        order = self.order
+        if order == 'anatomy':
             return self.hierarchy
-        leaves = [row for row in self.hierarchy if not row.branch and row.region.mapping_member]
-        position = {region.id: i for i, region in enumerate(self.regions)}
+        # Snapshot public mutable inputs rather than relying on mutation flags.
+        # Missing/nonfinite values have identical ranking semantics, including
+        # newly allocated NaNs which otherwise compare unequal on every frame.
+        values = tuple(
+            value if value is not None and math.isfinite(value) else None
+            for row in self._ranked_leaves
+            for value in (self.values.get(row.region.id),)
+        )
+        key = order, values
+        if self._projection_cache is not None and self._projection_cache[0] == key:
+            return self._projection_cache[1]
 
-        def ranking(row):
-            value = self.values.get(row.region.id)
-            finite = value is not None and math.isfinite(value)
-            scalar = value if finite else 0
-            if self.order == 'value-desc':
+        def ranking(index):
+            value = values[index]
+            scalar = value if value is not None else 0
+            if order == 'value-desc':
                 scalar = -scalar
-            return (not finite, scalar, position[row.region.id])
+            return (value is None, scalar, self._leaf_positions[index])
 
-        return tuple(SelectorRow(row.region, 0, False) for row in sorted(leaves, key=ranking))
+        rows = tuple(
+            SelectorRow(self._ranked_leaves[index].region, 0, False)
+            for index in sorted(range(len(self._ranked_leaves)), key=ranking)
+        )
+        self._projection_cache = key, rows
+        return rows
 
     def visible_rows(self):
         """Return projected rows remaining after query and ancestor folding."""
+        rows = self.projected_rows()
+        anatomy = self.order == 'anatomy'
+        collapsed = frozenset(self.active_collapsed) if anatomy else frozenset()
+        term = self.query.lower()
+        cached = self._visible_cache
+        if cached is not None and cached[0] is rows and cached[1:3] == (term, collapsed):
+            return cached[3]
         retained = self._context()[1] if self.query else ()
         visible = []
-        for row in self.projected_rows():
+        for row in rows:
             if self.query and row.region.id not in retained:
                 continue
             parent = row.region.parent_id
             folded = False
-            while self.order == 'anatomy' and parent is not None:
-                if parent in self.active_collapsed:
+            while anatomy and parent is not None:
+                if parent in collapsed:
                     folded = True
                     break
                 parent_row = self.row_by_id.get(parent)
                 parent = parent_row.region.parent_id if parent_row else None
             if not folded:
                 visible.append(row)
-        return tuple(visible)
+        result = tuple(visible)
+        self._visible_cache = rows, term, collapsed, result
+        return result
 
     def _repair_focus(self):
         visible = [row.region.id for row in self.visible_rows()]

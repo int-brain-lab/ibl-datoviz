@@ -122,3 +122,96 @@ def test_frame_copy_isolates_mutable_state_and_shares_frozen_catalog():
     assert model.search_collapsed == set()
     assert candidate.regions is model.regions
     assert candidate.hierarchy is model.hierarchy
+
+
+def _cache_model(initial=None):
+    return RegionSelector(
+        [
+            SelectorRegion('parent', None, -1, 'P', 'Parent'),
+            SelectorRegion('b', 'parent', -3, 'B', 'Beta'),
+            SelectorRegion('a', 'parent', -2, 'A', 'Alpha'),
+            SelectorRegion('other', None, -4, 'O', 'Other'),
+        ],
+        initial,
+    )
+
+
+def test_layout_caches_survive_frame_copies_and_unrelated_state_changes():
+    model = _cache_model({'values': {'a': 2, 'b': 1}})
+    context, rows = model._context(), model.visible_rows()
+    candidate = model.copy()
+    candidate.values = {'a': 50, 'parent': 20}
+    candidate.set_selected(['a'])
+    candidate.focus = 'b'
+    candidate.hover = 'a'
+    candidate.multiple = True
+    assert candidate._context() is context
+    assert candidate.visible_rows() is rows
+    assert candidate.atlas_id_to_region_id is model.atlas_id_to_region_id
+    assert candidate.atlas_id_to_region_id == {1: 'parent', 3: 'b', 2: 'a', 4: 'other'}
+
+
+def test_fold_cache_detects_direct_mutation_without_affecting_committed_model():
+    model = _cache_model()
+    rows = model.visible_rows()
+    candidate = model.copy()
+    candidate.collapsed.add('parent')
+    folded = candidate.visible_rows()
+    assert [row.region.id for row in folded] == ['parent', 'other']
+    assert folded is candidate.visible_rows()
+    assert model.visible_rows() is rows
+    assert [row.region.id for row in rows] == ['parent', 'b', 'a', 'other']
+    candidate.collapsed = set()
+    assert candidate.visible_rows() == rows
+
+
+def test_search_cache_uses_effective_order_and_search_folding():
+    model = _cache_model({'query': 'parent', 'values': {'a': 2, 'b': 1}})
+    context, rows = model._context(), model.visible_rows()
+    assert all(isinstance(part, frozenset) for part in context)
+    candidate = model.copy()
+    candidate.query = 'PARENT'
+    candidate.requested_order = 'value-desc'
+    candidate.values['a'] = -100
+    candidate.collapsed.add('parent')
+    assert candidate._context() is context
+    assert candidate.visible_rows() is rows
+    candidate.search_collapsed.add('parent')
+    assert [row.region.id for row in candidate.visible_rows()] == ['parent']
+    candidate.query = 'Other'
+    assert candidate._context() is not context
+    assert [row.region.id for row in candidate.visible_rows()] == ['other']
+    assert model.visible_rows() is rows
+
+
+def test_ranked_cache_snapshots_only_leaf_values_and_ignores_folding():
+    model = _cache_model({'order': 'value-asc', 'values': {'a': 2, 'b': 1}})
+    projection, rows = model.projected_rows(), model.visible_rows()
+    assert [row.region.id for row in projection] == ['b', 'a', 'other']
+    candidate = model.copy()
+    candidate.values = dict(model.values, parent=100, unknown=200)
+    candidate.collapsed.add('parent')
+    candidate.search_collapsed.add('parent')
+    assert candidate.projected_rows() is projection
+    assert candidate.visible_rows() is rows
+    candidate.values['a'] = 0
+    assert [row.region.id for row in candidate.visible_rows()] == ['a', 'b', 'other']
+    assert model.projected_rows() is projection
+    assert model.visible_rows() is rows
+    candidate.requested_order = 'value-desc'
+    assert [row.region.id for row in candidate.visible_rows()] == ['b', 'a', 'other']
+
+
+def test_ranked_cache_normalizes_nonfinite_values_and_preserves_catalog_ties():
+    model = _cache_model(
+        {'order': 'value-desc', 'values': {'a': 2, 'b': 2, 'other': float('nan')}}
+    )
+    projection = model.projected_rows()
+    assert [row.region.id for row in projection] == ['b', 'a', 'other']
+    for value in (float('nan'), float('inf'), float('-inf'), None):
+        model.values['other'] = value
+        assert model.projected_rows() is projection
+    del model.values['other']
+    assert model.projected_rows() is projection
+    model.values['other'] = 3
+    assert [row.region.id for row in model.projected_rows()] == ['other', 'b', 'a']

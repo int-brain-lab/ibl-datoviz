@@ -9,6 +9,17 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Retained region selector derivations — October 17 2026
+
+The browser model retains one immutable result per search-context, ranked-projection
+and visible-row derivation. Frame candidates share warm entries; a candidate miss
+replaces only its own entry, preserving the committed model for rollback. Semantic
+keys detect direct mutable value/folding changes, ignore unrelated selection and
+focus changes, and preserve effective anatomy order during search. Catalog selection
+indexes and stable ranking positions are built once. Cache storage is bounded per
+model rather than accumulating query history. The pinned conformance bundle and
+new mutation/copy/ranking regressions pass (20 model tests).
+
 ## Direct slice region selection — October 17 2026
 
 Linked 2-D slices now distinguish left-click (move crosshair without changing region selection) from right-click (select the signed region under the pointer without moving the crosshair or resetting zoom). Void clears region selection; points outside the displayed image do nothing. Selection uses the active mapping and existing selection controller, preserving tree/table synchronization and leaving auto-slice navigation unrequested. With pending lazy raster or exact-contour updates, it uses the displayed section, and rejects a displayed section from an obsolete mapping. Left-double-click resets slice zoom; right-double-click does not. Existing 3-D rotate/pan input is unchanged. The review toolbar and interaction documentation explain the controls.
