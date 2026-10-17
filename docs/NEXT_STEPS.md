@@ -9,6 +9,39 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Native input correction validated locally — October 17 2026
+
+The RC3 fix is committed in Datoviz as `3690cc8f8` on
+`fix/input-router-gesture-ownership`, based on native main `858bdf261`.
+One router-owned interpreter replaces independent gesture recognizers; windows
+retain one activation and GUI viewports borrow it. Raw and union subscribers
+receive one original event regardless of zero, one or two activation handles.
+No Python deduplication or sensitivity change was introduced.
+
+- Native main candidate: 1,224/1,224 tests pass with zero skips; all 23 input
+  tests pass Valgrind with zero errors or retained bytes. Regenerated bindings,
+  ABI checks and 15 Python raw/facade/GUI checks pass. Independent high Sol 6.1
+  architecture review found no remaining P1/P2 after runtime-driven corrections.
+- Native main lacks APIs used by the scientific workspace. The same eight-file
+  core patch applies cleanly to an isolated exact f77 baseline; its independent
+  build, regenerated bindings and focused input/window/controller/GUI tests pass.
+  The IBL suite on that candidate passes 1,087 tests on Python 3.11, with the
+  existing optional registered-asset-set skip.
+- Actual XTest input at UI scale 1.5 verifies hover and Allen/Beryl/Cosmos mapping,
+  one wheel notch AP 660→658, and a 16-notch burst ending at AP 626 with the
+  matching contour request accepted. The trace has one slice step and one
+  preparation, 511.63 ms settle time, six stable polygon buffers, and eight
+  cached entries totaling 7,272,224 bytes. This is a single trace, not a
+  comparative performance benchmark. Evidence remains in ignored build outputs.
+- The previously recorded pre-wheel mapping `CreateBuffer InvalidState` error
+  still appears. It is a separate unresolved resource-lifecycle issue; the
+  input correction does not establish warning-free rendering.
+
+The original supported binary hash, native checkout, review configuration and
+package pin remain unchanged. The native fix is local: merge/publication and a
+validated package baseline upgrade need separate review. Manual Linux review
+remains deferred, and physical macOS/Windows input is unverified.
+
 ## Published reader and contour performance — October 17 2026
 
 This checkpoint supersedes the unpublished-reader and performance limitations in
