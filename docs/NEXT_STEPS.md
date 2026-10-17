@@ -9,6 +9,14 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Adaptive rotation pivot experiment — October 17 2026
+
+The atlas viewer opts into the candidate native `ADAPTIVE_ORBIT` policy when available alongside `SCREEN_PAN`. At initial framing and when zoomed out, rotation retains the current anatomical origin. A cubic transition in normalized camera dolly reaches the viewport-center pivot at roughly three times the initial perspective magnification. Native `orbit_zoom_start` and `orbit_zoom_end` configure these endpoints (defaults 1 and 3); they are magnifications rather than the stored exponential dolly factor. The anatomical center includes accumulated placement after earlier close-up rotations, avoiding reuse of an old local pivot when zooming out.
+
+Choosing a pivot does not move the image; the pivot is frozen throughout each rotation drag. The existing pointer sphere/quaternion mapping, exact pixel pan and viewport-centered wheel zoom are preserved. The viewport target uses a stable positive inspection plane rather than transparent-shell depth picking, including after dolly passes the original center. Tiny framing changes taper smoothly to exact unpanned behavior. Orthographic rotation stays anatomical. The native policy remains opt-in; the atlas viewer enables it for the current experiment.
+
+Native candidate `70ecc2e2c` passes all 1,296 native tests with zero failures/skips, plus generated binding and ABI checks. A high Sol 6.1 audit found no remaining blockers after the continuity and link fixes. The downstream suite passes 1,088 tests with one existing registered-asset skip, both numbered apps start, and Ruff passes. Reviewers should compare whole-brain rotation while zoomed out with local viewport-centered rotation after panning and zooming in, checking for jumps at drag start, continuity across zoom levels and stable behavior after zooming out again. Publication and immutable-pin promotion remain pending.
+
 ## Viewport-centered wheel zoom after pan — October 17 2026
 
 The image-plane pan candidate now directs wheel dolly along the ray through the center of the currently framed viewport. Previously, the projection offset moved the old optical center away from the viewport center, while wheel movement still followed that old axis. The new retained lateral dolly displacement keeps points on the viewport-center ray centered through zoom, without changing the physical rotation pivot, pan-neutral rotation controls or exact pixel panning. Direct programmatic zoom remains a scalar setter; orthographic wheel behavior and the existing wheel sensitivity/distance law are unchanged. Reset clears the new displacement. ZOOM links share it only between two screen-pan controllers; mixed-mode links continue to share only the scalar.
