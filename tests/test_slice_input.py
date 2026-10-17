@@ -17,14 +17,14 @@ from ibl_datoviz.viewer import AtlasViewer
 
 
 def test_fractional_wheel_keeps_remainder_and_signed_steps():
-    step, remainder = wheel_step(0.0, 0.2, shift=False)
+    step, remainder = wheel_step(0.0, 0.1, shift=False)
     assert step == 0
     assert remainder == pytest.approx(0.4)
-    step, remainder = wheel_step(remainder, 0.4, shift=False)
+    step, remainder = wheel_step(remainder, 0.2, shift=False)
     assert step == 1
     assert remainder == pytest.approx(0.2)
-    assert wheel_step(0.0, -0.25, shift=True) == (-2, -0.5)
-    assert wheel_step(-0.5, -0.25, shift=True) == (-3, 0.0)
+    assert wheel_step(0.0, -0.125, shift=True) == (-2, -0.5)
+    assert wheel_step(-0.5, -0.125, shift=True) == (-3, 0.0)
 
 
 @pytest.mark.parametrize('direction', [-1, 1])
@@ -132,7 +132,7 @@ def test_control_wheel_precedes_shift_and_double_click_resets_zoom(adapter):
     calls.clear()
     pointer.mods = 2
     dispatch(adapter, pointer=pointer)
-    assert calls == [('step', 'dv', 10), ('frame',)]
+    assert calls == [('step', 'dv', 20), ('frame',)]
     calls.clear()
     pointer.type = dvz.DVZ_POINTER_EVENT_DOUBLE_CLICK
     dispatch(adapter, pointer=pointer)

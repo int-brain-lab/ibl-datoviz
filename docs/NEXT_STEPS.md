@@ -9,6 +9,14 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Wheel sensitivity and pan investigation — October 17 2026
+
+Datoviz's candidate adds `DvzArcballDesc.zoom_speed`, a per-controller wheel sensitivity multiplier: default 2 doubles the previous response, 1 restores it, and zero selects the default. Programmatic zoom is unchanged. The descriptor and regenerated bindings must be paired: the former library-only override with the supported facade no longer suffices. The ignored local candidate runner pairs the candidate facade/library while reusing the approved platform environment, leaving configured setup and the immutable pin unchanged.
+
+Linked slices now advance four sections per standard wheel notch and twenty with Shift, retaining fractional remainder, keyboard precision, slider precision and Ctrl+wheel slice magnification. Validation passes: 1,276 native tests with zero skips; generated bindings, policy and ABI checks; 1,087 downstream tests with one unmaterialized registered-asset-set skip; both candidate review apps start. Ruff passes. Interactive acceptance and publication remain pending.
+
+Review 1 pan investigation finds that the existing conversion is exact at the rotation-center depth, but nearer visible surfaces outrun the pointer increasingly at high zoom. Dolly can also cross the pivot plane and nearly freeze pan through the positive-depth clamp. These formulas are unchanged from the supported baseline; the origin-only regression misses surface anchoring. The user prefers that we choose the most natural fix, so a surface-at-press pan anchor is being investigated separately. A distance-relative wheel law is a separate proposed follow-up; current wheel zoom still becomes additive eye-space travel through `log(zoom)`.
+
 ## Pan-neutral fixed-pivot interaction candidate — October 17 2026
 
 The viewport-centered physical orbit below was reviewed and rejected as the default. The next local native candidate, `4f9caf8b5` on `fix/arcball-viewport-orbit`, keeps the original physical rotation pivot and sphere/quaternion mapping, while computing the pointer sphere center with view-plane pan omitted. Original zero-pan behavior is preserved for stable camera/zoom during each gesture, including off-axis cameras, both projection types, zoom and edge drags. Panning no longer carries the control sphere offscreen. The former physical-orbit mode remains available through `DvzArcballDesc.controller_flags = DVZ_ARCBALL_FLAGS_VIEWPORT_ORBIT`, disabled by default.

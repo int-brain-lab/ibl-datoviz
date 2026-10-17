@@ -10,7 +10,7 @@ import numpy as np
 
 def wheel_step(remainder: float, amount: float, *, shift: bool) -> tuple[int, float]:
     """Accumulate fractional wheel motion using the documented step sensitivity."""
-    accumulated = remainder + amount * (10.0 if shift else 2.0)
+    accumulated = remainder + amount * (20.0 if shift else 4.0)
     step = int(np.trunc(accumulated))
     return step, accumulated - step
 
