@@ -9,6 +9,12 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Pan-neutral fixed-pivot interaction candidate — October 17 2026
+
+The viewport-centered physical orbit below was reviewed and rejected as the default. The next local native candidate, `4f9caf8b5` on `fix/arcball-viewport-orbit`, keeps the original physical rotation pivot and sphere/quaternion mapping, while computing the pointer sphere center with view-plane pan omitted. Original zero-pan behavior is preserved for stable camera/zoom during each gesture, including off-axis cameras, both projection types, zoom and edge drags. Panning no longer carries the control sphere offscreen. The former physical-orbit mode remains available through `DvzArcballDesc.controller_flags = DVZ_ARCBALL_FLAGS_VIEWPORT_ORBIT`, disabled by default.
+
+Focused native tests pass 40/40 and the full native suite passes 1,276/1,276 with zero failures or skips; regenerated Python bindings, 17 binding tests, policy checks and ABI validation pass. A high Sol 6.1 read-only audit found no blockers. Both modes retain their regression coverage. Both numbered review apps pass bounded startup with the candidate library. The same explicit candidate-library review command selects this new default after closing and restarting any previous review window. Interactive acceptance, publication and pin promotion remain pending; the configured checkout and supported immutable pin are unchanged.
+
 ## Linked review anatomy and orbit follow-up — October 17 2026
 
 Review app 2 now uses the same six verified global-region context surfaces,
