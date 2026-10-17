@@ -9,6 +9,14 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Repeated pan/zoom distortion correction — October 17 2026
+
+Repeated screen pan plus viewport-centered physical dolly accumulated lateral camera displacement. Rotation matrices remained rigid, but the resulting oblique perspective could severely distort the atlas. This was a navigation-policy design error in the earlier candidate; the previous bounded gesture tests did not expose the accumulated effect.
+
+The atlas viewer now selects optional native `PROJECTION_ZOOM` alongside `SCREEN_PAN` and `ADAPTIVE_ORBIT`. Pan/zoom changes only image framing and magnification, keeping camera position and depth projection fixed. Wheel zoom remains centered on the viewport and pan tracks pointer pixels at every magnification. Zoom during an active pan rebases its gesture origin, including controller links. Adaptive rotation uses actual image magnification: anatomical pivot when zoomed out, transitioning to the viewport inspection pivot when zoomed in. This intentionally replaces dolly parallax with image magnification for atlas navigation; native physical dolly remains available separately. Older configured baselines retain their supported behavior and the immutable pin is unchanged.
+
+Regression coverage includes 480 mixed pan/zoom operations, multiple depths, closed-loop/reset history, adaptive pivots after repeated gestures, active-pan wheel and linked zoom continuity, mode/link validation and GPU face-query alignment after magnification and pan. Linux validation passes all 1,300 native tests and 59 focused arcball cases, binding/ABI checks, 1,088 downstream tests with one existing missing registered-asset skip, both numbered app startups, Ruff and strict docs. Manual macOS interaction acceptance remains pending.
+
 ## Adaptive rotation pivot experiment — October 17 2026
 
 The atlas viewer opts into the candidate native `ADAPTIVE_ORBIT` policy when available alongside `SCREEN_PAN`. At initial framing and when zoomed out, rotation retains the current anatomical origin. A cubic transition in normalized camera dolly reaches the viewport-center pivot at roughly three times the initial perspective magnification. Native `orbit_zoom_start` and `orbit_zoom_end` configure these endpoints (defaults 1 and 3); they are magnifications rather than the stored exponential dolly factor. The anatomical center includes accumulated placement after earlier close-up rotations, avoiding reuse of an old local pivot when zooming out.

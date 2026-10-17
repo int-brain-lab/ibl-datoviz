@@ -2406,6 +2406,8 @@ class AtlasViewer:
         if hasattr(self.dvz, 'DVZ_ARCBALL_FLAGS_SCREEN_PAN'):
             arcball_descriptor = self.dvz.dvz_arcball_desc()
             arcball_descriptor.controller_flags |= self.dvz.DVZ_ARCBALL_FLAGS_SCREEN_PAN
+            if hasattr(self.dvz, 'DVZ_ARCBALL_FLAGS_PROJECTION_ZOOM'):
+                arcball_descriptor.controller_flags |= self.dvz.DVZ_ARCBALL_FLAGS_PROJECTION_ZOOM
             if hasattr(self.dvz, 'DVZ_ARCBALL_FLAGS_ADAPTIVE_ORBIT'):
                 arcball_descriptor.controller_flags |= self.dvz.DVZ_ARCBALL_FLAGS_ADAPTIVE_ORBIT
         arcball_config = (

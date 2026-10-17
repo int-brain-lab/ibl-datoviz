@@ -45,6 +45,18 @@ def test_screen_pan_moves_rendered_surface_and_gpu_query_together():
             assert query_at(viewer, 130, 72, 2) == (True, -315)
             after = np.array(dvz.dvz_view_capture_rgba(viewer.view), copy=True)
             np.testing.assert_allclose(after[66:78, 124:136], before[90:102, 84:96], atol=1)
+            if hasattr(dvz, 'DVZ_ARCBALL_FLAGS_PROJECTION_ZOOM'):
+                assert dvz.dvz_arcball_zoom(viewer.arcball, 1.25) == 0
+                assert query_at(viewer, 130.5, 66, 4) == (True, -315)
+                magnified = np.array(dvz.dvz_view_capture_rgba(viewer.view), copy=True)
+                dvz.dvz_arcball_resize(viewer.arcball, 256, 192)
+                shift = (ctypes.c_float * 2)(20, -10)
+                assert dvz.dvz_arcball_pan_shift(viewer.arcball, shift) == 0
+                assert query_at(viewer, 150.5, 56, 5) == (True, -315)
+                moved = np.array(dvz.dvz_view_capture_rgba(viewer.view), copy=True)
+                np.testing.assert_allclose(
+                    moved[50:62, 145:157], magnified[60:72, 125:137], atol=1
+                )
             assert dvz.dvz_arcball_reset(viewer.arcball) == 0
             assert query_at(viewer, 90, 96, 3) == (True, -315)
     except RuntimeError as error:
