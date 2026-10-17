@@ -305,7 +305,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
                 anatomy=anatomy, annotations=annotations, boundaries=boundaries
             )
         self.dvz.dvz_gui_text(
-            gui, b'Slice click: move crosshair. Brain/tree click: select region.'
+            gui, b'Slices: left-click moves crosshair; right-click selects region.'
         )
 
     def _combo(self, gui, label, control, items):

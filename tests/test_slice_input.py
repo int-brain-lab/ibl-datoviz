@@ -59,7 +59,7 @@ def adapter():
         'DVZ_KEYBOARD_EVENT_REPEAT', 'DVZ_KEY_RIGHT_BRACKET', 'DVZ_KEY_PAGE_UP',
         'DVZ_KEY_LEFT_BRACKET', 'DVZ_KEY_PAGE_DOWN', 'DVZ_POINTER_EVENT_MOVE',
         'DVZ_POINTER_EVENT_WHEEL', 'DVZ_POINTER_EVENT_DOUBLE_CLICK',
-        'DVZ_POINTER_EVENT_CLICK', 'DVZ_POINTER_BUTTON_LEFT',
+        'DVZ_POINTER_EVENT_CLICK', 'DVZ_POINTER_BUTTON_LEFT', 'DVZ_POINTER_BUTTON_RIGHT',
     )
     dvz = SimpleNamespace(**{name: index + 10 for index, name in enumerate(names)})
     dvz.DVZ_KEY_MODIFIER_CONTROL = 1
@@ -75,6 +75,7 @@ def adapter():
         set_cursor_from_slice_data=lambda *args, **kwargs: (
             calls.append(('cursor', *args, kwargs)) or True
         ),
+        _select_region_at_slice_data=lambda *args: calls.append(('region', *args)) or True,
     )
     result = SliceInputAdapter(owner, object())
     result.slice_data_at_pointer = lambda _pointer: ('dv', 0.2, 0.4)
@@ -135,6 +136,7 @@ def test_control_wheel_precedes_shift_and_double_click_resets_zoom(adapter):
     assert calls == [('step', 'dv', 20), ('frame',)]
     calls.clear()
     pointer.type = dvz.DVZ_POINTER_EVENT_DOUBLE_CLICK
+    pointer.button = dvz.DVZ_POINTER_BUTTON_LEFT
     dispatch(adapter, pointer=pointer)
     assert adapter.owner._slice_zoom['dv'] == 1.0
     assert calls == [('geometry', 'dv'), ('frame',)]
@@ -149,6 +151,26 @@ def test_slice_left_click_moves_cursor_without_selection(adapter):
     pointer.button = dvz.DVZ_POINTER_BUTTON_LEFT
     dispatch(adapter, pointer=pointer)
     assert calls == [('cursor', 'dv', 0.2, 0.4, {'select_region': False}), ('frame',)]
+
+
+def test_slice_right_click_selects_without_moving_cursor_or_resetting_zoom(adapter):
+    adapter, calls = adapter
+    dvz = adapter.owner.dvz
+    adapter.owner._slice_zoom['dv'] = 3.0
+    pointer = SimpleNamespace(
+        type=dvz.DVZ_POINTER_EVENT_CLICK, button=dvz.DVZ_POINTER_BUTTON_RIGHT
+    )
+    dispatch(adapter, pointer=pointer)
+    assert calls == [('region', 'dv', 0.2, 0.4), ('frame',)]
+    calls.clear()
+    pointer.type = dvz.DVZ_POINTER_EVENT_DOUBLE_CLICK
+    dispatch(adapter, pointer=pointer)
+    assert calls == []
+    assert adapter.owner._slice_zoom['dv'] == 3.0
+    pointer.type = dvz.DVZ_POINTER_EVENT_CLICK
+    adapter.slice_data_at_pointer = lambda _pointer: None
+    dispatch(adapter, pointer=pointer)
+    assert calls == []
 
 
 def test_subscription_retains_callback_until_unsubscribed_once(adapter):

@@ -9,6 +9,12 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Direct slice region selection — October 17 2026
+
+Linked 2-D slices now distinguish left-click (move crosshair without changing region selection) from right-click (select the signed region under the pointer without moving the crosshair or resetting zoom). Void clears region selection; points outside the displayed image do nothing. Selection uses the active mapping and existing selection controller, preserving tree/table synchronization and leaving auto-slice navigation unrequested. With pending lazy raster or exact-contour updates, it uses the displayed section, and rejects a displayed section from an obsolete mapping. Left-double-click resets slice zoom; right-double-click does not. Existing 3-D rotate/pan input is unchanged. The review toolbar and interaction documentation explain the controls.
+
+The focused slice-input, review and contour/native suites pass 50 tests. An actual review-2 XTest right-click selects region -599 while retaining cursor (132, 114, 80) and slice zoom. Ruff and strict docs pass. Manual interaction acceptance remains pending.
+
 ## Review 2 presentation and performance follow-up — October 17 2026
 
 Review 2 now starts with grayscale anatomy plus mapped labels at 45% opacity. An always-visible Slices selector switches anatomy, anatomy plus labels, labels, and anatomy plus boundaries without replacing panels or changing cursor/region selection. Existing layer and opacity controls remain available; custom layer combinations are reflected in the selector. The toolbar explicitly distinguishes slice clicks (crosshair position) from brain/tree clicks (region selection). The existing Select button under Cursor and selection selects the region at the crosshair. Existing click semantics and double-click slice-zoom reset are preserved. `--preset anatomy` retains grayscale startup; reset restores the new overlay default.

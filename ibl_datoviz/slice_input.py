@@ -207,14 +207,19 @@ class SliceInputAdapter:
                 if step and owner.step_slice(axis, step):
                     dvz.dvz_view_request_frame(owner.view)
             return
-        if pointer.type == dvz.DVZ_POINTER_EVENT_DOUBLE_CLICK:
+        if (
+            pointer.type == dvz.DVZ_POINTER_EVENT_DOUBLE_CLICK
+            and pointer.button == dvz.DVZ_POINTER_BUTTON_LEFT
+        ):
             owner._slice_zoom[axis] = 1.0
             owner._update_slice_geometry(axis)
             dvz.dvz_view_request_frame(owner.view)
             return
-        if (
-            pointer.type == dvz.DVZ_POINTER_EVENT_CLICK
-            and pointer.button == dvz.DVZ_POINTER_BUTTON_LEFT
-            and owner.set_cursor_from_slice_data(axis, x, y, select_region=False)
-        ):
-            dvz.dvz_view_request_frame(owner.view)
+        if pointer.type == dvz.DVZ_POINTER_EVENT_CLICK:
+            changed = False
+            if pointer.button == dvz.DVZ_POINTER_BUTTON_LEFT:
+                changed = owner.set_cursor_from_slice_data(axis, x, y, select_region=False)
+            elif pointer.button == dvz.DVZ_POINTER_BUTTON_RIGHT:
+                changed = owner._select_region_at_slice_data(axis, x, y)
+            if changed:
+                dvz.dvz_view_request_frame(owner.view)

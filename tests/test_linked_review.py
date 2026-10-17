@@ -161,6 +161,32 @@ def test_presets_keep_four_panels_view_camera_and_region_overrides(viewer):
     assert [call for call in viewer.dvz.calls if call[0] == 'grid'] == [('grid', 2, 2)]
 
 
+@pytest.mark.parametrize('mapping', ['allen', 'beryl', 'cosmos'])
+def test_slice_region_selection_keeps_crosshair_and_zoom_fixed(viewer, mapping):
+    viewer.set_mapping(mapping)
+    cursor = viewer.cursor
+    viewer._slice_zoom = dict.fromkeys(review.AXES, 2.0)
+    selected = set()
+    for axis in review.AXES:
+        quad, _ = viewer._slice_quad(axis)
+        for fraction in ((0.1, 0.1), (0.5, 0.5), (0.9, 0.9)):
+            point = quad[0, :2] + np.asarray(fraction) * (quad[3, :2] - quad[0, :2])
+            location = viewer._cursor_at_slice_data(axis, *point)
+            row = location.region(viewer.slice_source, mapping)
+            expected = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
+            assert viewer._select_region_at_slice_data(axis, *point)
+            assert viewer.selected_region_ids() == expected
+            assert viewer.cursor == cursor
+            assert viewer._slice_zoom == dict.fromkeys(review.AXES, 2.0)
+            selected.update(expected)
+    if mapping == 'allen':
+        assert selected
+    before = viewer.selected_region_ids()
+    assert not viewer._select_region_at_slice_data('ap', 100, 100)
+    assert viewer.selected_region_ids() == before
+    assert viewer.cursor == cursor
+
+
 def test_physical_plane_follows_cursor_mapping_and_axis_with_retained_adapter(viewer):
     viewer.apply_preset('physical-slice')
     adapter = viewer.physical_plane

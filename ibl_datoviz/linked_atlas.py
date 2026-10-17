@@ -200,6 +200,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         self.slice_composer = AtlasSliceComposer(slice_source, mapping)
         self._slice_preparation = SlicePreparation(slice_source, mapping)
         self._slice_revisions = {axis: 0 for axis in ('ap', 'ml', 'dv')}
+        self._displayed_slice_requests = {}
         self._slice_source_id = str(
             getattr(slice_source, 'grid_id', getattr(slice_source.grid, 'grid_id', 'atlas-grid'))
         )
@@ -689,6 +690,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                 self._contour_visuals[axis].activate(visible=request.annotation_visible)
                 self._accepted_contours[axis] = (request, payload)
                 self._refresh_boundaries(axis)
+            self._displayed_slice_requests[axis] = request
 
     def _slice_rgba(self, axis: str) -> NDArray[np.uint8]:
         index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
@@ -789,6 +791,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         if self.slice_renderer == 'contours':
             self._contour_visuals[axis].activate(visible=request.annotation_visible)
             self._accepted_contours[axis] = (request, payload)
+        self._displayed_slice_requests[axis] = request
 
     def _stage_contours(self, axis, payload, *, opacity):
         if payload.contours is None:
@@ -1285,6 +1288,24 @@ class LinkedAtlasNavigator(AtlasViewer):
             float((y - y0) / (y1 - y0)),
             self.slice_source.grid,
         )
+
+    def _select_region_at_slice_data(self, axis: str, x: float, y: float) -> bool:
+        """Select displayed slice anatomy without moving the linked crosshair."""
+        cursor = self._cursor_at_slice_data(axis, x, y)
+        if cursor is None:
+            return False
+        if self.slice_renderer == 'contours':
+            region_id = self._contour_region_at(axis, x, y)
+        else:
+            if self._slice_loader is not None:
+                request = self._displayed_slice_requests.get(axis)
+                if request is None or request.mapping != self.mapping:
+                    return False
+                cursor = cursor.replace(axis, request.index, self.slice_source.grid.shape)
+            row = cursor.region(self.slice_source, self.mapping)
+            region_id = None if row is None else row.atlas_id
+        self.set_selected_region_ids((region_id,) if region_id else ())
+        return True
 
     def _cursor_selection_ids(self):
         if self.slice_renderer == 'contours':

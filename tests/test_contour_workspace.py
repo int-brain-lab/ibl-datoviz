@@ -103,10 +103,44 @@ def test_hover_and_click_use_displayed_section_while_new_request_is_pending(view
     assert app._contour_region_at(axis, *point) == component.atlas_id
     app._set_slice_hover(axis, *point)
     assert app._hovered_region_ids == (component.atlas_id,)
+    cursor = app.cursor
+    assert app._select_region_at_slice_data(axis, *point)
+    assert app.selected_region_ids() == (component.atlas_id,)
+    assert app.cursor == cursor
     app.mapping = 'cosmos'
     assert app._cursor_at_slice_data(axis, *point) is None
     assert app._contour_region_at(axis, *point) is None
+    assert not app._select_region_at_slice_data(axis, *point)
+    assert app.selected_region_ids() == (component.atlas_id,)
     app.mapping = 'allen'
+
+
+def test_raster_right_click_uses_displayed_section_during_pending_navigation(monkeypatch):
+    with AtlasViewer(
+        atlas=AtlasMesh.from_pack(MESH), layout='linked', slice_source=ExactSource(),
+        render_volume=False,
+    ) as app:
+        request = app._displayed_slice_requests['ap']
+        app.cursor = app.cursor.replace('ap', 0, app.slice_source.grid.shape)
+        cursor = app.cursor
+        sampled = []
+        selected = []
+        original_region = AtlasCursor.region
+
+        def region(location, source, mapping):
+            sampled.append(location.ap)
+            return original_region(location, source, mapping)
+
+        monkeypatch.setattr(AtlasCursor, 'region', region)
+        monkeypatch.setattr(app, 'set_selected_region_ids', selected.append)
+        assert app._select_region_at_slice_data('ap', 0, 0)
+        assert sampled == [request.index]
+        assert selected
+        assert app.cursor == cursor
+        app.mapping = 'cosmos'
+        assert not app._select_region_at_slice_data('ap', 0, 0)
+        assert sampled == [request.index]
+        assert app.cursor == cursor
 
 
 def test_stale_request_does_not_replace_geometry_or_identity(viewer):
