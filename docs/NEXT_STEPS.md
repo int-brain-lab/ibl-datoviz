@@ -9,6 +9,12 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Viewport-centered wheel zoom after pan — October 17 2026
+
+The image-plane pan candidate now directs wheel dolly along the ray through the center of the currently framed viewport. Previously, the projection offset moved the old optical center away from the viewport center, while wheel movement still followed that old axis. The new retained lateral dolly displacement keeps points on the viewport-center ray centered through zoom, without changing the physical rotation pivot, pan-neutral rotation controls or exact pixel panning. Direct programmatic zoom remains a scalar setter; orthographic wheel behavior and the existing wheel sensitivity/distance law are unchanged. Reset clears the new displacement. ZOOM links share it only between two screen-pan controllers; mixed-mode links continue to share only the scalar.
+
+Native candidate commit `6f4606276` passes all 1,289 native tests with zero failures/skips. The downstream suite passes 1,088 tests with one existing registered-asset skip; both numbered apps start, and strict docs pass. Regression coverage includes three depths, repeated pan/zoom, off-axis and tilted perspective cameras, orthographic behavior, wheel reversibility, reset and link isolation. Actual review-1 XTest pan plus wheel-in/out checks pass at dolly 0/1/2/2.8. A high Sol 6.1 audit found no remaining blockers. Manual acceptance remains pending. The configured checkout and immutable pin stay unchanged. Use `uv run --frozen python build/review_candidate.py 1 --ui-scale 1.5` to review, after closing previous windows.
+
 ## Image-plane pan candidate — October 17 2026
 
 Manual feedback identified inadequate pan sensitivity at high zoom. Independent pixel tracking reproduced it: a 60-pixel drag moved the prominent atlas features about 18 pixels at dolly 2 and 8 pixels at dolly 2.5. The nearest translucent context surface was a valid GPU depth anchor but a poor perceptual reference for deeper visible anatomy. The earlier state-derived depth checks below established depth selection, not pixel tracking of the visible structures.
