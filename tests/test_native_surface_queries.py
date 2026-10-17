@@ -4,6 +4,7 @@ import ctypes
 from dataclasses import replace
 
 import numpy as np
+import pytest
 
 from ibl_datoviz import AtlasMesh, AtlasViewer
 from tests.test_atlas import FIXTURE
@@ -27,6 +28,28 @@ def query_at(viewer, x, y, request_id):
             )
             return bool(result.hit), np.asarray(result.link_key, np.uint64).view(np.int64).item()
     raise AssertionError('native query completed without its requested result')
+
+
+def test_screen_pan_moves_rendered_surface_and_gpu_query_together():
+    """Image framing must move picking with the pixels and reset both together."""
+    try:
+        with AtlasViewer(AtlasMesh.from_pack(FIXTURE), width=256, height=192) as viewer:
+            viewer._create_view(offscreen=True, title='Screen pan query alignment')
+            dvz = viewer.dvz
+            if not hasattr(dvz, 'DVZ_ARCBALL_FLAGS_SCREEN_PAN'):
+                pytest.skip('configured native baseline predates optional image-plane pan')
+            assert query_at(viewer, 90, 96, 1) == (True, -315)
+            before = np.array(dvz.dvz_view_capture_rgba(viewer.view), copy=True)
+            offset = (ctypes.c_float * 2)(2 * 40 / 256, 2 * 24 / 192)
+            assert dvz.dvz_arcball_pan(viewer.arcball, offset) == 0
+            assert query_at(viewer, 130, 72, 2) == (True, -315)
+            after = np.array(dvz.dvz_view_capture_rgba(viewer.view), copy=True)
+            np.testing.assert_allclose(after[66:78, 124:136], before[90:102, 84:96], atol=1)
+            assert dvz.dvz_arcball_reset(viewer.arcball) == 0
+            assert query_at(viewer, 90, 96, 3) == (True, -315)
+    except RuntimeError as error:
+        _skip_without_native_datoviz(error)
+        raise
 
 
 def test_native_surface_queries_preserve_signed_keys_across_retained_updates():

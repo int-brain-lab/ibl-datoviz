@@ -2400,16 +2400,25 @@ class AtlasViewer:
             self.app = self.dvz.dvz_app(self.scene)
         if not self.app:
             raise RuntimeError('dvz_app() failed')
+        # Image-plane pan keeps overlapping translucent anatomy under the cursor at every depth.
+        # The pinned baseline predates this optional native policy.
+        arcball_descriptor = None
+        if hasattr(self.dvz, 'DVZ_ARCBALL_FLAGS_SCREEN_PAN'):
+            arcball_descriptor = self.dvz.dvz_arcball_desc()
+            arcball_descriptor.controller_flags |= self.dvz.DVZ_ARCBALL_FLAGS_SCREEN_PAN
+        arcball_config = (
+            ctypes.byref(arcball_descriptor) if arcball_descriptor is not None else None
+        )
         if offscreen:
             self.view = self.dvz.dvz_view_offscreen(self.app, self.figure, self.width, self.height)
             if not self.view:
                 raise RuntimeError('Datoviz view creation failed')
-            self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, None)
+            self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, arcball_config)
         elif self.catalog is None:
             self.view = self._create_window_view(self.figure, title)
             if not self.view:
                 raise RuntimeError('Datoviz view creation failed')
-            self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, None)
+            self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, arcball_config)
         else:
             self.host_figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
             if not self.host_figure:
@@ -2460,7 +2469,7 @@ class AtlasViewer:
                     raise RuntimeError('dvz_gui_viewport_input() failed')
                 self._viewport_input = ViewportInputAdapter(self, router)
                 self._viewport_input.subscribe()
-            self.arcball_controller = self.dvz.dvz_arcball(self.scene, None)
+            self.arcball_controller = self.dvz.dvz_arcball(self.scene, arcball_config)
             if not self.arcball_controller:
                 raise RuntimeError('dvz_arcball() failed')
             self.arcball = self.dvz.dvz_controller_arcball(self.arcball_controller)

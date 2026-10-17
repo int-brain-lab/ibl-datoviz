@@ -9,6 +9,16 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Image-plane pan candidate — October 17 2026
+
+Manual feedback identified inadequate pan sensitivity at high zoom. Independent pixel tracking reproduced it: a 60-pixel drag moved the prominent atlas features about 18 pixels at dolly 2 and 8 pixels at dolly 2.5. The nearest translucent context surface was a valid GPU depth anchor but a poor perceptual reference for deeper visible anatomy. The earlier state-derived depth checks below established depth selection, not pixel tracking of the visible structures.
+
+Native candidate commit `857f66f89` adds opt-in `DVZ_ARCBALL_FLAGS_SCREEN_PAN`: a normalized projection offset moves every visible layer by the same number of pixels, without changing the physical camera, original rotation pivot, unpanned rotation mapping or depth values. It bypasses navigation-depth queries, continues working when the original pivot passes behind the camera, rejects combination with viewport-orbit mode, and rejects PAN links between different pan modes. Ordinary camera/surface-depth panning remains the native default. The atlas viewer selects image-plane pan when that optional native flag is available; the immutable supported baseline keeps its existing behavior.
+
+Actual review-1 XTest captures now track a 60-pixel drag by exactly 60 pixels at dolly 0, 1, 2, 2.5, 2.8 and 3.1. GPU face queries follow the rendered offset and reset restores alignment. All 1,285 native tests pass with zero skips; candidate bindings and ABI checks pass. The downstream suite passes 1,087 tests with one existing registered-asset skip, and the added query regression passes. Both numbered apps start; Ruff and strict docs pass. Manual acceptance remains pending. No publication or pin/configuration change is part of this candidate.
+
+Review with `uv run --frozen python build/review_candidate.py 1 --ui-scale 1.5`, after closing earlier windows. `just review` continues to use the configured baseline.
+
 ## Wheel sensitivity and surface-anchored pan — October 17 2026
 
 Datoviz commit `a359c8f4b` adds `DvzArcballDesc.zoom_speed`, a per-controller wheel sensitivity multiplier: default 2 doubles the previous response, 1 restores it, and zero selects the default. Programmatic zoom is unchanged. The descriptor and regenerated bindings must be paired: the former library-only override with the supported facade no longer suffices. The ignored local candidate runner pairs the candidate facade/library while reusing the approved platform environment, leaving configured setup and the immutable pin unchanged.
