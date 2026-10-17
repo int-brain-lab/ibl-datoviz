@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from examples.linked_atlas_review import LinkedAtlasReview
+from examples.linked_atlas_review import SLICE_REPRESENTATIONS, LinkedAtlasReview
 from examples.review_common import load_review_slice
 from examples.scientific_scene_review import ScientificSceneReview
 from ibl_anatomy import open_volume_pack
@@ -74,7 +74,7 @@ def test_native_linked_review_retains_all_four_panels_while_updating_layers():
             panels = tuple(viewer.slice_panels.values())
             handles = (viewer.scene, viewer.figure, viewer.panel, viewer.app, viewer.view, *panels)
             baseline = render(viewer)
-            for preset in ('labels', 'physical-slice', 'volume-context', 'anatomy'):
+            for preset in ('labels', 'physical-slice', 'volume-context', 'anatomy', 'overlay'):
                 viewer.apply_preset(preset)
                 pixels = render(viewer)
                 current = (
@@ -88,6 +88,15 @@ def test_native_linked_review_retains_all_four_panels_while_updating_layers():
                 assert all(before is after for before, after in zip(handles, current, strict=True))
                 assert pixels.shape == baseline.shape
             np.testing.assert_array_equal(pixels, baseline)
+            cursor = viewer.cursor
+            for _, (anatomy, annotations, boundaries) in SLICE_REPRESENTATIONS:
+                viewer.set_slice_layers(
+                    anatomy=anatomy, annotations=annotations, boundaries=boundaries
+                )
+                pixels = render(viewer)
+                assert viewer.cursor == cursor
+                if not annotations:
+                    assert np.any(pixels != baseline)
             viewer.apply_preset('physical-slice')
             viewer.configure_physical_plane(axis='ml', layer='annotation', mode='mask', cutoff=0.4)
             viewer.set_cursor(viewer.cursor.replace('ml', 0, viewer.slice_source.grid.shape))

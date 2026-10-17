@@ -120,6 +120,7 @@ just review annotations --strict --offscreen "build/annotations review.png"
 `just review all` continues to cover apps 1 and 2. Close the annotation window to
 return to the shell. Record interactive findings in the feedback log.
 
+
 ## Region browsing in both apps
 
 Hover feedback starts disabled in both the tree and the 3D brain. Click a leaf
@@ -181,10 +182,11 @@ For a deliberate twelve-structure comparison, run the example directly with `--c
 
 ## App 2: linked atlas navigator
 
-The workspace always contains AP, ML and DV slice views and one 3D view, plus the
-sidebar. Presets are **Anatomy**, **Region labels**, **Volume context** and
-**Physical slice**. The source is the complete prepared Allen 50 um pack; this app
-does not silently use the sampled registered 10 um publication as complete coverage.
+The workspace always contains AP, ML and DV slice views and one 3D view, plus the sidebar. Presets are **Anatomy + labels** (default), **Anatomy**, **Region labels**, **Volume context** and **Physical slice**. The source is the complete prepared Allen 50 um pack; this app does not silently use the sampled registered 10 um publication as complete coverage.
+
+Review 2 starts with grayscale anatomy plus mapped region colors at 45% opacity and boundaries. The **Slices** selector above the four panels switches between **Anatomy**, **Anatomy + labels**, **Labels**, and **Anatomy + boundaries**, preserving the cursor, region selection and camera. Label colors follow the Allen/Beryl/Cosmos mapping. Detailed layer checkboxes and annotation opacity remain available under Slices controls; combinations outside the four choices appear as **Custom layers**. `--preset anatomy` restores the grayscale startup.
+
+A left-click in a 2-D slice moves the crosshair and linked slice positions; it does not select the region. Use **Select [region]** under **Cursor and selection** to select the region at the crosshair. A left-click on the 3-D brain or a row in Regions selects anatomy; tree selection also moves the slices when auto-slice is enabled. The central toolbar states the distinction. Double-clicking a slice resets its magnification.
 
 Wheel over a slice to scroll it; Ctrl+wheel zooms its existing view. Clicking a
 slice moves the two visible cursor coordinates. The sidebar AP/ML/DV sliders move

@@ -27,8 +27,16 @@ from examples.review_common import (
 from ibl_anatomy import bundled_asset_set, open_volume_pack, verify_materialized_asset_set
 from ibl_datoviz import AtlasCursor, AtlasMesh, LinkedAtlasNavigator, SampledPlaneVisual
 
-PRESETS = ('anatomy', 'labels', 'volume-context', 'physical-slice')
-PRESET_LABELS = ('Anatomy', 'Region labels', 'Volume context', 'Physical slice')
+PRESETS = ('anatomy', 'labels', 'volume-context', 'physical-slice', 'overlay')
+PRESET_LABELS = (
+    'Anatomy', 'Region labels', 'Volume context', 'Physical slice', 'Anatomy + labels'
+)
+SLICE_REPRESENTATIONS = (
+    ('Anatomy', (True, False, False)),
+    ('Anatomy + labels', (True, True, True)),
+    ('Labels', (False, True, True)),
+    ('Anatomy + boundaries', (True, False, True)),
+)
 AXES = ('ap', 'ml', 'dv')
 PLANE_MODES = ('wboit', 'mask')
 PLANE_LAYERS = ('anatomy', 'annotation')
@@ -37,7 +45,7 @@ PLANE_LAYERS = ('anatomy', 'annotation')
 class LinkedAtlasReview(LinkedAtlasNavigator):
     """Keep the linked navigator's panels and camera while reviewing its layers."""
 
-    def __init__(self, *args, preset='anatomy', **kwargs):
+    def __init__(self, *args, preset='overlay', **kwargs):
         """Allocate the normal volume once and leave physical-plane rendering off."""
         if preset not in PRESETS:
             raise ValueError(f'unknown review preset: {preset}')
@@ -61,6 +69,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
         kwargs.setdefault('width', 1400)
         kwargs.setdefault('height', 1000)
         kwargs.setdefault('surface_opacity', 0.18)
+        kwargs.setdefault('annotation_opacity', 0.45)
         kwargs['render_volume'] = True
         kwargs['volume_opacity'] = 0.0
         kwargs.setdefault('enable_hover', False)
@@ -274,7 +283,30 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
         self._plane_opacity_control.value = self.plane_opacity
         self._plane_cutoff_control.value = self.plane_cutoff
         self.set_cursor(AtlasCursor.centre(self.slice_source))
-        self.apply_preset('anatomy')
+        self.apply_preset('overlay')
+
+    def _draw_viewport_toolbar_gui(self, gui):
+        """Expose slice presentation and distinguish position from region selection."""
+        super()._draw_viewport_toolbar_gui(gui)
+        layers = (self.anatomy_visible, self.annotation_visible, self.boundaries_visible)
+        current = next(
+            (i for i, (_, settings) in enumerate(SLICE_REPRESENTATIONS) if settings == layers),
+            len(SLICE_REPRESENTATIONS),
+        )
+        control = ctypes.c_int(current)
+        items = tuple(label for label, _ in SLICE_REPRESENTATIONS) + ('Custom layers',)
+        width, _ = self._sidebar.available(gui)
+        self.dvz.dvz_gui_set_next_item_width(gui, min(width, 220.0 * self.ui_scale))
+        if self._combo(gui, b'Slices', control, items) and control.value < len(
+            SLICE_REPRESENTATIONS
+        ):
+            anatomy, annotations, boundaries = SLICE_REPRESENTATIONS[control.value][1]
+            self.set_slice_layers(
+                anatomy=anatomy, annotations=annotations, boundaries=boundaries
+            )
+        self.dvz.dvz_gui_text(
+            gui, b'Slice click: move crosshair. Brain/tree click: select region.'
+        )
 
     def _combo(self, gui, label, control, items):
         encoded = (ctypes.c_char_p * len(items))(*(item.encode() for item in items))
@@ -350,7 +382,7 @@ def main() -> int:
         default=Path(__file__).resolve().parents[1] / 'build' / 'allen-major-context',
         help='prepared hash-verified major Allen surfaces (run just setup to prepare)',
     )
-    parser.add_argument('--preset', choices=PRESETS, default='anatomy')
+    parser.add_argument('--preset', choices=PRESETS, default='overlay')
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
     parser.add_argument(
         '--hover',

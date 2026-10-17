@@ -131,11 +131,15 @@ def test_presets_keep_four_panels_view_camera_and_region_overrides(viewer):
     assert viewer.width == 1400 and viewer.height == 1000
     assert viewer.volume is not None and viewer.volume_opacity == 0
     assert viewer.physical_plane is None and not viewer.plane_visible
+    assert (viewer.anatomy_visible, viewer.annotation_visible, viewer.boundaries_visible) == (
+        True, True, True
+    )
     viewer.set_region_opacity(315, 0.35)
     initial_colors = viewer._display_surface_colors().copy()
 
     expected = {
         'anatomy': (True, False, False, 0.0, False),
+        'overlay': (True, True, True, 0.0, False),
         'labels': (False, True, True, 0.0, False),
         'volume-context': (True, True, True, 0.12, False),
         'physical-slice': (True, True, True, 0.0, True),
