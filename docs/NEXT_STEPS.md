@@ -19,13 +19,11 @@ The linked CLI also accepts `--context-root`; absent context assets fail clearly
 Focused review/context tests pass (103 CPU and three native tests), Ruff passes,
 and an inspected offscreen linked capture confirms the coarse context.
 
-Code inspection of the supported native arcball identifies a separate navigation
-policy mismatch: pan displaces the virtual sphere with the original brain pivot,
-and pointer positions outside that sphere are normalized onto its equator.
-Radial drags there can yield zero rotation. Model rotation still uses the original
-origin. Viewport-centered orbit after large pans therefore needs coordinated
-pointer projection and pivot behavior; removing only the pointer-center offset
-is insufficient. This is investigated, not implemented or included in the pin.
+The viewport-centered arcball candidate is committed at `8ed7e84a8` on the local Datoviz branch `fix/arcball-viewport-orbit`, based on the supported scientific revision. Pointer rotation rebases the inspection target to the center ray at its retained depth without a pose jump, keeps the virtual sphere viewport-centered, and preserves the public pure-orientation model matrix. Private navigation translation supplies the corresponding orbit. Camera bases are frozen during a drag; rotation-only links keep gizmos centered, and full/PAN-only links preserve live pose and cumulative target gestures.
+
+The large-pan regression fails on the original engine and passes on the candidate. Focused coverage passes 39/39 with zero skips, including perspective/orthographic cameras, tilted camera poses, repeated pan/zoom/orbit, press/commit/reset continuity, camera-context restoration and live full/partial links. A high Sol 6.1 independent audit identified the partial-link transition cases; regression coverage was strengthened to prove propagation and continued-drag behavior. Both numbered review apps pass bounded three-frame startup with the candidate library and the supported Python facade.
+
+The configured checkout and immutable dependency pin remain unchanged. Interactive rotation quality still requires Linux review. Use an explicit `DATOVIZ_LIBRARY` override pointing to the candidate build when reviewing; the startup report must identify that library. Publication, integration and pin promotion remain pending the user's review. The final native suite passes 1,275/1,275 with zero failures and zero skips; the independent audit reports no remaining blockers. Strict MkDocs and whitespace checks also pass.
 
 ## Published native fixes and supported baseline — October 17 2026
 
