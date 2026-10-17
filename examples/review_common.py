@@ -7,13 +7,33 @@ from pathlib import Path
 
 import numpy as np
 
-from ibl_anatomy import open_volume_pack
+from ibl_anatomy import bundled_surface_catalog, load_surface_catalog, open_volume_pack
 from ibl_datoviz import SampledPlane
+from ibl_datoviz.context import DEFAULT_CONTEXT_LANDMARKS, AtlasContextSurface
 from ibl_datoviz.navigator import SLICE_DISPLAY_AXES, AtlasSliceComposer
 from ibl_datoviz.surface_style import RegionStyle
 
 # Named review orientation; visual acceptance is recorded with the review artifacts.
 RECORDING_CAMERA = (-1.15, -0.20, 2.50)
+
+
+def load_major_context(path):
+    """Read the shared coarse cut offline, verifying each original source mesh."""
+    catalog = bundled_surface_catalog()
+    return catalog, load_surface_catalog(path, catalog)
+
+
+def review_context_surfaces(mesh, catalog, geometries, *, detail='landmarks'):
+    """Use the same verified global-region surfaces in both numbered reviews."""
+    return [
+        AtlasContextSurface.from_geometry(
+            geometry, mesh,
+            color=tuple(bytes.fromhex(member.color_hex.removeprefix('#'))),
+            name=member.name,
+        )
+        for member, geometry in zip(catalog.members, geometries, strict=True)
+        if detail == 'all' or member.asset.source_allen_id in DEFAULT_CONTEXT_LANDMARKS
+    ]
 
 
 def add_review_arguments(parser):

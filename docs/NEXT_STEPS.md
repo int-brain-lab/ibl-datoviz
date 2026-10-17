@@ -9,6 +9,24 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Linked review anatomy and orbit follow-up — October 17 2026
+
+Review app 2 now uses the same six verified global-region context surfaces,
+colors, opacity and recording camera as app 1. Both entry points share the
+context loader and surface-selection helper. The linked slice panels and dense
+region identities remain available for slice navigation and explicit selection.
+The linked CLI also accepts `--context-root`; absent context assets fail clearly.
+Focused review/context tests pass (103 CPU and three native tests), Ruff passes,
+and an inspected offscreen linked capture confirms the coarse context.
+
+Code inspection of the supported native arcball identifies a separate navigation
+policy mismatch: pan displaces the virtual sphere with the original brain pivot,
+and pointer positions outside that sphere are normalized onto its equator.
+Radial drags there can yield zero rotation. Model rotation still uses the original
+origin. Viewport-centered orbit after large pans therefore needs coordinated
+pointer projection and pivot behavior; removing only the pointer-center offset
+is insufficient. This is investigated, not implemented or included in the pin.
+
 ## Published native fixes and supported baseline — October 17 2026
 
 The user approved publication and baseline promotion. This supersedes the local,

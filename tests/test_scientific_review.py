@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from examples import review_common
 from examples import scientific_scene_review as review
 from examples.bwm_probe import FIXTURE, _load_fixture
 from ibl_datoviz import AtlasViewer, SampledPlane
@@ -475,10 +476,10 @@ def test_major_context_loading_delegates_to_hash_verified_shared_catalog(monkeyp
     catalog, geometry = object(), (object(), object())
     calls = []
     monkeypatch.setattr(
-        review.ibl_anatomy, 'bundled_surface_catalog', lambda: catalog, raising=False
+        review_common, 'bundled_surface_catalog', lambda: catalog, raising=False
     )
     monkeypatch.setattr(
-        review.ibl_anatomy,
+        review_common,
         'load_surface_catalog',
         lambda path, source: calls.append((path, source)) or geometry,
         raising=False,

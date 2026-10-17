@@ -16,10 +16,13 @@ from pathlib import Path
 import numpy as np
 
 from examples.review_common import (
+    RECORDING_CAMERA,
     ReviewControls,
     add_review_arguments,
     finish_review,
+    load_major_context,
     load_review_slice,
+    review_context_surfaces,
 )
 from ibl_anatomy import bundled_asset_set, open_volume_pack, verify_materialized_asset_set
 from ibl_datoviz import AtlasCursor, AtlasMesh, LinkedAtlasNavigator, SampledPlaneVisual
@@ -57,7 +60,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
         self._review_error = None
         kwargs.setdefault('width', 1400)
         kwargs.setdefault('height', 1000)
-        kwargs.setdefault('surface_opacity', 0.24)
+        kwargs.setdefault('surface_opacity', 0.18)
         kwargs['render_volume'] = True
         kwargs['volume_opacity'] = 0.0
         kwargs.setdefault('enable_hover', False)
@@ -342,6 +345,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('asset_root', type=Path, help='verified D070 asset-set root')
     parser.add_argument('volume_root', type=Path, help='verified Allen 50 um volume pack')
+    parser.add_argument(
+        '--context-root', type=Path,
+        default=Path(__file__).resolve().parents[1] / 'build' / 'allen-major-context',
+        help='prepared hash-verified major Allen surfaces (run just setup to prepare)',
+    )
     parser.add_argument('--preset', choices=PRESETS, default='anatomy')
     parser.add_argument('--mapping', choices=('allen', 'beryl', 'cosmos'), default='allen')
     parser.add_argument(
@@ -353,11 +361,23 @@ def main() -> int:
     args = parser.parse_args()
     assets = verify_materialized_asset_set(bundled_asset_set(), args.asset_root)
     volumes = open_volume_pack(args.volume_root).load_volumes()
+    try:
+        context_catalog, context_geometry = load_major_context(args.context_root)
+    except (AttributeError, ImportError, FileNotFoundError, ValueError) as error:
+        parser.error(
+            f'Major anatomical context unavailable: {error}. '
+            'Run just setup /path/to/datoviz to prepare the verified surfaces.'
+        )
+    mesh = AtlasMesh.from_geometry(assets.geometry)
     with LinkedAtlasReview(
-        AtlasMesh.from_geometry(assets.geometry),
+        mesh,
         volumes,
         preset=args.preset,
         mapping=args.mapping,
+        anatomy_presentation='major',
+        anatomical_context=review_context_surfaces(mesh, context_catalog, context_geometry),
+        context_opacity=0.04,
+        camera_angles=RECORDING_CAMERA,
         width=args.width,
         height=args.height,
         ui_scale=args.ui_scale,

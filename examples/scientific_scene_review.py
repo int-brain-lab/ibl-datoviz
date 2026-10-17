@@ -11,7 +11,6 @@ from pathlib import Path
 
 import numpy as np
 
-import ibl_anatomy
 from examples.bwm_multiple_insertions import COLORS, DEFAULT_PATHS, WIDTHS, _load_paths
 from examples.bwm_probe import FIXTURE, _load_fixture
 from examples.review_common import (
@@ -19,7 +18,9 @@ from examples.review_common import (
     ReviewControls,
     add_review_arguments,
     finish_review,
+    load_major_context,
     load_review_slice,
+    review_context_surfaces,
 )
 from ibl_datoviz import (
     AtlasViewer,
@@ -28,7 +29,7 @@ from ibl_datoviz import (
     SampledPlane,
     SampledPlaneVisual,
 )
-from ibl_datoviz.context import DEFAULT_CONTEXT_LANDMARKS, AtlasContextSurface
+from ibl_datoviz.context import DEFAULT_CONTEXT_LANDMARKS
 from ibl_datoviz.presentation import scalar_colors
 
 PRESETS = ('atlas', 'single-probe', 'multiple-insertions', 'mixed')
@@ -732,12 +733,6 @@ class ScientificSceneReview(AtlasViewer):
             self.close()
 
 
-def load_major_context(path):
-    """Read the declared coarse cut offline, verifying each original source mesh."""
-    catalog = ibl_anatomy.bundled_surface_catalog()
-    return catalog, ibl_anatomy.load_surface_catalog(path, catalog)
-
-
 def main():
     """Start the fixed-layout native review over verified D070/BWM/Allen inputs."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -797,19 +792,9 @@ def main():
         enable_interaction=True,
         fit_workarea=args.offscreen is None,
     ) as viewer:
-        viewer.set_anatomical_context(
-            [
-                AtlasContextSurface.from_geometry(
-                    geometry,
-                    viewer.mesh_data,
-                    color=tuple(bytes.fromhex(member.color_hex.removeprefix('#'))),
-                    name=member.name,
-                )
-                for member, geometry in zip(context_catalog.members, context_geometry, strict=True)
-                if args.context_detail == 'all'
-                or member.asset.source_allen_id in CONTEXT_LANDMARKS
-            ]
-        )
+        viewer.set_anatomical_context(review_context_surfaces(
+            viewer.mesh_data, context_catalog, context_geometry, detail=args.context_detail,
+        ))
         viewer.configure_review(sites, plane, paths, unavailable_note=note, provenance=provenance)
         viewer.apply_preset(args.preset)
         finish_review(viewer, args, 'Where did we record?')

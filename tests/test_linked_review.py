@@ -325,6 +325,15 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
         ),
     )
     monkeypatch.setattr(review.AtlasMesh, 'from_geometry', lambda value: mesh)
+    context = (object(),)
+    catalog, context_geometry = object(), (object(),)
+    monkeypatch.setattr(
+        review, 'load_major_context', lambda root: (catalog, context_geometry)
+    )
+    monkeypatch.setattr(
+        review, 'review_context_surfaces',
+        lambda actual_mesh, actual_catalog, actual_geometry: context,
+    )
 
     class ReviewStub:
         def __init__(self, actual_mesh, actual_volumes, **kwargs):
@@ -365,6 +374,10 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
         {
             'preset': 'labels',
             'mapping': 'allen',
+            'anatomy_presentation': 'major',
+            'anatomical_context': context,
+            'context_opacity': 0.04,
+            'camera_angles': review.RECORDING_CAMERA,
             'width': 2240,
             'height': 1600,
             'ui_scale': 1.5,
