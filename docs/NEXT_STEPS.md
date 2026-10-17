@@ -9,6 +9,38 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Published native fixes and supported baseline — October 17 2026
+
+The user approved publication and baseline promotion. This supersedes the local,
+unmerged and pin-unchanged status in the historical checkpoints below.
+
+- Datoviz main now contains the RC3 input and buffer-growth fixes at
+  `bdaee98dff2b46bbdf936236bfbb63eb1a11fb40`. Its post-push submodule-reachability
+  workflow passed for that exact commit.
+- Published scientific-3D integration
+  `73d0f0bcdd595d2f76e2cdffcc2dd89c25a56858` merges the approved main changes into
+  `rc4/scientific-3d`, preserving its APIs and both sets of tests through three
+  test-only merge conflicts. Its native full suite passes 1,270/1,270 with zero
+  skips; regenerated bindings and ABI validation pass, including 210 records.
+- `pyproject.toml` and `uv.lock` now pin that exact published scientific revision.
+  The configured native checkout was rebuilt at the same revision, and ordinary
+  `just doctor --strict` passes. The locked source package installs successfully
+  from its public Git revision; the anatomy pin remains unchanged.
+- Full IBL validation passes on both Python 3.11 and 3.13: 1,087 tests, with one
+  explicitly unmaterialized registered-asset-set skip per run. Strict numbered
+  review startup, explicit exact-contour workspace startup, Ruff, strict MkDocs,
+  and whitespace checks pass. An actual XTest run on the promoted library cycles
+  Allen/Beryl/Cosmos three times without runtime execution errors; hover, AP
+  660→658→626 wheel/burst steps, accepted contours and six fixed buffers pass.
+
+Run `just review all --strict --ui-scale 1.5` from a desktop terminal for the
+pending interactive Linux review; close app 1 to advance to app 2. For exact
+contour review, use the explicit asset invocation in `docs/review-apps.md`, adding
+`--strict` before its forwarded arguments and omitting the bounded frame limit.
+Automated startup does not establish interaction quality. Physical macOS/Windows
+rendering and input remain unverified; no release artifact is approved by this
+baseline promotion. Continue implementation on `feature/datoviz-v04`.
+
 ## Mapping buffer-growth error fixed locally — October 17 2026
 
 This supersedes the unresolved mapping error in the input-only checkpoint below.
