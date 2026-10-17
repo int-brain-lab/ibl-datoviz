@@ -20,6 +20,16 @@ indexes and stable ranking positions are built once. Cache storage is bounded pe
 model rather than accumulating query history. The pinned conformance bundle and
 new mutation/copy/ranking regressions pass (20 model tests).
 
+The GUI retains projection, expansion, annotation identity and selection
+preparation separately from successfully uploaded native state. Both pre-draw and
+post-input upload boundaries remain; partial native failures still invalidate
+applied-state knowledge and restore the previous presentation. Annotation keys
+preserve signed zero and normalize missing/nonfinite values. Regional data is
+refreshed at existing set/clear/mapping transactions instead of every sidebar
+frame. New regressions cover unchanged-frame preparation reuse, data replacement,
+mapping, clearing, annotation failure, rollback and retry. A high-effort Sol 6.1
+read-only audit found no correctness blockers.
+
 ## Direct slice region selection — October 17 2026
 
 Linked 2-D slices now distinguish left-click (move crosshair without changing region selection) from right-click (select the signed region under the pointer without moving the crosshair or resetting zoom). Void clears region selection; points outside the displayed image do nothing. Selection uses the active mapping and existing selection controller, preserving tree/table synchronization and leaving auto-slice navigation unrequested. With pending lazy raster or exact-contour updates, it uses the displayed section, and rejects a displayed section from an obsolete mapping. Left-double-click resets slice zoom; right-double-click does not. Existing 3-D rotate/pan input is unchanged. The review toolbar and interaction documentation explain the controls.

@@ -1970,7 +1970,6 @@ class AtlasViewer:
             self._sidebar.scene(gui)
             region_table_changed, table_changed = self._draw_data_tables_gui(gui)
             candidate = self._selector_gui.candidate()
-            candidate.values = self._selector_values(candidate)
             self._selector_gui.value_name = (
                 self.region_data.value_name if self.region_data is not None else 'Value'
             )

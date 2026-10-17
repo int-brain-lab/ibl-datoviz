@@ -7,7 +7,13 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_region_catalog, open_volume_pack
-from ibl_datoviz import AtlasMesh, AtlasTreeModel, AtlasViewer, LinkedAtlasNavigator
+from ibl_datoviz import (
+    AtlasMesh,
+    AtlasRegionValues,
+    AtlasTreeModel,
+    AtlasViewer,
+    LinkedAtlasNavigator,
+)
 from ibl_datoviz.gui_data import GuiWidget
 from ibl_datoviz.ontology import ROOT_PARENT, encode_region_key
 from ibl_datoviz.region_selector import RegionSelector, SelectorRegion
@@ -174,6 +180,129 @@ def test_stable_inventory_no_idle_uploads_and_zero_match_does_not_request_focus(
     assert viewer._selector_model.visible_rows() == ()
     assert not any(call[0] == 'tree_focus' for call in fake.calls)
     assert sum(call[0] == 'tree_rows' for call in fake.calls) == 1
+
+
+def test_unchanged_frames_reuse_preparation_without_refreshing_values(viewer, monkeypatch):
+    viewer, fake = viewer
+    adapter = viewer._selector_gui
+    built = []
+    prepare = adapter._prepare
+
+    def track(part, key, build):
+        def counted():
+            built.append(part)
+            return build()
+
+        return prepare(part, key, counted)
+
+    monkeypatch.setattr(adapter, '_prepare', track)
+
+    def unexpected_refresh(_model):
+        pytest.fail('frame must not reconstruct regional values')
+
+    monkeypatch.setattr(viewer, '_selector_values', unexpected_refresh)
+    for _ in range(3):
+        viewer._gui_callback(None, None, None)
+    assert built == []
+    fake.events = [event(fake, 'ROW_CLICKED', -101)]
+    viewer._gui_callback(None, None, None)
+    assert built == ['selection']
+    fake.events = [event(fake, 'HOVER_CHANGED', -102, detail=1)]
+    viewer._gui_callback(None, None, None)
+    assert built == ['selection']
+
+
+def test_annotation_keys_preserve_signed_zero_missing_and_value_name(viewer):
+    viewer, fake = viewer
+    adapter = viewer._selector_gui
+
+    def update(values, name='Value'):
+        candidate = adapter.candidate()
+        candidate.values = values
+        adapter.value_name = name
+        adapter.commit(candidate)
+        return [call[1] for call in fake.calls if call[0] == 'tree_annotations'][-1]
+
+    positive = update({'-101': 0.0})
+    assert positive[1]['value'] == b'0.000'
+    negative = update({'-101': -0.0})
+    assert negative[1]['value'] == b'-0.000'
+    missing = update({'unknown': float('nan')})
+    assert missing[1]['value'] == '—'.encode()
+    count = sum(call[0] == 'tree_annotations' for call in fake.calls)
+    update({'unknown': float('nan')})
+    assert sum(call[0] == 'tree_annotations' for call in fake.calls) == count
+    renamed = update({'unknown': None}, 'Rate')
+    assert b'Rate: missing' in renamed[1]['tooltip']
+    assert update({})[1]['value'] == b''
+
+
+def test_warm_preparation_still_reuploads_after_partial_native_failure(viewer, monkeypatch):
+    viewer, fake = viewer
+    adapter = viewer._selector_gui
+    previous = adapter.model
+    original = fake.dvz_gui_tree_set_annotations
+    failures = [True]
+
+    def fail_once(*args):
+        result = original(*args)
+        if failures:
+            failures.pop()
+            return -1
+        return result
+
+    monkeypatch.setattr(fake, 'dvz_gui_tree_set_annotations', fail_once)
+    candidate = adapter.candidate()
+    candidate.values['-101'] = 2.0
+    with pytest.raises(RuntimeError, match='annotations'):
+        adapter.commit(candidate)
+    assert adapter.model is previous
+    assert [call[1] for call in fake.calls if call[0] == 'tree_annotations'][-1][1]['value'] == b''
+    adapter.commit(candidate)
+    assert [call[1] for call in fake.calls if call[0] == 'tree_annotations'][-1][1][
+        'value'
+    ] == b'2.000'
+
+
+def test_data_transactions_refresh_selector_without_frame_recomputation(monkeypatch):
+    fake = InputDatoviz()
+    with AtlasViewer(
+        AtlasMesh.from_pack(FIXTURE), catalog=open_region_catalog(REGIONS), datoviz=fake
+    ) as viewer:
+        viewer._replace_region_tree()
+        data = AtlasRegionValues.from_arrays([-997, -8], [1.0, 2.5], value_name='Rate')
+        viewer.set_region_data(data, mapping_reduction='weighted_mean')
+        model = viewer._selector_model
+        assert model.values == viewer._selector_values(model)
+        assert model.values
+        assert viewer._selector_gui.value_name == 'Rate'
+        annotations = [call[1] for call in fake.calls if call[0] == 'tree_annotations'][-1]
+        original = fake.dvz_gui_tree_set_annotations
+        failures = [True]
+
+        def fail_once(*args):
+            result = original(*args)
+            if failures:
+                failures.pop()
+                return -1
+            return result
+
+        monkeypatch.setattr(fake, 'dvz_gui_tree_set_annotations', fail_once)
+        replacement = AtlasRegionValues.from_arrays([-997, -8], [4.0, 5.0], value_name='New')
+        with pytest.raises(RuntimeError, match='annotations'):
+            viewer.set_region_data(replacement, mapping_reduction='weighted_mean')
+        assert viewer._selector_model is model
+        assert viewer.region_data is data
+        assert viewer._selector_gui.value_name == 'Rate'
+        assert [call[1] for call in fake.calls if call[0] == 'tree_annotations'][-1] == annotations
+        viewer.set_region_data(replacement, mapping_reduction='weighted_mean')
+        assert viewer._selector_model.values == viewer._selector_values(viewer._selector_model)
+        assert viewer._selector_gui.value_name == 'New'
+        viewer.set_mapping('beryl')
+        assert viewer._selector_model.values == viewer._selector_values(viewer._selector_model)
+        viewer.set_region_data(None, mapping_reduction='weighted_mean')
+        assert viewer._selector_model.values == {}
+        assert viewer._selector_gui.value_name == 'Value'
 
 
 @pytest.mark.parametrize(

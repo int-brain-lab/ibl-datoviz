@@ -64,6 +64,9 @@ class RegionSelectorGui:
         self.model = model
         self.value_name = value_name
         self._uploaded = {}
+        # Pure preparation survives native setter failures. Keep only the last
+        # entry per component; this is independent of the destination's state.
+        self._prepared = {}
         self.upload(model)
 
     def candidate(self):
@@ -73,7 +76,7 @@ class RegionSelectorGui:
     @staticmethod
     def sync_selection(model, region_ids, *, preserve_anchor=False):
         """Project signed host identities onto canonical browser IDs."""
-        available = {abs(region.atlas_id): region.id for region in model.regions}
+        available = model.atlas_id_to_region_id
         model.set_selected(
             [available[abs(region_id)] for region_id in region_ids if abs(region_id) in available],
             preserve_anchor=preserve_anchor,
@@ -90,18 +93,29 @@ class RegionSelectorGui:
             raise
         self._uploaded[part] = signature
 
+    def _prepare(self, part, key, build):
+        cached = self._prepared.get(part)
+        if cached is None or cached[0] != key:
+            cached = (key, build())
+            self._prepared[part] = cached
+        return cached[1]
+
     def upload(self, model):
         """Upload changed copied data without stealing focus from GUI controls."""
         dvz, handle = self.widget.dvz, self.widget.handle
         rows = model.visible_rows()
-        projection = tuple(
-            (
-                row.region.atlas_id,
-                row.depth,
-                row.branch,
-                row.region.mapping_member and not row.branch,
-            )
-            for row in rows
+        projection = self._prepare(
+            'projection',
+            (rows,),
+            lambda: tuple(
+                (
+                    row.region.atlas_id,
+                    row.depth,
+                    row.branch,
+                    row.region.mapping_member and not row.branch,
+                )
+                for row in rows
+            ),
         )
         self._setter(
             'projection',
@@ -114,37 +128,49 @@ class RegionSelectorGui:
                 np.array([row[3] for row in projection], dtype=np.bool_),
             ),
         )
-        expanded = tuple(
-            encode_region_key(row.region.atlas_id)
-            for row in rows
-            if row.branch and row.region.id not in model.active_collapsed
+        expanded = self._prepare(
+            'expansion',
+            (rows, frozenset(model.active_collapsed)),
+            lambda: tuple(
+                encode_region_key(row.region.atlas_id)
+                for row in rows
+                if row.branch and row.region.id not in model.active_collapsed
+            ),
         )
         self._setter(
             'expansion',
             expanded,
             lambda: dvz.dvz_gui_tree_set_expanded(handle, np.array(expanded, dtype=np.uint64)),
         )
-        # Normalize NaN because tuple equality must not force redundant native uploads.
-        values = tuple(
-            sorted(
-                (key, value if value is not None and math.isfinite(value) else None)
-                for key, value in model.values.items()
-            )
+        # Normalize nonfinite values, but preserve signed zero: annotations
+        # distinguish 0.000 from -0.000. Input dictionaries remain mutable.
+        values = frozenset(
+            (key, float(value).hex() if value is not None and math.isfinite(value) else None)
+            for key, value in model.values.items()
         )
-        signature = (tuple(row.region.id for row in rows), model.query, values, self.value_name)
+        signature = self._prepare(
+            'annotations',
+            (rows, model.query, values, self.value_name),
+            lambda: (tuple(row.region.id for row in rows), model.query, values, self.value_name),
+        )
         self._setter('annotations', signature, lambda: self._annotations(model, rows))
-        selected = tuple(
-            encode_region_key(model.by_id[key].atlas_id)
-            for key in model.selected
-            if key in model.by_id
+        selected = self._prepare(
+            'selection',
+            (model.regions, tuple(model.selected)),
+            lambda: tuple(
+                encode_region_key(model.by_id[key].atlas_id)
+                for key in model.selected
+                if key in model.by_id
+            ),
         )
         self._setter(
             'selection',
             selected,
             lambda: dvz.dvz_gui_tree_set_selection(handle, np.array(selected, dtype=np.uint64)),
         )
-        visible = {row.region.id for row in rows}
-        if getattr(model, '_focus_requested', False) and model.focus in visible:
+        if getattr(model, '_focus_requested', False) and any(
+            row.region.id == model.focus for row in rows
+        ):
             self.widget.check(
                 dvz.dvz_gui_tree_set_focus(
                     handle, encode_region_key(model.by_id[model.focus].atlas_id)

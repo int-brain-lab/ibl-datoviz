@@ -1021,6 +1021,8 @@ def test_region_values_color_surface_and_follow_mapping(mesh):
         viewer._replace_region_table()
         row_call = [call for call in fake.calls if call[0] == 'table_rows'][-1]
         np.testing.assert_array_equal(row_call[1].view(np.int64), [-997, -8])
+        assert viewer._selector_model.values == viewer._selector_values(viewer._selector_model)
+        assert viewer._selector_gui.value_name == 'Mean FR (Hz)'
         fake.table_selection = [encode_region_key(-8)]
         viewer._sync_selection_highlight(region_table_changed=True)
         assert viewer.selected_region_ids() == (-8,)
@@ -1028,6 +1030,10 @@ def test_region_values_color_surface_and_follow_mapping(mesh):
         viewer.set_mapping('beryl')
         row_call = [call for call in fake.calls if call[0] == 'table_rows'][-1]
         np.testing.assert_array_equal(row_call[1].view(np.int64), [997])
+        assert viewer._selector_model.values == viewer._selector_values(viewer._selector_model)
+        viewer.set_region_data(None, mapping_reduction='weighted_mean')
+        assert viewer._selector_model.values == {}
+        assert viewer._selector_gui.value_name == 'Value'
 
     with (
         AtlasViewer(mesh, datoviz=FakeDatoviz()) as viewer,
