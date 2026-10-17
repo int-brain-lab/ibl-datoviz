@@ -30,6 +30,35 @@ frame. New regressions cover unchanged-frame preparation reuse, data replacement
 mapping, clearing, annotation failure, rollback and retry. A high-effort Sol 6.1
 read-only audit found no correctness blockers.
 
+Validation passes against the unchanged strict baseline `73d0f0bc`: 1,101 tests
+passed, with two skips (the optional image-plane-pan API absent from that baseline,
+and the registered 10 um asset test without its explicit asset root). Strict doctor,
+Ruff, strict MkDocs and three-frame startup/cleanup of both numbered apps pass.
+Manual interaction acceptance remains deferred.
+
+A fresh paired actual-X11 public-router replay used the same native Debug library
+(SHA256 `6c61683b83630d5888b619464b7e474b71b3b2253fc889cd00af21a66dbbfd0d`),
+Python 3.11, 2240×1600, UI scale 1.5, D070/full 50 um slices and six context
+surfaces, 3×240 frames per case. The pre-change package snapshot averaged 9.565 ms
+per frame (9.840/9.478/9.376); retained preparation averaged 8.367 ms
+(8.618/8.603/7.881), a 12.5% frame-time reduction in this bounded run. Every run
+verified a changed arcball model. These are workload-specific host-frame costs,
+not portable FPS or input-to-photon claims. Separate 180-frame cProfile runs
+recorded 364 upload calls in both cases: cumulative upload Python time fell from
+930 ms to 4.1 ms, while visible-row derivation fell from 765 ms to 1.1 ms and
+frame-time regional-value preparation disappeared. Profiler timings include
+instrumentation overhead and are not the wall-time benchmark. Raw reports,
+profiles, the isolated pre-change package and comparison receipt are ignored
+under `build/review2-rotation/` and `build/selector-cache-baseline/`.
+
+A separate read-only native exploration confirmed that volume transfer-LUT
+emission currently lacks an unchanged-input gate, and identified broad waits in
+the strict GUI viewport resolver and command submission helper. Follow-up belongs
+in Datoviz: retain LUT realization per consumer/resource generation and replace
+broad waits with precise completion dependencies while preserving staging and
+sampled-image lifetimes. Do not merely gate on opacity or remove waits. No native
+code, source revision, build or dependency pin changed in this optimization.
+
 ## Direct slice region selection — October 17 2026
 
 Linked 2-D slices now distinguish left-click (move crosshair without changing region selection) from right-click (select the signed region under the pointer without moving the crosshair or resetting zoom). Void clears region selection; points outside the displayed image do nothing. Selection uses the active mapping and existing selection controller, preserving tree/table synchronization and leaving auto-slice navigation unrequested. With pending lazy raster or exact-contour updates, it uses the displayed section, and rejects a displayed section from an obsolete mapping. Left-double-click resets slice zoom; right-double-click does not. Existing 3-D rotate/pan input is unchanged. The review toolbar and interaction documentation explain the controls.
