@@ -9,6 +9,33 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Mapping buffer-growth error fixed locally — October 17 2026
+
+This supersedes the unresolved mapping error in the input-only checkpoint below.
+Datoviz commit `cb4859066`, on `fix/input-router-gesture-ownership`, fixes growth
+of buffers defined by a prior successful stream but never used by a draw. The
+atlas exposed this through retained UV buffers on untextured meshes. Duplicate
+unused definitions within one batch, external-buffer ownership, pending work,
+readbacks and dependent-binding restrictions remain protected. Native and
+WebGPU implementations share the revised contract; public API layouts are
+unchanged.
+
+- Native full suite: 1,231/1,231 passed, zero skips. All six new CPU lifecycle
+  regressions pass Valgrind without leaks/errors. The actual native mesh
+  regression and WebGPU regression failed before the fix and pass afterward.
+- Specification checks and WebGPU Node smoke pass, including checked GPU-error
+  scopes and packet-set failures. Independent high Sol 6.1 review found no
+  remaining P1/P2; Node smoke does not establish actual browser GPU rendering.
+- The isolated supported f77 source plus both fixes passes 1,087 IBL tests on
+  Python 3.11, with the optional registered-asset-set skip. Actual XTest mapping
+  cycles through Allen/Beryl/Cosmos three times without any runtime execution
+  errors; hover, AP 660→658→626 wheel/burst steps, accepted contours and six
+  fixed polygon buffers all pass.
+
+Both fixes remain local and unmerged. The supported binary hash, review
+configuration and package pin remain unchanged; manual platform review and
+exact baseline promotion remain separate gates. No client workaround was added.
+
 ## Native input correction validated locally — October 17 2026
 
 The RC3 fix is committed in Datoviz as `3690cc8f8` on
