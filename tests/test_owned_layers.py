@@ -201,7 +201,7 @@ def test_capability_and_mutation_guard(registry):
 
 
 @pytest.fixture
-def native_registry():
+def native_registry(native_datoviz):
     import datoviz as dvz  # noqa: PLC0415
 
     scene = dvz.dvz_scene()

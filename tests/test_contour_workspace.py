@@ -43,7 +43,7 @@ class ExactSource:
 
 
 @pytest.fixture
-def viewer():
+def viewer(native_datoviz):
     with AtlasViewer(
         atlas=AtlasMesh.from_pack(MESH),
         layout='linked',
@@ -115,7 +115,9 @@ def test_hover_and_click_use_displayed_section_while_new_request_is_pending(view
     app.mapping = 'allen'
 
 
-def test_raster_right_click_uses_displayed_section_during_pending_navigation(monkeypatch):
+def test_raster_right_click_uses_displayed_section_during_pending_navigation(
+    monkeypatch, native_datoviz
+):
     with AtlasViewer(
         atlas=AtlasMesh.from_pack(MESH), layout='linked', slice_source=ExactSource(),
         render_volume=False,

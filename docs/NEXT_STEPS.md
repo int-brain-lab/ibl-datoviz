@@ -9,6 +9,12 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Source-only CI native-test prerequisites — October 18 2026
+
+The published `8e5adcb` CI run exposed unguarded native integration fixtures: the locked Datoviz source package imports successfully but has no shared library on the CPU-only runner. Native-dependent fixtures and individual tests now request an explicit native prerequisite; pure tests in the same modules continue to run. Missing-library errors skip only when no `DATOVIZ_LIBRARY` is configured. Explicit-library failures and unrelated runtime errors still fail, covered by three focused policy regressions. No dependency pin or native setup/build policy changes.
+
+The source-only full suite passes 1,015 tests with 91 reported skips. Ruff, strict MkDocs, the isolated wheel build/install check and whitespace checks pass. Gallery smoke takes CI's existing expected missing-native warning/skip route. These skips do not establish native correctness; candidate native tests remain a separate validation lane. Remote CI confirmation awaits publication of this fix.
+
 ## Scientific candidate synchronization integration — October 18 2026
 
 Native `fix/arcball-viewport-orbit` integrates the validated main synchronization fixes through merge `84f65c0ff`; `eb0b6794a` adds a combined indexed-state/LUT failure-and-retry regression. The merge preserves the candidate's navigation, fragment coverage and indexed-state APIs. An independent high-effort Sol 6.1 integration audit found no blocker. The configured baseline and immutable dependency pin remain unchanged; this is candidate evidence, not baseline promotion or manual interaction acceptance.

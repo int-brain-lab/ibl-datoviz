@@ -232,7 +232,7 @@ def test_removed_and_foreign_layers_rejected_and_close_is_idempotent(context):
     assert sum(call[0] == 'table_destroy' for call in viewer.dvz.calls) == 2
 
 
-def test_native_widget_keeps_full_rows_and_exact_string_selection():
+def test_native_widget_keeps_full_rows_and_exact_string_selection(native_datoviz):
     viewer = SimpleNamespace(dvz=dvz, layers=[], selection=Selection())
     tables = ObservationTables(viewer)
     first = layer(viewer)

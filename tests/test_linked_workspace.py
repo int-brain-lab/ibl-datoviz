@@ -12,7 +12,7 @@ from tests.test_volume_free_navigator import MESH, VOLUME
 
 
 @pytest.fixture
-def linked():
+def linked(native_datoviz):
     source = open_volume_pack(VOLUME).load_volumes()
     with AtlasViewer(
         atlas=AtlasMesh.from_pack(MESH),
@@ -118,7 +118,7 @@ def test_cursor_thread_and_subscription_lifetimes(linked):
         _ = linked.slices.position
 
 
-def test_3d_viewer_does_not_require_or_load_slice_data():
+def test_3d_viewer_does_not_require_or_load_slice_data(native_datoviz):
     with AtlasViewer(atlas=AtlasMesh.from_pack(MESH)) as app:
         assert not app.slices.available
         with pytest.raises(ValueError, match='linked'):

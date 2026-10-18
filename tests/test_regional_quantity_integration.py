@@ -13,7 +13,7 @@ from tests.test_atlas import FIXTURE
 
 
 @pytest.fixture
-def app():
+def app(native_datoviz):
     catalog = open_region_catalog(FIXTURES / 'linked-atlas-v1' / 'volume-pack' / 'regions.json')
     with AtlasViewer(
         atlas=AtlasMesh.from_pack(FIXTURE),
