@@ -9,6 +9,12 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Zero-opacity linked volume visibility — October 19 2026
+
+The linked navigator now hides its retained volume draw at zero opacity and restores visibility at positive opacity, including initialization and transactional rollback after a partially failing setter. Data and visual handles remain retained. The zero-opacity D070/full 50 um capture is pixel-identical to the previous visible-but-transparent volume capture. A private-display 240-frame replay records a 1.67 ms median source GPU render span, compared with 1.82–1.84 ms in the prior full sweep; these separate runs establish removed volume work, not a matched end-to-end speedup or desktop latency improvement. Raw profiles and captures remain ignored under `build/review2-headless/`.
+
+Focused controller/native rendering tests pass (24 tests), and the full configured-baseline suite passes (1,106 tests, two existing skips: the optional image-plane-pan API absent from the baseline and optional registered-asset coverage). Ruff and formatting checks pass. The configured native baseline and immutable pin remain unchanged. Native panel planning/render reuse is being investigated separately; it is not enabled by this change.
+
 ## Opt-in native nonblocking viewport candidate — October 18 2026
 
 Datoviz scientific candidate `2644ca68e` implements `DVZ_GUI_VIEWPORT_FLAGS_NONBLOCKING`; strict same-frame presentation remains the default. Three lazy canvas-owned targets retain a completed image while newer source work runs. Source and host timeline ownership, display pins, resize generations and immutable per-slot descriptors protect reuse and retirement. Scheduling now follows source/input demand and pending completions; visible idle viewports stop redrawing. Borrowed GPU uploads, completed-command resource retirement, stable logical slot scopes, post-submit queries, and failed-submit re-emission preserve correctness under overlap. A high-effort Sol 6.1 audit signed off after a negative-control rendered-pixel regression confirmed the failed-submit retry fix.

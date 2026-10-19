@@ -1043,6 +1043,10 @@ class LinkedAtlasNavigator(AtlasViewer):
             self.dvz.dvz_volume_set_opacity(self.volume, self.volume_opacity), 'volume opacity'
         )
         self._check(
+            self.dvz.dvz_visual_set_visible(self.volume, self.volume_opacity > 0),
+            'volume visibility',
+        )
+        self._check(
             self.dvz.dvz_visual_set_alpha_mode(self.volume, self.dvz.DVZ_ALPHA_BLENDED),
             'volume alpha mode',
         )
@@ -1713,6 +1717,9 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._check(
                 self.dvz.dvz_volume_set_opacity(self.volume, float(opacity)), 'volume opacity'
             )
+            self._check(
+                self.dvz.dvz_visual_set_visible(self.volume, opacity > 0), 'volume visibility'
+            )
             self.volume_opacity = float(opacity)
             self._volume_opacity_control.value = float(opacity)
             self._update_surface_alpha_mode()
@@ -1722,6 +1729,10 @@ class LinkedAtlasNavigator(AtlasViewer):
             try:
                 self._check(
                     self.dvz.dvz_volume_set_opacity(self.volume, previous), 'volume rollback'
+                )
+                self._check(
+                    self.dvz.dvz_visual_set_visible(self.volume, previous > 0),
+                    'volume visibility rollback',
                 )
                 self._check(
                     self.dvz.dvz_visual_set_alpha_mode(self.mesh, mode), 'surface alpha rollback'

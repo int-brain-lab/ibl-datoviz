@@ -74,6 +74,14 @@ def test_native_linked_review_retains_all_four_panels_while_updating_layers():
             panels = tuple(viewer.slice_panels.values())
             handles = (viewer.scene, viewer.figure, viewer.panel, viewer.app, viewer.view, *panels)
             baseline = render(viewer)
+            # Drawing a zero-opacity volume must not change the hidden-volume result.
+            assert viewer.volume_opacity == 0
+            assert viewer.dvz.dvz_visual_set_visible(viewer.volume, True) == 0
+            np.testing.assert_array_equal(render(viewer), baseline)
+            viewer.set_volume_opacity(0.1)
+            render(viewer)
+            viewer.set_volume_opacity(0)
+            np.testing.assert_array_equal(render(viewer), baseline)
             for preset in ('labels', 'physical-slice', 'volume-context', 'anatomy', 'overlay'):
                 viewer.apply_preset(preset)
                 pixels = render(viewer)

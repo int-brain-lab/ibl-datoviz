@@ -132,7 +132,9 @@ def test_presets_keep_four_panels_view_camera_and_region_overrides(viewer):
     assert viewer.volume is not None and viewer.volume_opacity == 0
     assert viewer.physical_plane is None and not viewer.plane_visible
     assert (viewer.anatomy_visible, viewer.annotation_visible, viewer.boundaries_visible) == (
-        True, True, True
+        True,
+        True,
+        True,
     )
     viewer.set_region_opacity(315, 0.35)
     initial_colors = viewer._display_surface_colors().copy()
@@ -228,6 +230,35 @@ def test_mode_replacement_and_volume_toggles_keep_native_layout(viewer):
     viewer.set_physical_plane(True)
     assert viewer.plane_visible and viewer.volume_opacity == 0
     assert all(before is after for before, after in zip(original, handles(viewer), strict=True))
+
+
+@pytest.mark.parametrize('previous, requested', [(0.0, 0.2), (0.2, 0.0)])
+def test_volume_visibility_tracks_opacity_and_rolls_back_partial_failure(
+    viewer, monkeypatch, previous, requested
+):
+    viewer.set_volume_opacity(previous)
+    original = viewer.dvz.dvz_visual_set_visible
+    visibility = previous > 0
+    failed = False
+
+    def fail_once(visual, visible):
+        nonlocal visibility, failed
+        if visual is viewer.volume:
+            visibility = bool(visible)
+            if not failed:
+                failed = True
+                return -1
+        return original(visual, visible)
+
+    monkeypatch.setattr(viewer.dvz, 'dvz_visual_set_visible', fail_once)
+    with pytest.raises(RuntimeError, match='volume visibility'):
+        viewer.set_volume_opacity(requested)
+    assert visibility is (previous > 0)
+    assert viewer.volume_opacity == previous
+    assert viewer._volume_opacity_control.value == pytest.approx(previous)
+    viewer.set_volume_opacity(requested)
+    assert visibility is (requested > 0)
+    assert viewer.volume_opacity == requested
 
 
 def test_plane_preparation_failure_restores_configuration_and_existing_payload(
@@ -357,11 +388,10 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
     monkeypatch.setattr(review.AtlasMesh, 'from_geometry', lambda value: mesh)
     context = (object(),)
     catalog, context_geometry = object(), (object(),)
+    monkeypatch.setattr(review, 'load_major_context', lambda root: (catalog, context_geometry))
     monkeypatch.setattr(
-        review, 'load_major_context', lambda root: (catalog, context_geometry)
-    )
-    monkeypatch.setattr(
-        review, 'review_context_surfaces',
+        review,
+        'review_context_surfaces',
         lambda actual_mesh, actual_catalog, actual_geometry: context,
     )
 
