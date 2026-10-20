@@ -9,6 +9,10 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Interaction replay benchmark proposal — October 20 2026
+
+Added the proposed IBL fixture, reset, asynchronous readiness, checkpoint, result and scenario-catalog contract in [Interaction replay benchmark](INTERACTION_REPLAY_BENCHMARK.md). The shared W3C-aligned observation format and player contract remain in the companion local Datoviz proposal; WebDriver Actions is separate interchange. This is a spec-only draft, not an implemented benchmark or release gate, and the detailed shared semantics require review before implementation.
+
 ## Interaction CPU profiling and focused optimizations — October 20 2026
 
 The canonical atlas display transform is prepared once per mesh from the complete source coordinates. Source and display coordinates retain immutable owned byte storage; replacing geometry prepares a new center, while private render compaction cannot change the canonical normalization. Cursor and crosshair updates acknowledge only successful native writes and skip unchanged geometry. Selection-sensitive slice payloads still receive new revisions; failed partial writes force geometry restoration on rollback.

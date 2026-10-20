@@ -62,6 +62,7 @@ nav:
       - Volume-free navigator: api/volume-free.md
   - Development:
       - Audit follow up: NEXT_STEPS.md
+      - Interaction replay benchmark: INTERACTION_REPLAY_BENCHMARK.md
       - Contour performance: CONTOUR_PERFORMANCE.md
       - Guide: development.md
       - Real-data example roadmap: REAL_DATA_EXAMPLE_ROADMAP.md
