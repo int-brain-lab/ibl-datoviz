@@ -122,6 +122,7 @@ def test_panel_rects_use_alignment_safe_native_getters():
 def test_fixture_warmup_requests_each_frame_before_layout_capture():
     requests = []
     steps = []
+    outcomes = iter([0, 1] * review_common.INPUT_FIXTURE_WARMUP_FRAMES)
 
     class Readiness:
         def check(self):
@@ -130,7 +131,7 @@ def test_fixture_warmup_requests_each_frame_before_layout_capture():
     viewer = SimpleNamespace(
         dvz=SimpleNamespace(
             dvz_view_request_frame=lambda view: requests.append(view) or 0,
-            dvz_app_step=lambda app, timeout: steps.append((app, timeout)) or 1,
+            dvz_app_step=lambda app, timeout: steps.append((app, timeout)) or next(outcomes),
         ),
         app='app',
         view='view',
@@ -139,7 +140,37 @@ def test_fixture_warmup_requests_each_frame_before_layout_capture():
         viewer, Readiness(), warmup_frames=review_common.INPUT_FIXTURE_WARMUP_FRAMES
     )
     assert len(requests) == review_common.INPUT_FIXTURE_WARMUP_FRAMES == 8
-    assert len(steps) == 8
+    assert len(steps) == 16
+
+
+def test_fixture_warmup_fails_on_retained_callback_error():
+    class Readiness:
+        def check(self):
+            return SimpleNamespace(status='ready')
+
+    viewer = SimpleNamespace(
+        _gui_callback_error=RuntimeError('GUI draw failed'),
+        dvz=SimpleNamespace(
+            dvz_view_request_frame=lambda _view: 0,
+            dvz_app_step=lambda _app, _timeout: 1,
+        ),
+        app='app',
+        view='view',
+    )
+    with pytest.raises(RuntimeError, match='gui_callback failed during fixture setup'):
+        review_common._settle_linked_readiness(viewer, Readiness(), warmup_frames=1)
+
+
+def test_fixture_preflight_rejects_transient_sidebar_layout():
+    viewer = SimpleNamespace(
+        width=800,
+        height=600,
+        sidebar_width=280,
+        ui_scale=1.0,
+        _sidebar=SimpleNamespace(sidebar_rect=(0, 0, 48, 59)),
+    )
+    with pytest.raises(RuntimeError, match='sidebar layout did not stabilize'):
+        review_common._fixture_preflight(viewer)
 
 
 def test_review_arguments_and_validation_preserve_normal_path(tmp_path):

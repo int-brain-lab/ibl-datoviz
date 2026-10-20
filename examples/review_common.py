@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import time
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -132,6 +133,7 @@ def _input_runner(viewer, args, input_replay, input_trace, *, title, app_id, pre
             raise RuntimeError(
                 f'linked review is not ready at input boundary: {baseline.to_dict()}'
             )
+        _fixture_preflight(viewer)
         fixture = ReviewFixture.capture(
             viewer,
             fixture_id='ibl-datoviz-linked-review-v1',
@@ -206,18 +208,54 @@ def _settle_linked_readiness(viewer, readiness, *, pump=None, warmup_frames=0):
             outcome = app_step(viewer.app, 0.01)
             if outcome < 0:
                 raise RuntimeError(f'Datoviz owner-thread app step failed: {outcome}')
+            return outcome
 
+    warmup_deadline = time.monotonic() + 30.0
     for _ in range(warmup_frames):
         request_frame = getattr(viewer.dvz, 'dvz_view_request_frame', None)
         if not callable(request_frame):
             raise RuntimeError('input replay requires Datoviz dvz_view_request_frame support')
         if request_frame(viewer.view) != 0:
             raise RuntimeError('could not request linked review fixture warmup frame')
-        pump()
+        while True:
+            _raise_fixture_callback_error(viewer)
+            outcome = pump()
+            if outcome is not None and outcome > 0:
+                break
+            if outcome is not None and outcome < 0:
+                raise RuntimeError(f'Datoviz warmup frame failed or stopped: {outcome}')
+            if time.monotonic() >= warmup_deadline:
+                raise TimeoutError('Datoviz did not render a requested fixture warmup frame')
     baseline = readiness.check()
     if baseline.status == 'pending':
         return readiness.wait(timeout=10.0, pump=pump)
     return baseline
+
+
+def _raise_fixture_callback_error(viewer):
+    """Surface errors retained by native callbacks before a trace is accepted."""
+    for name in ('_gui_callback_error', '_slice_error', '_review_error'):
+        error = getattr(viewer, name, None)
+        if error:
+            raise RuntimeError(f'linked review {name[1:-6]} failed during fixture setup: {error}')
+    controls = getattr(viewer, 'review_controls', None)
+    error = getattr(controls, 'error', None)
+    if error:
+        raise RuntimeError(f'linked review controls failed during fixture setup: {error}')
+
+
+def _fixture_preflight(viewer):
+    """Reject transient/failed GUI layout rather than recording a false fixture."""
+    _raise_fixture_callback_error(viewer)
+    x, y, width, height = _sidebar_rect(viewer)
+    expected_width = float(getattr(viewer, 'sidebar_width', 0)) * float(
+        getattr(viewer, 'ui_scale', 1)
+    )
+    if width < max(100.0, expected_width * 0.5) or height < float(viewer.height) * 0.5:
+        raise RuntimeError(
+            'linked review sidebar layout did not stabilize after warmup: '
+            f'{(x, y, width, height)} for host {viewer.width}x{viewer.height}'
+        )
 
 
 def _sidebar_rect(viewer):
