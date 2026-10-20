@@ -1,10 +1,28 @@
 # Interaction replay benchmark proposal
 
-Status: proposed; not implemented. Updated: 2026-10-20.
+Status: initial opt-in implementation validated on Linux; manual review pending. Updated: 2026-10-20.
 
-This document proposes the IBL-side fixture and benchmark contract for repeatable interaction review. The generic input capture format, event semantics, player clocks, and native measurement hooks belong to Datoviz. This proposal is a workload and adapter plan, not a promise that the current review apps expose a replay API.
+This document defines the IBL-side fixture and benchmark contract for repeatable interaction review. The generic input capture format, event semantics, player clocks, and native measurement hooks belong to Datoviz. Review app 2 exposes opt-in recording and playback when paired with the matching Datoviz development API; the immutable baseline remains unchanged.
 
 The companion native proposal is `spec/scene/proposals/active/INPUT_RECORD_REPLAY.md` in Datoviz, committed at `8b2d955dfa997cee382536ef4233c02967be1c33` on branch `perf/panel-render-reuse`. It is local and unpublished; no remote link is presented as an available specification. Add a commit permalink after approved native publication. The native proposal is authoritative for the shared design and is not part of the configured Datoviz baseline yet.
+
+## Current commands and limits
+
+With a separately configured Datoviz checkout providing `datoviz.input_trace` and `datoviz.input_replay`, record one interaction session and close its window:
+
+```sh
+just review 2 --ui-scale 1.5 --record-input build/input-traces/rotation/manifest.json
+just review 2 --ui-scale 1.5 --replay-input build/input-traces/rotation/manifest.json --replay-mode paced --replay-report build/input-traces/paced.json
+just review 2 --ui-scale 1.5 --replay-input build/input-traces/rotation/manifest.json --replay-mode controlled --replay-report build/input-traces/controlled.json
+```
+
+These flags require the candidate API and deliberately fail on a baseline that lacks it. They do not build Datoviz, change its revision, or update the dependency pin. Recording owns bounded in-memory observations until the loop returns; an overflow or unsupported interaction fails instead of publishing a complete artifact. Idle time through capture stop is retained. Start and finish with buttons and keys released; focus cancellation is explicit.
+
+The initial player requires one GLFW host, the recorded native adapter platform and fixed host geometry. Raw GLFW wheel conventions are not silently transferred between operating systems. Paced playback retains the original offered wall schedule and reports delivery lateness. Controlled playback uses 120 Hz logical input/GUI ticks; its schedule is independent of rendering speed, but it does not freeze arbitrary scene animations or asynchronous workers. Idle paced playback waits on ordinary native deadlines rather than adding a polling tick. Reports distinguish scheduler-iteration duration, which includes waiting, from CPU frame and GPU time. Use the native profilers for the latter; these JSON reports do not manufacture those measurements.
+
+IBL checks the app, preset, asset manifests, initial scientific state, UI configuration and available resolved layout before dispatch. Baseline and final slice readiness are checked outside the measured input phase. Final scientific state and accepted slice requests are included. Rendered display proof remains explicitly unavailable until a caller associates a capture or promoted source generation with those exact requests. Successful delivery and accepted upload alone do not prove a displayed scientific checkpoint.
+
+The native trace records mouse, raw fractional wheel, physical/layout key tokens, modifier masks and committed UTF-8 text. The separate Actions adapter currently supports strict discrete one-mouse interchange with proven coordinate equivalence; unsupported keyboard, wheel, host-state, interpolation or precision conversions fail explicitly. Clipboard-dependent actions, external shell operations, file dialogs, drag/drop and IME preedit remain outside this initial profile. Manual Linux interaction acceptance and macOS evidence remain separate from automated headless checks.
 
 ## Scope and ownership
 
