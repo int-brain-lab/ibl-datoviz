@@ -201,11 +201,16 @@ class AtlasMesh:
         if mapping not in self.mapping_names:
             raise KeyError(f'unknown atlas mapping: {mapping}')
         palette = palette or {}
+        missing = object()
         lookup = np.empty((len(self.presentations), 4), dtype=np.uint8)
         for presentation in self.presentations:
             mapped = presentation['mappings'][mapping]
             key = MISSING_REGION_ID if mapped is None else int(mapped)
-            raw = palette.get(key, palette.get(abs(key), _default_color(key)))
+            raw = palette.get(key, missing)
+            if raw is missing:
+                raw = palette.get(abs(key), missing)
+            if raw is missing:
+                raw = _default_color(key)
             color = tuple(int(channel) for channel in raw)
             if len(color) == 3:
                 color += (255,)
