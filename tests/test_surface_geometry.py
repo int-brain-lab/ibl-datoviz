@@ -95,7 +95,15 @@ def test_crossing_faces_keep_exact_source_coverage_normals_displacement_and_keys
         )
     for name, snapshot in snapshots.items():
         np.testing.assert_array_equal(getattr(source, name), snapshot)
-        assert getattr(render, name).flags.owndata
+        array = getattr(render, name)
+        assert not np.shares_memory(array, getattr(source, name))
+        if name in ('positions_um', 'positions'):
+            # Coordinate snapshots own immutable bytes rather than writable
+            # ndarray storage, and keep that owner alive through their base.
+            with pytest.raises(ValueError):
+                array.setflags(write=True)
+        else:
+            assert array.flags.owndata
         assert not np.shares_memory(getattr(render, name), getattr(source, name))
     for array in (
         surface.source_face_indices,
