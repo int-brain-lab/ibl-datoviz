@@ -1096,6 +1096,12 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def _update_cursor_marker(self) -> None:
         world = np.asarray(self.cursor.world_um(self.slice_source), dtype=np.float32).reshape(1, 3)
+        state = (id(self.mesh_data), tuple(world[0]), self.mesh_data.display_scale)
+        if getattr(self, '_cursor_marker_state', None) == state:
+            return
+        # A native setter can fail after changing its target. Invalidate before
+        # attempting the update so rollback must restore the previous geometry.
+        self._cursor_marker_state = None
         position = self.mesh_data.normalize_points(world)[0]
         desc = self.dvz.dvz_geometry_sphere_desc()
         desc.center[:] = position
@@ -1138,6 +1144,24 @@ class LinkedAtlasNavigator(AtlasViewer):
                 self.dvz.dvz_geometry_destroy(merged)
             for part in parts:
                 self.dvz.dvz_geometry_destroy(part)
+        self._cursor_marker_state = state
+
+    def _update_crosshair(self, axis: str) -> None:
+        """Upload only changed cursor/viewport geometry, acknowledging success."""
+        starts, ends = self._crosshair_positions(axis)
+        if not hasattr(self, '_crosshair_states'):
+            self._crosshair_states = {}
+        state = (starts.tobytes(), ends.tobytes())
+        if self._crosshair_states.get(axis) == state:
+            return
+        self._crosshair_states.pop(axis, None)
+        self._check(
+            self.dvz.dvz_visual_set_data_many(
+                self._crosshairs[axis], {'position_start': starts, 'position_end': ends}
+            ),
+            f'{axis} crosshair update',
+        )
+        self._crosshair_states[axis] = state
 
     def _refresh_slices(self, axes=None) -> None:
         if not self._slice_fields:
@@ -1152,14 +1176,7 @@ class LinkedAtlasNavigator(AtlasViewer):
                 payload = self._prepare_slice(request)
                 self._upload_slice_payload(request, payload)
         for axis in self._slice_fields:
-            starts, ends = self._crosshair_positions(axis)
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
-                    self._crosshairs[axis],
-                    {'position_start': starts, 'position_end': ends},
-                ),
-                f'{axis} crosshair update',
-            )
+            self._update_crosshair(axis)
         self._update_cursor_marker()
 
     def _update_slice_geometry(self, axis: str) -> None:
@@ -1179,13 +1196,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._contour_visuals[axis].activate(visible=request.annotation_visible)
         self._refresh_boundaries(axis)
         self._upload_selection_outline(axis)
-        starts, ends = self._crosshair_positions(axis)
-        self._check(
-            self.dvz.dvz_visual_set_data_many(
-                self._crosshairs[axis], {'position_start': starts, 'position_end': ends}
-            ),
-            f'{axis} crosshair zoom',
-        )
+        self._update_crosshair(axis)
 
     def set_cursor(self, cursor: AtlasCursor, *, select_region: bool = False) -> None:
         """Move the AP/ML/DV cursor and refresh all linked panels.
