@@ -53,7 +53,12 @@ def _default_color(region_id: int) -> tuple[int, int, int, int]:
 
 @dataclass(frozen=True)
 class AtlasMesh:
-    """Dense mesh arrays and stable per-vertex atlas presentation identity."""
+    """Dense mesh arrays and stable per-vertex atlas presentation identity.
+
+    Coordinate arrays are owned immutable snapshots. Construct a replacement mesh
+    to change coordinates; its world-to-display center is prepared from the full
+    canonical source, including vertices omitted from private render geometry.
+    """
 
     positions_um: NDArray[np.float32]
     positions: NDArray[np.float32]
@@ -69,6 +74,26 @@ class AtlasMesh:
     _presentation_boundary: _MeshPresentationBoundary | None = field(
         default=None, repr=False, compare=False
     )
+    _display_center: tuple[float, float, float] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        """Own stable coordinates and prepare the canonical display center."""
+        for name in ('positions_um', 'positions'):
+            array = np.asarray(getattr(self, name), dtype=np.float32)
+            if array.ndim != 2 or array.shape[1] != 3 or len(array) == 0:
+                raise ValueError(f'{name} must have non-empty shape (n, 3)')
+            if not np.isfinite(array).all():
+                raise ValueError(f'{name} must contain finite coordinates')
+            # A read-only view of mutable storage is insufficient for a retained
+            # transform. Reuse storage only when its ultimate owner is bytes.
+            owner = array
+            while isinstance(owner, np.ndarray):
+                owner = owner.base
+            if not isinstance(owner, bytes) or array.flags.writeable:
+                array = np.frombuffer(array.tobytes(), dtype=np.float32).reshape(array.shape)
+            object.__setattr__(self, name, array)
+        center = (self.positions_um.min(axis=0) + self.positions_um.max(axis=0)) / 2
+        object.__setattr__(self, '_display_center', tuple(float(value) for value in center))
 
     @classmethod
     def from_pack(cls, path: str | Path) -> AtlasMesh:
@@ -197,5 +222,5 @@ class AtlasMesh:
             raise ValueError('points must have non-empty shape (n, 3)')
         if not np.isfinite(points).all():
             raise ValueError('points must contain finite coordinates')
-        centre = (self.positions_um.min(axis=0) + self.positions_um.max(axis=0)) / 2
+        centre = np.asarray(self._display_center, dtype=np.float32)
         return np.ascontiguousarray((points - centre) * self.display_scale, dtype=np.float32)

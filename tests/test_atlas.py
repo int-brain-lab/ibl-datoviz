@@ -740,8 +740,30 @@ def test_private_render_omits_unused_extreme_vertex_without_changing_source_norm
         probe_upload = next(call for call in fake.calls if call[:2] == ('data_many', 'path'))
         np.testing.assert_array_equal(probe_upload[3]['position'], expected)
         np.testing.assert_array_equal(source.normalize_points(points), expected)
+
     np.testing.assert_array_equal(source.positions_um, canonical_positions)
     np.testing.assert_array_equal(source.indices, canonical_indices)
+
+
+def test_mesh_transform_owns_coordinates_and_replacement_prepares_new_center(mesh):
+    coordinates = mesh.positions_um.copy()
+    display = mesh.positions.copy()
+    source = replace(mesh, positions_um=coordinates, positions=display)
+    points = coordinates[:2].copy()
+    expected = source.normalize_points(points)
+    coordinates[:] += 1000
+    display[:] = 0
+    np.testing.assert_array_equal(source.normalize_points(points), expected)
+    np.testing.assert_array_equal(source.positions, mesh.positions)
+    for array in (source.positions_um, source.positions):
+        with pytest.raises(ValueError):
+            array.setflags(write=True)
+    replacement = replace(source, positions_um=coordinates)
+    center = (coordinates.min(axis=0) + coordinates.max(axis=0)) / 2
+    np.testing.assert_array_equal(
+        replacement.normalize_points(points),
+        np.ascontiguousarray((points - center) * source.display_scale, dtype=np.float32),
+    )
 
 
 def test_hover_uses_gpu_state_without_changing_authored_colors(mesh):
