@@ -254,12 +254,16 @@ class AtlasViewer:
         self._surface_base_is_translucent = False
         self._surface_alpha_mode: int | None = None
         self._last_mesh_region_ids: tuple[int, ...] = ()
-        self.frame = WorldFrame(mesh.reference_space, provenance={
-            'verification': {
-                'method': 'prepared-atlas-mesh',
-                'evidence': 'AtlasMesh atlas-world reference contract: ' + mesh.reference_space,
+        self.frame = WorldFrame(
+            mesh.reference_space,
+            provenance={
+                'verification': {
+                    'method': 'prepared-atlas-mesh',
+                    'evidence': 'AtlasMesh atlas-world reference contract: '
+                    + mesh.reference_space,
+                },
             },
-        })
+        )
         self.selection = SelectionController(self)
         self.anatomy = AnatomyController(self)
         self.camera = CameraController(self)
@@ -271,8 +275,10 @@ class AtlasViewer:
         self.native_query_results = ()
         self._regional_quantities = RegionQuantityRegistry(self)
         self._layer_registry = LayerRegistry(
-            self, before_mutation=self._before_layer_mutation,
-            on_remove=self.selection._removed, validate_frame=self._validate_layer_frame,
+            self,
+            before_mutation=self._before_layer_mutation,
+            on_remove=self.selection._removed,
+            validate_frame=self._validate_layer_frame,
         )
         try:
             self.scene = self.dvz.dvz_scene()
@@ -535,11 +541,13 @@ class AtlasViewer:
             self._upload_surface_faces(mask, self.mapping)
         self._surface_face_mask = mask
 
-    def _authored_surface_alpha(self, mapping=None, palette=None):
+    def _authored_presentation_alpha(self, mapping=None, palette=None):
         active = self.mapping if mapping is None else mapping
         palette = self.palette if palette is None else palette
         if self.region_data is None:
-            colors = self._surface_style.apply(active, self._surface_mesh.colors(active, palette))
+            colors = self._surface_style.apply_presentations(
+                active, self._surface_mesh._presentation_colors(active, palette)
+            )
         else:
             prepared = self._region_value_view(
                 self.region_data,
@@ -548,7 +556,7 @@ class AtlasViewer:
                 self._region_color_scheme,
                 1.0 if self._region_opacity is None else self._region_opacity,
             )
-            colors = self._region_surface_colors(
+            colors = self._region_presentation_colors(
                 active,
                 prepared.region_ids,
                 prepared.colors,
@@ -557,17 +565,18 @@ class AtlasViewer:
         return colors[:, 3].copy()
 
     def _visible_surface_faces(self, mapping, palette=None, *, include_selection=True):
-        mask = self._surface_style.visible_faces(mapping)
-        alpha = self._authored_surface_alpha(mapping, palette)
-        presentation_alpha = np.full(len(self._surface_mesh.presentations), 255, np.uint8)
-        np.minimum.at(presentation_alpha, self._surface_mesh.presentation_ids, alpha)
-        mask &= presentation_alpha[self._surface_mesh.face_presentation_ids] > 0
+        # Authored alpha/visibility are properties of presentation identities,
+        # not vertices. Resolve them at that cardinality and expand only the
+        # final face mask; selection never needs full vertex RGBA arrays.
+        mask = self._surface_style.visible_presentations(mapping)
+        mask &= self._authored_presentation_alpha(mapping, palette) > 0
+        ids = self._surface_mesh._presentation_mapping_ids(mapping)
         if self.anatomy_presentation == 'major':
             selected = self._major_fine_overlay_ids()
-            mask &= np.isin(self._surface_mesh.face_mapping_ids(mapping), selected)
+            mask &= np.isin(ids, selected)
         elif include_selection and self._selection_focus_active():
-            mask &= np.isin(self._surface_mesh.face_mapping_ids(mapping), self._signed_focus_ids())
-        return mask
+            mask &= np.isin(ids, self._signed_focus_ids())
+        return mask[self._surface_mesh.face_presentation_ids]
 
     def _upload_surface_faces(self, mask, mapping):
         """Filter render triangle indices and matching signed face keys together."""
@@ -1216,6 +1225,15 @@ class AtlasViewer:
         context_opacity: float | None = None,
     ) -> NDArray[np.uint8]:
         """Expand one color per presentation region to dense mesh vertices."""
+        colors = self._region_presentation_colors(
+            mapping, region_ids, value_colors, context_opacity=context_opacity
+        )
+        return np.ascontiguousarray(colors[self._surface_mesh.presentation_ids])
+
+    def _region_presentation_colors(
+        self, mapping, region_ids, value_colors, *, context_opacity=None
+    ):
+        """Keep regional colors compact until a vertex upload actually needs them."""
         opacity = self.surface_opacity if context_opacity is None else context_opacity
         alpha = int(round(255 * opacity))
         lookup = np.tile(
@@ -1228,9 +1246,9 @@ class AtlasViewer:
             color = by_region.get(mapped_id)
             if color is not None:
                 lookup[presentation['presentation_id']] = color
-        return self._surface_style.apply(
+        return self._surface_style.apply_presentations(
             mapping,
-            np.ascontiguousarray(lookup[self._surface_mesh.presentation_ids]),
+            lookup,
             alpha_scale=opacity,
         )
 
@@ -1248,8 +1266,11 @@ class AtlasViewer:
         if registry is not None and registry.handle is not None:
             raise ValueError('an owned regional quantity is attached; remove it first')
         self._set_owned_region_data(
-            data, value_range=value_range, color_scheme=color_scheme,
-            opacity=opacity, mapping_reduction=mapping_reduction,
+            data,
+            value_range=value_range,
+            color_scheme=color_scheme,
+            opacity=opacity,
+            mapping_reduction=mapping_reduction,
         )
 
     def _set_owned_region_data(

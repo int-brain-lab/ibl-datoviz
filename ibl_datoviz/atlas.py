@@ -166,6 +166,10 @@ class AtlasMesh:
 
     def mapping_ids(self, mapping: str) -> NDArray[np.int64]:
         """Return signed mapped region IDs per vertex, using zero for unmapped vertices."""
+        return np.ascontiguousarray(self._presentation_mapping_ids(mapping)[self.presentation_ids])
+
+    def _presentation_mapping_ids(self, mapping: str) -> NDArray[np.int64]:
+        """Return one mapped identity per presentation before mesh expansion."""
         if mapping not in self.mapping_names:
             raise KeyError(f'unknown atlas mapping: {mapping}')
         lookup = np.zeros(len(self.presentations), dtype=np.int64)
@@ -174,20 +178,13 @@ class AtlasMesh:
             lookup[presentation['presentation_id']] = (
                 MISSING_REGION_ID if mapped is None else int(mapped)
             )
-        return np.ascontiguousarray(lookup[self.presentation_ids])
+        return lookup
 
     def face_mapping_ids(self, mapping: str) -> NDArray[np.int64]:
         """Return signed region IDs for Datoviz indexed-mesh primitive item queries."""
-        if mapping not in self.mapping_names:
-            raise KeyError(f'unknown atlas mapping: {mapping}')
-        lookup = np.zeros(len(self.presentations), dtype=np.int64)
-        for item in self.presentations:
-            lookup[item['presentation_id']] = (
-                MISSING_REGION_ID
-                if item['mappings'][mapping] is None
-                else int(item['mappings'][mapping])
-            )
-        return np.ascontiguousarray(lookup[self.face_presentation_ids])
+        return np.ascontiguousarray(
+            self._presentation_mapping_ids(mapping)[self.face_presentation_ids]
+        )
 
     def colors(
         self,
@@ -195,6 +192,12 @@ class AtlasMesh:
         palette: Mapping[int, Sequence[int]] | None = None,
     ) -> NDArray[np.uint8]:
         """Return atlas colors per vertex without changing geometry or identity arrays."""
+        return np.ascontiguousarray(
+            self._presentation_colors(mapping, palette)[self.presentation_ids]
+        )
+
+    def _presentation_colors(self, mapping, palette=None):
+        """Prepare colors at presentation cardinality before vertex expansion."""
         if mapping not in self.mapping_names:
             raise KeyError(f'unknown atlas mapping: {mapping}')
         palette = palette or {}
@@ -209,7 +212,7 @@ class AtlasMesh:
             if len(color) != 4 or any(channel < 0 or channel > 255 for channel in color):
                 raise ValueError(f'invalid RGBA color for region {key}')
             lookup[presentation['presentation_id']] = color
-        return np.ascontiguousarray(lookup[self.presentation_ids])
+        return lookup
 
     def link_keys(self, mapping: str) -> NDArray[np.uint64]:
         """Encode signed mapping IDs losslessly as Datoviz uint64 link keys."""

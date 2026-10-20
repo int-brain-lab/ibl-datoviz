@@ -16,6 +16,35 @@ def mesh():
     return AtlasMesh.from_pack(FIXTURE)
 
 
+@pytest.mark.parametrize('mapping', ['allen', 'beryl'])
+def test_face_visibility_uses_compact_authored_alpha_with_mutable_palette(
+    mesh, mapping, monkeypatch
+):
+    fake = FakeDatoviz()
+    palette = {315: (12, 34, 56, 255), -315: (23, 45, 67, 0)}
+    with AtlasViewer(mesh, mapping=mapping, palette=palette, datoviz=fake) as viewer:
+        render = viewer._surface_mesh
+
+        def dense_reference():
+            alpha = viewer._surface_style.apply(mapping, render.colors(mapping, palette))[:, 3]
+            minimum = np.full(len(render.presentations), 255, np.uint8)
+            np.minimum.at(minimum, render.presentation_ids, alpha)
+            return viewer._surface_style.visible_faces(mapping) & (
+                minimum[render.face_presentation_ids] > 0
+            )
+
+        expected = dense_reference()
+        np.testing.assert_array_equal(viewer._visible_surface_faces(mapping), expected)
+        palette[315] = (12, 34, 56, 0)
+        expected = dense_reference()
+
+        def dense_colors_forbidden(*_):
+            pytest.fail('visibility must not expand vertex RGBA colors')
+
+        monkeypatch.setattr(AtlasMesh, 'colors', dense_colors_forbidden)
+        np.testing.assert_array_equal(viewer._visible_surface_faces(mapping), expected)
+
+
 def last_keys(fake):
     return [call[2] for call in fake.calls if call[0] == 'link_keys'][-1].view(np.int64)
 

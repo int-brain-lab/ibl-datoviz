@@ -96,11 +96,18 @@ class SurfaceStyle:
 
     def visible_faces(self, mapping):
         """Exclude unmapped faces from both rendering and picking, like the web."""
-        ids = self.mesh.face_mapping_ids(mapping)
+        return self.visible_presentations(mapping)[self.mesh.face_presentation_ids]
+
+    def visible_presentations(self, mapping):
+        """Resolve authored visibility once per signed presentation identity."""
+        ids = self.mesh._presentation_mapping_ids(mapping)
         mask = ids != 0
+        sides = np.empty(len(self.mesh.presentations), dtype=object)
+        for item in self.mesh.presentations:
+            sides[item['presentation_id']] = item['side']
         for side, visible in self.hemispheres.items():
             if not visible:
-                mask[self.face_sides == side] = False
+                mask[sides == side] = False
         for (style_mapping, region_id), style in self.regions.items():
             if style_mapping == mapping and (
                 not style.visible
@@ -112,10 +119,19 @@ class SurfaceStyle:
 
     def apply(self, mapping, colors, *, alpha_scale=1.0):
         """Apply authored colors/opacities to canonical colors before emphasis."""
+        return self._apply(mapping, colors, self.mesh.presentation_ids, alpha_scale)
+
+    def apply_presentations(self, mapping, colors, *, alpha_scale=1.0):
+        """Apply the same style before expanding presentation colors to vertices."""
+        return self._apply(mapping, colors, None, alpha_scale)
+
+    def _apply(self, mapping, colors, presentation_ids, alpha_scale):
         colors = np.array(colors, copy=True, order='C')
         if not any(style_mapping == mapping for style_mapping, _ in self.regions):
             return colors
-        ids = self.mesh.mapping_ids(mapping)
+        ids = self.mesh._presentation_mapping_ids(mapping)
+        if presentation_ids is not None:
+            ids = ids[presentation_ids]
         for (style_mapping, region_id), style in self.regions.items():
             if style_mapping != mapping:
                 continue
