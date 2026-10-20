@@ -4,7 +4,7 @@ Status: initial opt-in implementation validated on Linux; manual review pending.
 
 This document defines the IBL-side fixture and benchmark contract for repeatable interaction review. The generic input capture format, event semantics, player clocks, and native measurement hooks belong to Datoviz. Review app 2 exposes opt-in recording and playback when paired with the matching Datoviz development API; the immutable baseline remains unchanged.
 
-The companion native proposal is `spec/scene/proposals/active/INPUT_RECORD_REPLAY.md` in Datoviz, committed at `8b2d955dfa997cee382536ef4233c02967be1c33` on branch `perf/panel-render-reuse`. It is local and unpublished; no remote link is presented as an available specification. Add a commit permalink after approved native publication. The native proposal is authoritative for the shared design and is not part of the configured Datoviz baseline yet.
+The companion native proposal is `spec/scene/proposals/active/INPUT_RECORD_REPLAY.md` in Datoviz, committed at `8b2d955dfa997cee382536ef4233c02967be1c33` on the former `perf/panel-render-reuse` branch, now consolidated into `rc4/integration`. It is local and unpublished; no remote link is presented as an available specification. Add a commit permalink after approved native publication. The native proposal is authoritative for the shared design and is not part of the configured Datoviz baseline yet.
 
 ## Current commands and limits
 

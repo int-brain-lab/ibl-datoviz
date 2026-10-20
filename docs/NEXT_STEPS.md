@@ -9,6 +9,12 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Native RC4 branch consolidation — October 20 2026
+
+Native ongoing development is now consolidated on `rc4/integration`, renamed from `perf/panel-render-reuse`. Native `main` remains reserved for RC3 finalization. Redundant native implementation branches were backed up and retired locally; their checkout folders remain as detached snapshots. The configured scientific checkout remains at the exact pinned revision `73d0f0bcdd595d2f76e2cdffcc2dd89c25a56858`, now detached; neither this repository's branch policy nor its dependency pin changes. Both repositories have verified recovery bundles and saved branch refs under their common Git directories. No remote branches were changed.
+
+Consolidation validation passes: native 1,324/1,324 tests with Vulkan synchronization validation and no validation diagnostics; candidate-paired IBL 1,145 tests with one existing optional-asset skip. Strict baseline doctor, Ruff and strict MkDocs also pass. These are Linux development checks; the baseline pin remains unchanged.
+
 ## Initial opt-in interaction recording and replay — October 20 2026
 
 Commit `e223d51` adds the review-2 fixture/readiness adapter, optional owner-thread loop runner and record/replay CLI. Native commit `227eaff0b` adds original host ingress and replay-safe GUI input; `571da9416` fixes policy-driven callback retention and unsubscription. The companion player, bounded trace storage and strict Actions interchange provide paced/controlled playback. See [the commands and current limits](INTERACTION_REPLAY_BENCHMARK.md#current-commands-and-limits). This work remains on the existing development branches, with no baseline or dependency-pin change.
@@ -17,7 +23,7 @@ The configured-baseline suite passes 1,144 tests with two existing optional skip
 
 Private-display Linux checks record 33 actual GLFW mouse observations via XTest and deliver all 33 in paced and controlled modes. Both modes rotate the camera; repeated controlled runs finish with exactly equal scientific state and current slice readiness. Fixture preflight now waits for eight rendered warmup frames, captures resolved sidebar/panel geometry, hashes verified source identities, and fails on retained GUI errors. Native capture preserves idle duration and platform identity. Reports preserve final scientific state and accepted slice identities; rendered display proof and the full scientific benchmark verdict remain explicitly unavailable. No comparable performance gain is claimed until both builds use the same recorded workload and policy.
 
-Implementation remains local on Datoviz `perf/panel-render-reuse` and IBL `feature/datoviz-v04`. Generic capture/player capability does not promote the baseline or establish macOS acceptance. The next interactive review can record one manual app-2 session; replay it for matched CPU/GPU profiling, then add explicit scientific checkpoints and rendered proof before accepting equal-work throughput results.
+Implementation remains local on Datoviz `rc4/integration` and IBL `feature/datoviz-v04`. Generic capture/player capability does not promote the baseline or establish macOS acceptance. The next interactive review can record one manual app-2 session; replay it for matched CPU/GPU profiling, then add explicit scientific checkpoints and rendered proof before accepting equal-work throughput results.
 
 ## Interaction replay benchmark proposal — October 20 2026
 
