@@ -336,13 +336,28 @@ def run_benchmark(arguments, prefix, environment):
     )
 
 
-def run_examples(args, prefix, environment):
+def run_examples(args, prefix, environment):  # noqa: PLR0912
     """Run the selected examples with manual or bounded automation window identity."""
     environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated' if args.frames > 0 else 'datoviz'
     needs_volume = args.example != 'annotations'
     if not ASSETS.exists() or (needs_volume and not VOLUME.exists()):
         raise ValueError('Review data is missing; rerun setup without --tests-only')
     offscreen = getattr(args, 'offscreen', None)
+    record_input = getattr(args, 'record_input', None)
+    replay_input = getattr(args, 'replay_input', None)
+    replay_mode = getattr(args, 'replay_mode', 'paced')
+    replay_report = getattr(args, 'replay_report', None)
+    if record_input and replay_input:
+        raise ValueError('--record-input and --replay-input are mutually exclusive')
+    if record_input or replay_input or replay_report:
+        if args.example != '2':
+            raise ValueError('input recording/replay currently requires numbered review app 2')
+        if offscreen is not None:
+            raise ValueError('input recording/replay requires an interactive host window')
+    if replay_mode != 'paced' and not replay_input:
+        raise ValueError('--replay-mode requires --replay-input')
+    if replay_report is not None and not replay_input:
+        raise ValueError('--replay-report requires --replay-input')
     if offscreen is not None and args.example == 'all':
         raise ValueError('--offscreen requires one named example or numbered app')
     names = DEFAULT_EXAMPLES if args.example == 'all' else (args.example,)
@@ -380,6 +395,10 @@ def run_examples(args, prefix, environment):
                 REPOSITORY / 'examples' / script,
                 *arguments,
                 *(['--preset', preset] if preset is not None else []),
+                *(['--record-input', record_input] if record_input is not None else []),
+                *(['--replay-input', replay_input] if replay_input is not None else []),
+                *(['--replay-mode', replay_mode] if replay_input is not None else []),
+                *(['--replay-report', replay_report] if replay_report is not None else []),
                 *(
                     ['--context-root', CONTEXT]
                     if name in ('1', 'annotations', 'workspace')
@@ -426,7 +445,7 @@ def run_contours(source, arguments, prefix, environment, *, workspace=False):
     )
 
 
-def main():
+def main():  # noqa: PLR0915
     """Prepare once, then run unit/native tests or focused real-data examples."""
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -455,6 +474,11 @@ def main():
     )
     review.add_argument('example', nargs='?', default='1', choices=['all', *EXAMPLES])
     review.add_argument('--preset', help='initial preset for one numbered review app')
+    inputs = review.add_mutually_exclusive_group()
+    inputs.add_argument('--record-input', type=Path, metavar='PATH')
+    inputs.add_argument('--replay-input', type=Path, metavar='PATH')
+    review.add_argument('--replay-mode', choices=('paced', 'controlled'), default='paced')
+    review.add_argument('--replay-report', type=Path, metavar='PATH')
     review.add_argument('--offscreen', type=Path, metavar='PNG', help='capture one named example')
     review.add_argument(
         '--frames', type=int, default=0, help='zero runs until each window is closed'

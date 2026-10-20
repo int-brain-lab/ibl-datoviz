@@ -410,7 +410,9 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
     monkeypatch.setattr(
         review,
         'finish_review',
-        lambda viewer, args, title: calls.append(('finish', args.frames, args.offscreen, title)),
+        lambda viewer, args, title, **kwargs: calls.append(
+            ('finish', args.frames, args.offscreen, title, kwargs)
+        ),
     )
     monkeypatch.setattr(
         sys,
@@ -446,7 +448,13 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
             'enable_hover': False,
         },
     )
-    assert calls[3] == ('finish', 3, None, 'D070 linked atlas review')
+    assert calls[3] == (
+        'finish',
+        3,
+        None,
+        'D070 linked atlas review',
+        {'app_id': '2', 'preset': 'labels'},
+    )
     assert calls[4] == ('close',)
 
 

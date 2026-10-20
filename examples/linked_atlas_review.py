@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 from contextlib import suppress
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from examples.review_common import (
 )
 from ibl_anatomy import bundled_asset_set, open_volume_pack, verify_materialized_asset_set
 from ibl_datoviz import AtlasCursor, AtlasMesh, LinkedAtlasNavigator, SampledPlaneVisual
+from ibl_datoviz.context import DEFAULT_CONTEXT_LANDMARKS
 
 PRESETS = ('anatomy', 'labels', 'volume-context', 'physical-slice', 'overlay')
 PRESET_LABELS = (
@@ -392,7 +394,8 @@ def main() -> int:
     add_review_arguments(parser)
     args = parser.parse_args()
     assets = verify_materialized_asset_set(bundled_asset_set(), args.asset_root)
-    volumes = open_volume_pack(args.volume_root).load_volumes()
+    volume_pack = open_volume_pack(args.volume_root)
+    volumes = volume_pack.load_volumes()
     try:
         context_catalog, context_geometry = load_major_context(args.context_root)
     except (AttributeError, ImportError, FileNotFoundError, ValueError) as error:
@@ -417,7 +420,29 @@ def main() -> int:
         enable_interaction=True,
         fit_workarea=args.offscreen is None,
     ) as viewer:
-        finish_review(viewer, args, 'D070 linked atlas review')
+        mesh_manifest = Path(getattr(assets, 'root', '.')) / 'mesh-pack' / 'manifest.json'
+        volume_manifest = Path(getattr(volume_pack, 'root', '.')) / 'manifest.json'
+        viewer.review_fixture_options = {
+            'atlas_pack_id': getattr(getattr(assets, 'pack', None), 'manifest', {}).get(
+                'pack_id'
+            ),
+            'atlas_manifest_sha256': (
+                hashlib.sha256(mesh_manifest.read_bytes()).hexdigest()
+                if mesh_manifest.is_file()
+                else None
+            ),
+            'volume_manifest_sha256': (
+                hashlib.sha256(volume_manifest.read_bytes()).hexdigest()
+                if volume_manifest.is_file()
+                else None
+            ),
+            'context_surfaces': {
+                str(member.asset.source_allen_id): member.asset.source.sha256
+                for member in getattr(context_catalog, 'members', ())
+                if member.asset.source_allen_id in DEFAULT_CONTEXT_LANDMARKS
+            },
+        }
+        finish_review(viewer, args, 'D070 linked atlas review', app_id='2', preset=args.preset)
     return 0
 
 

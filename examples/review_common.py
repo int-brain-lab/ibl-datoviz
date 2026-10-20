@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ctypes
+import json
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -43,17 +45,230 @@ def add_review_arguments(parser):
     parser.add_argument('--width', type=int, default=2240)
     parser.add_argument('--height', type=int, default=1600)
     parser.add_argument('--offscreen', type=Path, metavar='PNG')
+    inputs = parser.add_mutually_exclusive_group()
+    inputs.add_argument('--record-input', type=Path, metavar='PATH')
+    inputs.add_argument('--replay-input', type=Path, metavar='PATH')
+    parser.add_argument('--replay-mode', choices=('paced', 'controlled'), default='paced')
+    parser.add_argument('--replay-report', type=Path, metavar='PATH')
 
 
-def finish_review(viewer, args, title):
+def _input_options(args, viewer=None):
+    record = getattr(args, 'record_input', None)
+    replay = getattr(args, 'replay_input', None)
+    mode = getattr(args, 'replay_mode', 'paced')
+    report = getattr(args, 'replay_report', None)
+    if record and replay:
+        raise ValueError('--record-input and --replay-input are mutually exclusive')
+    if (record or replay) and args.offscreen:
+        raise ValueError('input recording and replay require an interactive host window')
+    if mode != 'paced' and not replay:
+        raise ValueError('--replay-mode requires --replay-input')
+    if report and not replay:
+        raise ValueError('--replay-report requires --replay-input')
+    if (record or replay) and (
+        viewer is None or not hasattr(viewer, 'cursor') or not hasattr(viewer, 'slices')
+    ):
+        raise ValueError('input replay is currently supported only by linked review app 2')
+    return record, replay, mode, report
+
+
+def _input_api():
+    """Load optional trace modules before opening a native window."""
+    try:
+        import datoviz  # noqa: PLC0415
+        from datoviz import input_replay, input_trace  # noqa: PLC0415
+    except ImportError as error:
+        raise RuntimeError(
+            'input recording/replay requires a Datoviz build providing '
+            'the optional datoviz.input_replay API'
+        ) from error
+    if not all(
+        callable(getattr(input_replay, name, None)) for name in ('Recorder', 'Player')
+    ) or not all(
+        callable(getattr(input_trace, name, None))
+        for name in ('write_trace', 'read_trace', 'plain')
+    ) or not callable(getattr(datoviz, 'dvz_app_step', None)):
+        raise RuntimeError(
+            'configured Datoviz does not provide the complete optional '
+            'datoviz.input_replay API; use the matching v0.4 development checkout'
+        )
+    return input_replay, input_trace
+
+
+def _input_runner(viewer, args, input_replay, input_trace, *, title, app_id, preset, run_loop):
+    """Run one opt-in trace against a resolved linked scientific fixture."""
+    from ibl_datoviz.interaction_benchmark import (  # noqa: PLC0415
+        LinkedReadiness,
+        ReviewFixture,
+        scientific_state,
+    )
+
+    record, replay, mode, report_path = _input_options(args, viewer)
+    metadata = {
+        'app_id': app_id,
+        'preset': preset,
+        'mapping': viewer.mapping,
+        'width': viewer.width,
+        'height': viewer.height,
+        'ui_scale': viewer.ui_scale,
+        'title': title,
+        'sidebar_width': getattr(viewer, 'sidebar_width', None),
+        'fit_workarea': getattr(viewer, 'fit_workarea', None),
+        'layout': 'linked-four-panel',
+        'hover': bool(getattr(viewer, 'enable_hover', False)),
+        'fixture_options': dict(getattr(viewer, 'review_fixture_options', {})),
+    }
+    readiness = LinkedReadiness(viewer)
+    try:
+        baseline = _settle_linked_readiness(viewer, readiness)
+        if baseline.status != 'ready':
+            raise RuntimeError(
+                f'linked review is not ready at input boundary: {baseline.to_dict()}'
+            )
+        fixture = ReviewFixture.capture(
+            viewer,
+            fixture_id='ibl-datoviz-linked-review-v1',
+            app_id=app_id,
+            preset=preset,
+            metadata={
+                **metadata,
+                'sidebar_rect': _sidebar_rect(viewer),
+                'panel_rects': _panel_rects(viewer),
+            },
+        )
+        if replay:
+            trace = input_trace.read_trace(replay)
+            trace_fixture = input_trace.plain(getattr(trace, 'manifest', {})).get('fixture')
+            if not isinstance(trace_fixture, Mapping):
+                raise ValueError('input trace has no linked review fixture identity')
+            fixture.assert_compatible(trace_fixture.get('metadata', {}))
+            if trace_fixture.get('app_id') != app_id:
+                raise ValueError('input trace belongs to a different review app')
+            if trace_fixture.get('preset') != preset:
+                raise ValueError('input trace preset does not match this review run')
+            if trace_fixture.get('initial_state') != fixture.initial_state:
+                raise ValueError(
+                    'input trace initial scientific state does not match this review run'
+                )
+            report = input_replay.Player(viewer.dvz, viewer.app, viewer.view).run(
+                trace, mode=mode, tick_seconds=1 / 120
+            )
+            report = dict(report)
+            final_readiness = _settle_linked_readiness(viewer, readiness)
+            report['ibl_final_scientific_state'] = scientific_state(viewer)
+            report['ibl_final_slice_readiness'] = final_readiness.to_dict()
+            report['ibl_display_checkpoint'] = readiness.checkpoint(
+                render_proof=None
+            ).to_dict()
+            if report_path:
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(json.dumps(report, indent=2) + '\n')
+            if final_readiness.status != 'ready':
+                raise RuntimeError(
+                    f'linked review did not settle after replay: {final_readiness.to_dict()}'
+                )
+            return
+
+        recorder = input_replay.Recorder(viewer.dvz, viewer.view, fixture=fixture.to_dict())
+        recorder.start()
+        try:
+            run_loop()
+        finally:
+            trace = recorder.stop()
+            input_trace.write_trace(trace, record)
+    finally:
+        readiness.close()
+
+
+def _settle_linked_readiness(viewer, readiness):
+    """Pump owner-thread frames for GUI layout and current slice uploads."""
+    baseline = readiness.check()
+    app_step = getattr(viewer.dvz, 'dvz_app_step', None)
+    if not callable(app_step):
+        raise RuntimeError('input replay requires Datoviz dvz_app_step support')
+
+    def pump():
+        outcome = app_step(viewer.app, 0.01)
+        if outcome < 0:
+            raise RuntimeError(f'Datoviz owner-thread app step failed: {outcome}')
+
+    if baseline.status == 'pending':
+        return readiness.wait(timeout=10.0, pump=pump)
+    # Draw the initial dock layout before snapshotting the fixture or starting
+    # Recorder/Player. This frame is setup, outside the interaction interval.
+    pump()
+    baseline = readiness.check()
+    if baseline.status == 'pending':
+        return readiness.wait(timeout=10.0, pump=pump)
+    return baseline
+
+
+def _sidebar_rect(viewer):
+    """Capture the resolved GUI sidebar rect after the owner-thread warmup."""
+    rect = getattr(getattr(viewer, '_sidebar', None), 'sidebar_rect', None)
+    if rect is None:
+        raise RuntimeError('linked review GUI did not resolve its sidebar layout')
+    return [float(value) for value in rect]
+
+
+def _panel_rects(viewer):
+    """Copy resolved native panel rectangles when this Datoviz build exposes them."""
+    dvz = viewer.dvz
+    resolve = getattr(dvz, 'dvz_panel_resolve_frame', None)
+    get_info = getattr(dvz, 'dvz_panel_frame_info', None)
+    unref = getattr(dvz, 'dvz_panel_frame_unref', None)
+    info_type = getattr(dvz, 'DvzPanelFrameInfo', None)
+    if not all(callable(value) for value in (resolve, get_info, unref)) or info_type is None:
+        return None
+    panels = {**viewer.slice_panels, '3d': viewer.panel}
+    result = {}
+    for name, panel in panels.items():
+        snapshot = resolve(panel)
+        if not snapshot:
+            raise RuntimeError(f'could not resolve the {name} panel layout')
+        try:
+            info = info_type()
+            info.struct_size = ctypes.sizeof(info)
+            if not get_info(snapshot, ctypes.byref(info)):
+                raise RuntimeError(f'could not read the {name} panel layout')
+            rect = info.panel_rect_px
+            result[name] = [
+                float(rect.x),
+                float(rect.y),
+                float(rect.width),
+                float(rect.height),
+            ]
+        finally:
+            unref(snapshot)
+    return result
+
+
+def finish_review(viewer, args, title, *, app_id='2', preset='overlay'):
     """Use the caller-owned viewer's existing capture or interactive frame loop."""
     if args.frames < 0:
         raise ValueError('frames must be nonnegative')
+    record, replay, _mode, _report = _input_options(args, viewer)
     if args.offscreen:
         rgba = viewer.render_offscreen(args.offscreen)
         print(f'wrote {args.offscreen} ({rgba.shape[1]}x{rgba.shape[0]})')
-    else:
+    elif not (record or replay):
         viewer.show(title=title, frame_count=args.frames)
+    else:
+        input_replay, input_trace = _input_api()
+        viewer.show(
+            title=title,
+            frame_count=args.frames,
+            runner=lambda current, run_loop: _input_runner(
+                current,
+                args,
+                input_replay,
+                input_trace,
+                title=title,
+                app_id=app_id,
+                preset=preset,
+                run_loop=run_loop,
+            ),
+        )
 
 
 def load_review_slice(source, axis, index=None, mapping='allen', *, layer='anatomy', opacity=1.0):

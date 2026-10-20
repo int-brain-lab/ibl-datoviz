@@ -432,6 +432,45 @@ def test_app_two_does_not_require_major_context(tmp_path, monkeypatch):
     assert len(commands) == 1
 
 
+def test_input_replay_flags_forward_only_to_app_two(tmp_path, monkeypatch):
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    commands = []
+    monkeypatch.setattr(review, 'run', lambda command, **_kwargs: commands.append(command))
+    replay = tmp_path / 'trace with spaces.json'
+    report = tmp_path / 'report.json'
+    review.run_examples(
+        SimpleNamespace(
+            example='2', frames=0, ui_scale=1.0, offscreen=None, preset='overlay',
+            record_input=None, replay_input=replay, replay_mode='controlled',
+            replay_report=report,
+        ),
+        [],
+        {},
+    )
+    command = commands[0]
+    assert command[command.index('--replay-input') + 1] == replay
+    assert command[command.index('--replay-mode') + 1] == 'controlled'
+    assert command[command.index('--replay-report') + 1] == report
+
+
+@pytest.mark.parametrize('example', ['1', 'all', 'annotations'])
+def test_input_replay_rejects_unsupported_review_target(tmp_path, monkeypatch, example):
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    monkeypatch.setattr(review, 'run', lambda *_args, **_kwargs: pytest.fail('unexpected launch'))
+    with pytest.raises(ValueError, match='requires numbered review app 2'):
+        review.run_examples(
+            SimpleNamespace(
+                example=example, frames=0, ui_scale=1.0, offscreen=None,
+                record_input=tmp_path / 'trace.json', replay_input=None,
+                replay_mode='paced', replay_report=None,
+            ),
+            [],
+            {},
+        )
+
+
 def test_contour_prototype_scopes_reader_and_preserves_arguments(tmp_path, monkeypatch):
     source = tmp_path / 'anatomy source'
     package = source / 'src' / 'ibl_anatomy'

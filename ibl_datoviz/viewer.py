@@ -2539,12 +2539,24 @@ class AtlasViewer:
             )
         return rgba
 
-    def show(self, *, title: str = 'IBL atlas', frame_count: int = 0) -> None:
-        """Run an interactive arcball and region-picking view."""
+    def show(self, *, title: str = 'IBL atlas', frame_count: int = 0, runner=None) -> None:
+        """Run the view, optionally through an owner-thread loop runner.
+
+        ``runner(viewer, run_loop)`` is called after native view creation. The
+        callback may call ``run_loop`` or own the app loop; this method still
+        owns creation and pending-close cleanup.
+        """
         self._require_open()
         self._create_view(offscreen=False, title=title)
-        try:
+
+        def run_loop():
             self.dvz.dvz_app_run(self.app, frame_count)
+
+        try:
+            if runner is None:
+                run_loop()
+            else:
+                runner(self, run_loop)
         finally:
             if self._close_pending:
                 self.close()
