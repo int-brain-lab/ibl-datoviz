@@ -336,6 +336,30 @@ def run_benchmark(arguments, prefix, environment):
     )
 
 
+def review_launch_prefix(args, prefix):
+    """Apply explicit rendering overrides after the checkout's platform environment."""
+    overrides = []
+    if getattr(args, 'benchmark', False):
+        overrides.extend(
+            [
+                'os.environ.pop("DVZ_FPS_CAP", None)',
+                'os.environ.update(DVZ_APP_SCHEDULE="continuous", DVZ_PRESENT_MODE="immediate")',
+            ]
+        )
+    if getattr(args, 'fps_overlay', False):
+        overrides.append('os.environ["DVZ_FPS_OVERLAY"] = "1"')
+    if not overrides:
+        return [*prefix, sys.executable]
+    code = '; '.join(
+        [
+            'import os, sys',
+            *overrides,
+            'os.execv(sys.executable, [sys.executable, *sys.argv[1:]])',
+        ]
+    )
+    return [*prefix, sys.executable, '-c', code]
+
+
 def run_examples(args, prefix, environment):  # noqa: PLR0912
     """Run the selected examples with manual or bounded automation window identity."""
     environment['DVZ_WINDOW_INSTANCE'] = 'datoviz-automated' if args.frames > 0 else 'datoviz'
@@ -343,6 +367,11 @@ def run_examples(args, prefix, environment):  # noqa: PLR0912
     if not ASSETS.exists() or (needs_volume and not VOLUME.exists()):
         raise ValueError('Review data is missing; rerun setup without --tests-only')
     offscreen = getattr(args, 'offscreen', None)
+    if offscreen is not None and (
+        getattr(args, 'benchmark', False) or getattr(args, 'fps_overlay', False)
+    ):
+        raise ValueError('--benchmark and --fps-overlay require an interactive host window')
+    launch_prefix = review_launch_prefix(args, prefix)
     record_input = getattr(args, 'record_input', None)
     replay_input = getattr(args, 'replay_input', None)
     replay_mode = getattr(args, 'replay_mode', 'paced')
@@ -390,8 +419,7 @@ def run_examples(args, prefix, environment):  # noqa: PLR0912
             raise ValueError('--preset requires one numbered app')
         run(
             [
-                *prefix,
-                sys.executable,
+                *launch_prefix,
                 REPOSITORY / 'examples' / script,
                 *arguments,
                 *(['--preset', preset] if preset is not None else []),
@@ -484,6 +512,16 @@ def main():  # noqa: PLR0915
         '--frames', type=int, default=0, help='zero runs until each window is closed'
     )
     review.add_argument('--ui-scale', type=float, default=1.0, help='GUI size multiplier')
+    review.add_argument(
+        '--benchmark',
+        action='store_true',
+        help='render continuously, request immediate presentation and remove the FPS cap',
+    )
+    review.add_argument(
+        '--fps-overlay',
+        action='store_true',
+        help='show the native FPS overlay',
+    )
     for command in (diagnosis, tests, review, benchmark, contours):
         command.add_argument(
             '--strict', action='store_true', help='require the pinned Datoviz source revision'

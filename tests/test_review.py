@@ -1,5 +1,7 @@
 import io
 import json
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,6 +10,71 @@ import pytest
 import ibl_anatomy
 from ibl_anatomy import bundled_surface_catalog
 from tools import review
+
+
+@pytest.mark.parametrize('benchmark,fps_overlay', [(True, False), (False, True), (True, True)])
+def test_render_options_override_platform_environment(benchmark, fps_overlay):
+    platform_prefix = [
+        sys.executable,
+        '-c',
+        'import os, sys; '
+        'os.environ.update(DVZ_FPS_CAP="30", DVZ_PRESENT_MODE="fifo", '
+        'DVZ_APP_SCHEDULE="on_demand", DVZ_FPS_OVERLAY="0"); '
+        'os.execv(sys.argv[1], sys.argv[1:])',
+    ]
+    prefix = review.review_launch_prefix(
+        SimpleNamespace(benchmark=benchmark, fps_overlay=fps_overlay), platform_prefix
+    )
+    result = subprocess.run(
+        [*prefix, '-c', 'import json, os; print(json.dumps(dict(os.environ)))'],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    environment = json.loads(result.stdout)
+    assert environment.get('DVZ_FPS_CAP') == (None if benchmark else '30')
+    assert environment['DVZ_PRESENT_MODE'] == ('immediate' if benchmark else 'fifo')
+    assert environment['DVZ_APP_SCHEDULE'] == ('continuous' if benchmark else 'on_demand')
+    assert environment['DVZ_FPS_OVERLAY'] == ('1' if fps_overlay else '0')
+
+
+def test_render_options_are_parsed_and_run_for_both_review_apps(tmp_path, monkeypatch):
+    monkeypatch.setattr(review, 'configured_checkout', lambda: tmp_path)
+    monkeypatch.setattr(review, 'doctor', lambda *_args, **_kwargs: ([], {}))
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    calls = []
+    monkeypatch.setattr(review, 'run', lambda command, **_kwargs: calls.append(command))
+    monkeypatch.setattr(
+        review.sys,
+        'argv',
+        [
+            'review.py',
+            'run',
+            'all',
+            '--benchmark',
+            '--fps-overlay',
+            '--frames',
+            '3',
+        ],
+    )
+    assert review.main() == 0
+    assert len(calls) == 2
+    for command in calls:
+        assert command[:2] == [sys.executable, '-c']
+        assert '--benchmark' not in command and '--fps-overlay' not in command
+        assert command[-4:] == ['--frames', 3, '--ui-scale', 1.0]
+
+
+@pytest.mark.parametrize('flag', ['benchmark', 'fps_overlay'])
+def test_render_options_reject_offscreen_capture(tmp_path, monkeypatch, flag):
+    monkeypatch.setattr(review, 'ASSETS', tmp_path)
+    monkeypatch.setattr(review, 'VOLUME', tmp_path)
+    args = SimpleNamespace(
+        example='2', frames=0, offscreen=tmp_path / 'capture.png', **{flag: True}
+    )
+    with pytest.raises(ValueError, match='interactive host window'):
+        review.run_examples(args, [], {})
 
 
 @pytest.fixture(autouse=True)

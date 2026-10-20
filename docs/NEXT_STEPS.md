@@ -9,6 +9,12 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Continuous rendering review options — October 20 2026
+
+`just review 2 --benchmark` requests continuous frames and immediate presentation with no inherited FPS cap. Optional `--fps-overlay` enables the native overlay independently. Overrides are applied after the checkout's platform environment; both options require a host window and work with numbered apps, `all` and named examples. No baseline pin, build type or validation policy changes. See [usage and measurement limits](review-apps.md#continuous-rendering-for-benchmarking).
+
+Validation: 68 focused review/recording-wiring tests pass, including real subprocess checks of platform-environment precedence. Strict configured-baseline app-2 startup passes five frames on a private Xvfb display with both flags at UI scale 1.5. Ruff, strict MkDocs and just recipe parsing/discovery/argument forwarding pass. This bounded launch does not establish interactive quality or a throughput result.
+
 ## Native RC4 branch consolidation — October 20 2026
 
 Native ongoing development is now consolidated on `rc4/integration`, renamed from `perf/panel-render-reuse`. Native `main` remains reserved for RC3 finalization. Redundant native implementation branches were backed up and retired locally; their checkout folders remain as detached snapshots. The configured scientific checkout remains at the exact pinned revision `73d0f0bcdd595d2f76e2cdffcc2dd89c25a56858`, now detached; neither this repository's branch policy nor its dependency pin changes. Both repositories have verified recovery bundles and saved branch refs under their common Git directories. No remote branches were changed.

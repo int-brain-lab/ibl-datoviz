@@ -13,6 +13,17 @@ keeps its visualization structure throughout the review: presets change layer
 visibility and settings within existing views. Normal edits preserve the camera;
 only the explicit reset button restores the starting camera.
 
+## Continuous rendering for benchmarking
+
+```bash
+just review 2 --ui-scale 1.5 --benchmark
+just review 2 --ui-scale 1.5 --benchmark --fps-overlay
+```
+
+`--benchmark` requests frames continuously, including while idle, requests immediate presentation and removes any inherited FPS cap. It applies `DVZ_APP_SCHEDULE=continuous`, `DVZ_PRESENT_MODE=immediate` and unsets `DVZ_FPS_CAP` after loading the configured checkout's platform environment. Immediate presentation may fall back when the surface does not support it. Normal review keeps its existing scheduling and presentation settings.
+
+`--fps-overlay` independently enables Datoviz's native FPS overlay. Leave it off when measuring without overlay overhead. Both flags work with numbered apps, `all` and named examples, and require a host window; they cannot be combined with `--offscreen`. `--frames N` can still bound a run. These options measure continuous redraw throughput with normal caching; they do not generate interactions, select a Release build, disable validation or establish equivalent scientific work across builds.
+
 ## Linked scientific workspace
 
 ```bash
