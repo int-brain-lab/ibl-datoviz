@@ -65,6 +65,41 @@ def _camera_model(viewer) -> list[list[float]] | None:
     return _json_value(values.tolist())
 
 
+def _camera_navigation(viewer) -> dict[str, Any] | None:
+    """Copy full controller navigation and panel camera state, including pan/zoom."""
+    dvz = getattr(viewer, 'dvz', None)
+    if not callable(getattr(dvz, 'dvz_arcball_state', None)):
+        return None
+    state = dvz.DvzArcballState()
+    if not dvz.dvz_arcball_state(viewer.arcball, ctypes.byref(state)):
+        raise RuntimeError('could not snapshot arcball navigation')
+    panels = {'brain': viewer.panel, **getattr(viewer, 'slice_panels', {})}
+    cameras = {}
+    for name, panel in panels.items():
+        camera = dvz.dvz_panel_camera(panel)
+        if not camera:
+            if name == 'brain':
+                raise RuntimeError('could not snapshot brain panel camera')
+            cameras[name] = None  # Fixed 2D slice panels have no camera controller.
+            continue
+        view = dvz.DvzCameraView()
+        projection = dvz.DvzCameraProjection()
+        dvz.dvz_camera_get_view(camera, ctypes.byref(view))
+        dvz.dvz_camera_get_projection(camera, ctypes.byref(projection))
+        cameras[name] = {
+            'view': {key: list(getattr(view, key)) for key, _ctype in view._fields_},
+            'projection': {key: getattr(projection, key) for key, _ctype in projection._fields_},
+        }
+    return _json_value(
+        {
+            'zoom': state.zoom,
+            'pan': list(state.pan),
+            'interacting': state.interacting,
+            'panels': cameras,
+        }
+    )
+
+
 def scientific_state(viewer) -> dict[str, Any]:
     """Return the committed linked-view state in deterministic JSON form."""
     cursor = viewer.cursor.as_index()
@@ -74,6 +109,7 @@ def scientific_state(viewer) -> dict[str, Any]:
             'camera': {
                 'angles': getattr(viewer, 'camera_angles', None),
                 'model': _camera_model(viewer),
+                'navigation': _camera_navigation(viewer),
                 'controller': type(getattr(viewer, 'camera', None)).__name__,
             },
             'mapping': viewer.mapping,

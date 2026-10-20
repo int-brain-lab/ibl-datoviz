@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 
 import pytest
@@ -26,6 +27,52 @@ class FakeCamera:
 
     def reset(self):
         self.viewer.camera_angles = (-1.15, -0.2, 2.5)
+
+
+def test_scientific_snapshot_tracks_pan_and_zoom_even_when_model_is_unchanged():
+    class ArcballState(ctypes.Structure):
+        _fields_ = [('zoom', ctypes.c_float), ('pan', ctypes.c_float * 2),
+                    ('interacting', ctypes.c_bool)]
+
+    class CameraView(ctypes.Structure):
+        _fields_ = [('eye', ctypes.c_float * 3), ('target', ctypes.c_float * 3),
+                    ('up', ctypes.c_float * 3)]
+
+    class CameraProjection(ctypes.Structure):
+        _fields_ = [('type', ctypes.c_int), ('fov_y', ctypes.c_float)]
+
+    class NavigationDatoviz(FakeDatoviz):
+        DvzArcballState = ArcballState
+        DvzCameraView = CameraView
+        DvzCameraProjection = CameraProjection
+        zoom = 1.0
+        pan = (0.0, 0.0)
+
+        def dvz_arcball_state(self, _arcball, output):
+            output._obj.zoom = self.zoom
+            output._obj.pan[:] = self.pan
+            return True
+
+        def dvz_panel_camera(self, panel):
+            return panel == 'brain'
+
+        def dvz_camera_get_view(self, _camera, output):
+            output._obj.eye[:] = (0, 0, 3)
+
+        def dvz_camera_get_projection(self, _camera, output):
+            output._obj.fov_y = 0.72
+
+    viewer = FakeLinkedViewer()
+    viewer.dvz = NavigationDatoviz()
+    viewer.panel, viewer.slice_panels = 'brain', {'ap': 'fixed-slice'}
+    before = scientific_state(viewer)
+    viewer.dvz.zoom, viewer.dvz.pan = 2.0, (0.25, -0.5)
+    after = scientific_state(viewer)
+    assert before['camera']['model'] == after['camera']['model']
+    assert before['camera']['navigation'] != after['camera']['navigation']
+    assert after['camera']['navigation']['zoom'] == 2.0
+    assert after['camera']['navigation']['pan'] == [0.25, -0.5]
+    assert after['camera']['navigation']['panels']['ap'] is None
 
 
 class FakeLinkedViewer:

@@ -9,6 +9,16 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Terminal scientific replay checkpoints — October 20 2026
+
+Recording completion now binds a settled scientific source capture into the trace fixture without extending the input clock. Replay compares full camera navigation, scientific slice/selection/layer state and exact RGBA8 pixels; scheduling revisions and native submission serials remain run-local evidence. PNGs and diagnostic reports are written under the caller's artifact paths. A required checkpoint failure remains an unsuccessful replay; matching terminal results still do not constitute an equal-work or performance verdict. See [current commands and limits](INTERACTION_REPLAY_BENCHMARK.md#current-commands-and-limits).
+
+Native `abf2d8c17` fixes clean CI by generating the local ctypes artifact before checking freshness. `eab619f94` adds the borrowed viewport source getter and successful view-submission serial, with focused synchronization-validation coverage including source capture after actual host close. Generated bindings remain local artifacts; the configured baseline and dependency pin remain unchanged.
+
+An actual private-display XTest recording captured 33 mouse observations and a ready source checkpoint. Two controlled replays delivered every observation and finished with exactly identical scientific state and RGBA8 hashes to each other, but both differed from the live-recorded terminal rotation/image. Both diagnostic runs correctly failed their live-reference checkpoint. GUI motion batching is a suspected cause, not yet an instrumented attribution. No throughput gain or faithful live-session reproduction is claimed. This remaining fidelity investigation precedes benchmark acceptance and the next manual recording session.
+
+Validation passes all 1,325 native tests with zero failures/skips under private-display Vulkan synchronization validation, all 1,168 candidate-paired IBL tests with one existing optional skip, and 43 focused fixture/capture/wiring tests. Ruff, strict MkDocs and whitespace checks pass. The unchanged pinned-baseline suite also passes 1,167 tests with two existing optional skips. Hosted CI remains a separate check.
+
 ## Continuous rendering review options — October 20 2026
 
 `just review 2 --benchmark` requests continuous frames and immediate presentation with no inherited FPS cap. Optional `--fps-overlay` enables the native overlay independently. Overrides are applied after the checkout's platform environment; both options require a host window and work with numbered apps, `all` and named examples. No baseline pin, build type or validation policy changes. See [usage and measurement limits](review-apps.md#continuous-rendering-for-benchmarking).

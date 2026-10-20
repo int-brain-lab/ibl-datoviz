@@ -9,7 +9,7 @@ import pytest
 
 from examples import review_common
 from examples.review_common import add_review_arguments, finish_review
-from ibl_datoviz import interaction_benchmark
+from ibl_datoviz import interaction_benchmark, interaction_checkpoint
 from ibl_datoviz.viewer import AtlasViewer
 
 
@@ -255,6 +255,7 @@ def _runner_fakes(monkeypatch, trace):
     monkeypatch.setattr(interaction_benchmark, 'ReviewFixture', Fixture)
     monkeypatch.setattr(interaction_benchmark, 'LinkedReadiness', Readiness)
     monkeypatch.setattr(interaction_benchmark, 'scientific_state', lambda _viewer: {'camera': {}})
+    monkeypatch.setattr(interaction_checkpoint, 'scientific_state', lambda _viewer: {'camera': {}})
 
     class Recorder:
         def __init__(self, *_args, **kwargs):
@@ -410,7 +411,87 @@ def test_replay_report_labels_display_checkpoint_unavailable(tmp_path, monkeypat
     finalization = report['finalization']
     assert finalization['ibl_display_checkpoint']['status'] == 'unavailable'
     assert finalization['ibl_benchmark_verdict'] == 'unavailable'
-    assert 'scientific checkpoint comparison' in finalization['ibl_benchmark_verdict_reason']
+    assert finalization['ibl_terminal_comparison']['status'] == 'unavailable'
+    assert 'intermediate work' in finalization['ibl_benchmark_verdict_reason']
     assert ('player-run',) in calls
     metadata = next(call[1] for call in calls if call[0] == 'fixture-captured')
     assert metadata['layout_warmup_frames'] == 8
+
+
+def test_record_terminal_checkpoint_rehash_preserves_input_duration(monkeypatch, tmp_path):
+    checkpoint = {'status': 'ready', 'scope': 'designated-terminal-source-capture'}
+    monkeypatch.setattr(
+        interaction_checkpoint, 'capture_terminal_checkpoint', lambda *_args, **_kwargs: checkpoint
+    )
+    manifest = {
+        'fixture': {'app_id': '2'},
+        'windows': {'host-0': {}},
+        'duration_ns': '12345',
+        'required_capabilities': ['mouse'],
+        'adapter_platform': 'linux',
+    }
+    trace = SimpleNamespace(manifest=manifest, observations=('event',))
+    builds = []
+
+    def build_trace(observations, windows, **kwargs):
+        builds.append((observations, windows, kwargs))
+        return 'freshly-hashed-trace'
+
+    codec = SimpleNamespace(plain=lambda value: value, build_trace=build_trace)
+    assert (
+        review_common._record_terminal_trace(
+            object(), object(), trace, codec, tmp_path / 'manifest.json'
+        )
+        == 'freshly-hashed-trace'
+    )
+    assert builds[0][0] == ('event',)
+    assert builds[0][2]['duration_ns'] == 12345
+    assert builds[0][2]['fixture']['terminal_checkpoint'] == checkpoint
+    assert manifest['fixture'] == {'app_id': '2'}
+
+
+@pytest.mark.parametrize('status', ['mismatch', 'unavailable'])
+def test_required_terminal_checkpoint_cannot_be_silently_downgraded(status):
+    with pytest.raises(RuntimeError, match='terminal checkpoint failed'):
+        review_common._validate_terminal_report(
+            {
+                'ibl_final_slice_readiness': {'status': 'ready'},
+                'ibl_display_checkpoint': {'status': 'ready'},
+                'ibl_terminal_comparison': {'status': status},
+                'ibl_terminal_checkpoint_required': True,
+            }
+        )
+
+
+def test_replay_preserves_report_before_raising_terminal_capture_error(tmp_path, monkeypatch):
+    trace = SimpleNamespace(
+        manifest={
+            'fixture': {
+                'metadata': {},
+                'app_id': '2',
+                'preset': 'overlay',
+                'initial_state': {'camera': {'angles': [0.0, 0.0, 0.0]}},
+            }
+        }
+    )
+    _calls, _writes, viewer, args, replay, trace_io = _runner_fakes(monkeypatch, trace)
+    args.record_input, args.replay_input = None, Path('manifest.json')
+    args.replay_report = tmp_path / 'report.json'
+    monkeypatch.setattr(
+        interaction_checkpoint,
+        'capture_terminal_checkpoint',
+        lambda *_args, **_kwargs: {'status': 'error', 'error': 'capture failed'},
+    )
+    with pytest.raises(RuntimeError, match='terminal checkpoint failed'):
+        review_common._input_runner(
+            viewer,
+            args,
+            replay,
+            trace_io,
+            title='review',
+            app_id='2',
+            preset='overlay',
+            run_loop=lambda: pytest.fail('unexpected recording loop'),
+        )
+    report = json.loads(args.replay_report.read_text())
+    assert report['finalization']['ibl_display_checkpoint']['error'] == 'capture failed'

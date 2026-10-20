@@ -100,12 +100,60 @@ def _input_api():
     return input_replay, input_trace
 
 
+def _record_terminal_trace(viewer, readiness, trace, input_trace, path):
+    """Bind terminal evidence into a freshly hashed trace after capture stops."""
+    from ibl_datoviz.interaction_checkpoint import capture_terminal_checkpoint  # noqa: PLC0415
+
+    checkpoint = capture_terminal_checkpoint(
+        viewer, readiness, output=path.with_suffix('.terminal.png')
+    )
+    if checkpoint['status'] == 'unavailable':
+        return trace
+    if checkpoint['status'] != 'ready':
+        raise RuntimeError(f'recording terminal checkpoint failed: {checkpoint}')
+    manifest = input_trace.plain(trace.manifest)
+    return input_trace.build_trace(
+        trace.observations,
+        manifest['windows'],
+        fixture={**manifest['fixture'], 'terminal_checkpoint': checkpoint},
+        required_capabilities=manifest['required_capabilities'],
+        duration_ns=int(manifest['duration_ns']),
+        adapter_platform=manifest['adapter_platform'],
+    )
+
+
+def _validate_terminal_report(finalization):
+    """Reject terminal mismatches after preserving the diagnostic replay report."""
+    readiness = finalization.get('ibl_final_slice_readiness', {})
+    if readiness.get('status') != 'ready':
+        raise RuntimeError(f'linked review did not settle after replay: {readiness}')
+    comparison = finalization.get('ibl_terminal_comparison', {})
+    checkpoint = finalization.get('ibl_display_checkpoint', {})
+    required = finalization.get('ibl_terminal_checkpoint_required', False)
+    if (
+        (required and comparison.get('status') != 'match')
+        or (comparison.get('status') == 'mismatch')
+        or checkpoint.get('status')
+        not in (
+            'ready',
+            'unavailable',
+        )
+    ):
+        raise RuntimeError(
+            f'linked review terminal checkpoint failed: {comparison}; '
+            f'capture={checkpoint.get("status")}, error={checkpoint.get("error")}'
+        )
+
+
 def _input_runner(viewer, args, input_replay, input_trace, *, title, app_id, preset, run_loop):
     """Run one opt-in trace against a resolved linked scientific fixture."""
     from ibl_datoviz.interaction_benchmark import (  # noqa: PLC0415
         LinkedReadiness,
         ReviewFixture,
-        scientific_state,
+    )
+    from ibl_datoviz.interaction_checkpoint import (  # noqa: PLC0415
+        capture_terminal_checkpoint,
+        compare_terminal_checkpoints,
     )
 
     record, replay, mode, report_path = _input_options(args, viewer)
@@ -162,14 +210,23 @@ def _input_runner(viewer, args, input_replay, input_trace, *, title, app_id, pre
 
             def finalize(pump):
                 final_readiness = _settle_linked_readiness(viewer, readiness, pump=pump)
+                output = (
+                    report_path.with_suffix('.terminal.png') if report_path is not None else None
+                )
+                checkpoint = capture_terminal_checkpoint(viewer, readiness, output=output)
+                comparison = compare_terminal_checkpoints(
+                    trace_fixture.get('terminal_checkpoint'), checkpoint
+                )
                 return {
-                    'ibl_final_scientific_state': scientific_state(viewer),
+                    'ibl_final_scientific_state': checkpoint.get('scientific_state'),
                     'ibl_final_slice_readiness': final_readiness.to_dict(),
-                    'ibl_display_checkpoint': readiness.checkpoint(render_proof=None).to_dict(),
+                    'ibl_display_checkpoint': checkpoint,
+                    'ibl_terminal_comparison': comparison,
+                    'ibl_terminal_checkpoint_required': 'terminal_checkpoint' in trace_fixture,
                     'ibl_benchmark_verdict': 'unavailable',
                     'ibl_benchmark_verdict_reason': (
-                        'rendered display proof and expected scientific checkpoint '
-                        'comparison were not established'
+                        'terminal correctness does not establish identical intermediate '
+                        'work or a paired throughput comparison'
                     ),
                 }
 
@@ -181,17 +238,20 @@ def _input_runner(viewer, args, input_replay, input_trace, *, title, app_id, pre
             if report_path:
                 report_path.parent.mkdir(parents=True, exist_ok=True)
                 report_path.write_text(json.dumps(report, indent=2) + '\n')
-            final_readiness = report.get('finalization', {}).get('ibl_final_slice_readiness', {})
-            if final_readiness.get('status') != 'ready':
-                raise RuntimeError(f'linked review did not settle after replay: {final_readiness}')
+            _validate_terminal_report(report.get('finalization', {}))
             return
 
         recorder = input_replay.Recorder(viewer.dvz, viewer.view, fixture=fixture.to_dict())
         recorder.start()
+        print('Input recording started; close the window to finish.', flush=True)
+        completed = False
         try:
             run_loop()
+            completed = True
         finally:
             trace = recorder.stop()
+            if completed:
+                trace = _record_terminal_trace(viewer, readiness, trace, input_trace, record)
             input_trace.write_trace(trace, record)
     finally:
         readiness.close()
