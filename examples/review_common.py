@@ -29,7 +29,8 @@ def review_context_surfaces(mesh, catalog, geometries, *, detail='landmarks'):
     """Use the same verified global-region surfaces in both numbered reviews."""
     return [
         AtlasContextSurface.from_geometry(
-            geometry, mesh,
+            geometry,
+            mesh,
             color=tuple(bytes.fromhex(member.color_hex.removeprefix('#'))),
             name=member.name,
         )
@@ -82,12 +83,14 @@ def _input_api():
             'input recording/replay requires a Datoviz build providing '
             'the optional datoviz.input_replay API'
         ) from error
-    if not all(
-        callable(getattr(input_replay, name, None)) for name in ('Recorder', 'Player')
-    ) or not all(
-        callable(getattr(input_trace, name, None))
-        for name in ('write_trace', 'read_trace', 'plain')
-    ) or not callable(getattr(datoviz, 'dvz_app_step', None)):
+    if (
+        not all(callable(getattr(input_replay, name, None)) for name in ('Recorder', 'Player'))
+        or not all(
+            callable(getattr(input_trace, name, None))
+            for name in ('write_trace', 'read_trace', 'plain')
+        )
+        or not callable(getattr(datoviz, 'dvz_app_step', None))
+    ):
         raise RuntimeError(
             'configured Datoviz does not provide the complete optional '
             'datoviz.input_replay API; use the matching v0.4 development checkout'
@@ -150,23 +153,31 @@ def _input_runner(viewer, args, input_replay, input_trace, *, title, app_id, pre
                 raise ValueError(
                     'input trace initial scientific state does not match this review run'
                 )
-            report = input_replay.Player(viewer.dvz, viewer.app, viewer.view).run(
-                trace, mode=mode, tick_seconds=1 / 120
+
+            def finalize(pump):
+                final_readiness = _settle_linked_readiness(viewer, readiness, pump=pump)
+                return {
+                    'ibl_final_scientific_state': scientific_state(viewer),
+                    'ibl_final_slice_readiness': final_readiness.to_dict(),
+                    'ibl_display_checkpoint': readiness.checkpoint(render_proof=None).to_dict(),
+                    'ibl_benchmark_verdict': 'unavailable',
+                    'ibl_benchmark_verdict_reason': (
+                        'rendered display proof and expected scientific checkpoint '
+                        'comparison were not established'
+                    ),
+                }
+
+            report = dict(
+                input_replay.Player(viewer.dvz, viewer.app, viewer.view).run(
+                    trace, mode=mode, tick_seconds=1 / 120, finalize=finalize
+                )
             )
-            report = dict(report)
-            final_readiness = _settle_linked_readiness(viewer, readiness)
-            report['ibl_final_scientific_state'] = scientific_state(viewer)
-            report['ibl_final_slice_readiness'] = final_readiness.to_dict()
-            report['ibl_display_checkpoint'] = readiness.checkpoint(
-                render_proof=None
-            ).to_dict()
             if report_path:
                 report_path.parent.mkdir(parents=True, exist_ok=True)
                 report_path.write_text(json.dumps(report, indent=2) + '\n')
-            if final_readiness.status != 'ready':
-                raise RuntimeError(
-                    f'linked review did not settle after replay: {final_readiness.to_dict()}'
-                )
+            final_readiness = report.get('finalization', {}).get('ibl_final_slice_readiness', {})
+            if final_readiness.get('status') != 'ready':
+                raise RuntimeError(f'linked review did not settle after replay: {final_readiness}')
             return
 
         recorder = input_replay.Recorder(viewer.dvz, viewer.view, fixture=fixture.to_dict())
@@ -180,17 +191,18 @@ def _input_runner(viewer, args, input_replay, input_trace, *, title, app_id, pre
         readiness.close()
 
 
-def _settle_linked_readiness(viewer, readiness):
+def _settle_linked_readiness(viewer, readiness, *, pump=None):
     """Pump owner-thread frames for GUI layout and current slice uploads."""
     baseline = readiness.check()
-    app_step = getattr(viewer.dvz, 'dvz_app_step', None)
-    if not callable(app_step):
-        raise RuntimeError('input replay requires Datoviz dvz_app_step support')
+    if pump is None:
+        app_step = getattr(viewer.dvz, 'dvz_app_step', None)
+        if not callable(app_step):
+            raise RuntimeError('input replay requires Datoviz dvz_app_step support')
 
-    def pump():
-        outcome = app_step(viewer.app, 0.01)
-        if outcome < 0:
-            raise RuntimeError(f'Datoviz owner-thread app step failed: {outcome}')
+        def pump():
+            outcome = app_step(viewer.app, 0.01)
+            if outcome < 0:
+                raise RuntimeError(f'Datoviz owner-thread app step failed: {outcome}')
 
     if baseline.status == 'pending':
         return readiness.wait(timeout=10.0, pump=pump)

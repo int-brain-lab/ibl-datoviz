@@ -160,7 +160,7 @@ def _runner_fakes(monkeypatch, trace):
             calls.append(('readiness-attached',))
 
         def check(self):
-            return SimpleNamespace(ready=True, status='ready', to_dict=dict)
+            return SimpleNamespace(ready=True, status='ready', to_dict=lambda: {'status': 'ready'})
 
         def checkpoint(self, *, render_proof):
             assert render_proof is None
@@ -188,9 +188,10 @@ def _runner_fakes(monkeypatch, trace):
         def __init__(self, *_args):
             calls.append(('player-created',))
 
-        def run(self, *_args, **_kwargs):
+        def run(self, *_args, finalize, **_kwargs):
             calls.append(('player-run',))
-            return {'ok': True}
+            finalization = finalize(lambda: calls.append(('finalization-pump',)))
+            return {'ok': True, 'finalization': finalization}
 
     replay = SimpleNamespace(Recorder=Recorder, Player=Player)
 
@@ -320,5 +321,9 @@ def test_replay_report_labels_display_checkpoint_unavailable(tmp_path, monkeypat
     )
     report = json.loads(args.replay_report.read_text())
     assert report['ok'] is True
-    assert report['ibl_display_checkpoint']['status'] == 'unavailable'
+    finalization = report['finalization']
+    assert finalization['ibl_display_checkpoint']['status'] == 'unavailable'
+    assert finalization['ibl_benchmark_verdict'] == 'unavailable'
+    assert 'scientific checkpoint comparison' in finalization['ibl_benchmark_verdict_reason']
     assert ('player-run',) in calls
+    assert ('finalization-pump',) in calls

@@ -31,7 +31,11 @@ from ibl_datoviz.context import DEFAULT_CONTEXT_LANDMARKS
 
 PRESETS = ('anatomy', 'labels', 'volume-context', 'physical-slice', 'overlay')
 PRESET_LABELS = (
-    'Anatomy', 'Region labels', 'Volume context', 'Physical slice', 'Anatomy + labels'
+    'Anatomy',
+    'Region labels',
+    'Volume context',
+    'Physical slice',
+    'Anatomy + labels',
 )
 SLICE_REPRESENTATIONS = (
     ('Anatomy', (True, False, False)),
@@ -40,6 +44,105 @@ SLICE_REPRESENTATIONS = (
     ('Anatomy + boundaries', (True, False, True)),
 )
 AXES = ('ap', 'ml', 'dv')
+
+
+def _sha256_file(path, *, expected=None, label):
+    """Return a present source digest and check it against a verified asset lock."""
+    path = Path(path)
+    if not path.is_file():
+        raise RuntimeError(f'benchmark fixture source is missing: {label} ({path})')
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if expected is not None and digest != expected:
+        raise RuntimeError(f'benchmark fixture source changed after verification: {label}')
+    return digest
+
+
+def _review_asset_identity(assets, volume_pack, asset_set, asset_root, volume_root):
+    """Build fail-closed, content-based identity from the verified review packs."""
+    asset_root = Path(asset_root).resolve()
+    volume_root = Path(volume_root).resolve()
+    mesh_manifest_path = asset_root / 'mesh-pack' / 'manifest.json'
+    region_catalog_path = asset_root / 'regions.json'
+    if Path(assets.root).resolve() != asset_root:
+        raise RuntimeError('verified D070 asset root differs from the requested root')
+    mesh_manifest_sha256 = _sha256_file(
+        mesh_manifest_path, expected=asset_set.mesh_manifest.sha256, label='D070 manifest'
+    )
+    region_catalog_sha256 = _sha256_file(
+        region_catalog_path, expected=asset_set.region_catalog.sha256, label='D070 catalog'
+    )
+
+    mesh_pack = assets.mesh_pack
+    if Path(mesh_pack.manifest_path).resolve() != mesh_manifest_path:
+        raise RuntimeError('verified D070 mesh manifest differs from the requested source')
+    mesh_manifest = mesh_pack.manifest
+    pack_id = mesh_manifest.get('pack_id')
+    lod = next(
+        (item for item in mesh_manifest['lods'] if item['id'] == mesh_manifest['default_lod_id']),
+        None,
+    )
+    if not isinstance(pack_id, str) or not pack_id or lod is None:
+        raise RuntimeError('verified D070 pack has no stable pack or LOD identity')
+    mesh_geometry_sha256 = lod['resource']['sha256']
+    if mesh_geometry_sha256 != asset_set.expected_geometry_sha256:
+        raise RuntimeError('verified D070 geometry identity differs from the asset lock')
+
+    if Path(volume_pack.root).resolve() != volume_root:
+        raise RuntimeError('verified Allen volume root differs from the requested root')
+    volume_manifest_sha256 = _sha256_file(
+        volume_root / 'manifest.json', label='Allen volume manifest'
+    )
+    volume_manifest = volume_pack.manifest
+    volume_pack_id = volume_manifest.get('pack_id')
+    asset_set_id = asset_set.asset_set_id
+    if not isinstance(volume_pack_id, str) or not volume_pack_id:
+        raise RuntimeError('Allen volume pack has no stable pack identity')
+    if not isinstance(asset_set_id, str) or not asset_set_id:
+        raise RuntimeError('D070 asset set has no stable identity')
+    volume_resources = {
+        name: volume_manifest['volumes'][name]['sha256'] for name in ('template', 'annotation')
+    }
+    catalog_sha256 = volume_manifest['region_catalog']['sha256']
+    if catalog_sha256 != region_catalog_sha256:
+        raise RuntimeError('Allen volume pack catalog differs from the verified D070 catalog')
+    if any(
+        not isinstance(digest, str)
+        or len(digest) != 64
+        or any(character not in '0123456789abcdef' for character in digest)
+        for digest in volume_resources.values()
+    ):
+        raise RuntimeError('Allen volume pack is missing a complete resource digest')
+    return {
+        'asset_set_id': asset_set_id,
+        'atlas_pack_id': pack_id,
+        'atlas_manifest_sha256': mesh_manifest_sha256,
+        'atlas_geometry_sha256': mesh_geometry_sha256,
+        'region_catalog_sha256': region_catalog_sha256,
+        'volume_manifest_sha256': volume_manifest_sha256,
+        'volume_pack_id': volume_pack_id,
+        'volume_resources_sha256': volume_resources,
+    }
+
+
+def _context_surface_identity(context_catalog):
+    """Require stable source hashes for every surface selected by this review."""
+    selected = {
+        str(member.asset.source_allen_id): member.asset.source.sha256
+        for member in context_catalog.members
+        if member.asset.source_allen_id in DEFAULT_CONTEXT_LANDMARKS
+    }
+    if set(selected) != {str(identifier) for identifier in DEFAULT_CONTEXT_LANDMARKS}:
+        raise RuntimeError('verified context catalog is missing a selected review surface')
+    if any(
+        not isinstance(digest, str)
+        or len(digest) != 64
+        or any(character not in '0123456789abcdef' for character in digest)
+        for digest in selected.values()
+    ):
+        raise RuntimeError('verified context catalog is missing a surface source digest')
+    return selected
+
+
 PLANE_MODES = ('wboit', 'mask')
 PLANE_LAYERS = ('anatomy', 'annotation')
 
@@ -303,9 +406,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
             SLICE_REPRESENTATIONS
         ):
             anatomy, annotations, boundaries = SLICE_REPRESENTATIONS[control.value][1]
-            self.set_slice_layers(
-                anatomy=anatomy, annotations=annotations, boundaries=boundaries
-            )
+            self.set_slice_layers(anatomy=anatomy, annotations=annotations, boundaries=boundaries)
         self.dvz.dvz_gui_text(
             gui, b'Slices: left-click moves crosshair; right-click selects region.'
         )
@@ -380,7 +481,8 @@ def main() -> int:
     parser.add_argument('asset_root', type=Path, help='verified D070 asset-set root')
     parser.add_argument('volume_root', type=Path, help='verified Allen 50 um volume pack')
     parser.add_argument(
-        '--context-root', type=Path,
+        '--context-root',
+        type=Path,
         default=Path(__file__).resolve().parents[1] / 'build' / 'allen-major-context',
         help='prepared hash-verified major Allen surfaces (run just setup to prepare)',
     )
@@ -393,7 +495,8 @@ def main() -> int:
     )
     add_review_arguments(parser)
     args = parser.parse_args()
-    assets = verify_materialized_asset_set(bundled_asset_set(), args.asset_root)
+    asset_set = bundled_asset_set()
+    assets = verify_materialized_asset_set(asset_set, args.asset_root)
     volume_pack = open_volume_pack(args.volume_root)
     volumes = volume_pack.load_volumes()
     try:
@@ -404,6 +507,12 @@ def main() -> int:
             'Run just setup /path/to/datoviz to prepare the verified surfaces.'
         )
     mesh = AtlasMesh.from_geometry(assets.geometry)
+    fixture_options = {}
+    if args.record_input or args.replay_input:
+        fixture_options = _review_asset_identity(
+            assets, volume_pack, asset_set, args.asset_root, args.volume_root
+        )
+        fixture_options['context_surfaces'] = _context_surface_identity(context_catalog)
     with LinkedAtlasReview(
         mesh,
         volumes,
@@ -420,28 +529,7 @@ def main() -> int:
         enable_interaction=True,
         fit_workarea=args.offscreen is None,
     ) as viewer:
-        mesh_manifest = Path(getattr(assets, 'root', '.')) / 'mesh-pack' / 'manifest.json'
-        volume_manifest = Path(getattr(volume_pack, 'root', '.')) / 'manifest.json'
-        viewer.review_fixture_options = {
-            'atlas_pack_id': getattr(getattr(assets, 'pack', None), 'manifest', {}).get(
-                'pack_id'
-            ),
-            'atlas_manifest_sha256': (
-                hashlib.sha256(mesh_manifest.read_bytes()).hexdigest()
-                if mesh_manifest.is_file()
-                else None
-            ),
-            'volume_manifest_sha256': (
-                hashlib.sha256(volume_manifest.read_bytes()).hexdigest()
-                if volume_manifest.is_file()
-                else None
-            ),
-            'context_surfaces': {
-                str(member.asset.source_allen_id): member.asset.source.sha256
-                for member in getattr(context_catalog, 'members', ())
-                if member.asset.source_allen_id in DEFAULT_CONTEXT_LANDMARKS
-            },
-        }
+        viewer.review_fixture_options = fixture_options
         finish_review(viewer, args, 'D070 linked atlas review', app_id='2', preset=args.preset)
     return 0
 

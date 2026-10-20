@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -369,8 +371,20 @@ def test_extra_gui_keeps_linked_controls_and_reports_update_errors(viewer, monke
 
 def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeypatch):
     calls = []
+    fixture_calls = []
     mesh, volumes, geometry = object(), object(), object()
     monkeypatch.setattr(review, 'bundled_asset_set', lambda: 'immutable-lock')
+
+    def fixture_identity(*args):
+        fixture_calls.append(args)
+        return {'atlas_manifest_sha256': 'manifest-digest'}
+
+    monkeypatch.setattr(
+        review,
+        '_review_asset_identity',
+        fixture_identity,
+    )
+    monkeypatch.setattr(review, '_context_surface_identity', lambda _catalog: {})
     monkeypatch.setattr(
         review,
         'verify_materialized_asset_set',
@@ -427,10 +441,17 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
             '3',
             '--ui-scale',
             '1.5',
+            '--record-input',
+            '/tmp/recorded-actions.json',
         ],
     )
     assert review.main() == 0
     assert calls[:2] == [('assets', 'immutable-lock', '/assets/d070'), ('volume', '/assets/50um')]
+    assert fixture_calls[0][2:] == (
+        'immutable-lock',
+        Path('/assets/d070'),
+        Path('/assets/50um'),
+    )
     assert calls[2] == (
         'options',
         {
@@ -456,6 +477,76 @@ def test_cli_loads_explicit_verified_sources_and_forwards_review_options(monkeyp
         {'app_id': '2', 'preset': 'labels'},
     )
     assert calls[4] == ('close',)
+
+
+def test_review_asset_identity_uses_verified_source_roots_and_required_hashes(tmp_path):
+    asset_root = tmp_path / 'd070'
+    volume_root = tmp_path / 'volume'
+    (asset_root / 'mesh-pack').mkdir(parents=True)
+    volume_root.mkdir()
+    mesh_manifest = asset_root / 'mesh-pack' / 'manifest.json'
+    region_catalog = asset_root / 'regions.json'
+    volume_manifest = volume_root / 'manifest.json'
+    mesh_manifest.write_bytes(b'mesh manifest')
+    region_catalog.write_bytes(b'region catalog')
+    volume_manifest.write_bytes(b'volume manifest')
+    mesh_digest = hashlib.sha256(mesh_manifest.read_bytes()).hexdigest()
+    region_digest = hashlib.sha256(region_catalog.read_bytes()).hexdigest()
+    volume_digest = hashlib.sha256(volume_manifest.read_bytes()).hexdigest()
+    geometry_digest = 'a' * 64
+    mesh_pack = SimpleNamespace(
+        manifest_path=mesh_manifest,
+        manifest={
+            'pack_id': 'd070-pack',
+            'default_lod_id': 'default',
+            'lods': [{'id': 'default', 'resource': {'sha256': geometry_digest}}],
+        },
+    )
+    assets = SimpleNamespace(root=asset_root, mesh_pack=mesh_pack)
+    volume_pack = SimpleNamespace(
+        root=volume_root,
+        manifest={
+            'pack_id': 'allen-50um',
+            'region_catalog': {'sha256': region_digest},
+            'volumes': {
+                'template': {'sha256': 'b' * 64},
+                'annotation': {'sha256': 'c' * 64},
+            },
+        },
+    )
+    asset_set = SimpleNamespace(
+        asset_set_id='d070-set',
+        mesh_manifest=SimpleNamespace(sha256=mesh_digest),
+        region_catalog=SimpleNamespace(sha256=region_digest),
+        expected_geometry_sha256=geometry_digest,
+    )
+
+    identity = review._review_asset_identity(
+        assets, volume_pack, asset_set, asset_root, volume_root
+    )
+    assert identity == {
+        'asset_set_id': 'd070-set',
+        'atlas_pack_id': 'd070-pack',
+        'atlas_manifest_sha256': mesh_digest,
+        'atlas_geometry_sha256': geometry_digest,
+        'region_catalog_sha256': region_digest,
+        'volume_manifest_sha256': volume_digest,
+        'volume_pack_id': 'allen-50um',
+        'volume_resources_sha256': {'template': 'b' * 64, 'annotation': 'c' * 64},
+    }
+
+
+def test_review_asset_identity_fails_closed_on_missing_manifest(tmp_path):
+    asset_set = SimpleNamespace(
+        asset_set_id='d070-set',
+        mesh_manifest=SimpleNamespace(sha256='a' * 64),
+        region_catalog=SimpleNamespace(sha256='b' * 64),
+        expected_geometry_sha256='c' * 64,
+    )
+    assets = SimpleNamespace(root=tmp_path, mesh_pack=SimpleNamespace())
+    volume_pack = SimpleNamespace(root=tmp_path, manifest={})
+    with pytest.raises(RuntimeError, match='source is missing'):
+        review._review_asset_identity(assets, volume_pack, asset_set, tmp_path, tmp_path)
 
 
 def test_failed_plane_visibility_restores_native_visibility_and_volume(viewer, monkeypatch):
