@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from ibl_datoviz.auto_slice import AutoSliceNavigation
+from ibl_datoviz.interaction_benchmark import LinkedReadiness
 from ibl_datoviz.latest_wins import LatestWinsExecutor
 
 pytest_plugins = ('tests.test_linked_scientific_state', 'tests.test_region_navigation')
@@ -65,6 +66,138 @@ def test_enable_only_affects_future_intent_and_latest_wins(source):
         owner.close()
 
 
+def test_navigation_stays_pending_until_anchor_is_accepted(source):
+    entered, release, ready = Event(), Event(), Event()
+    owner = AutoSliceNavigation(source, notify=lambda _: ready.set())
+    anchor = owner.navigation.anchor
+
+    def slow_anchor(mapping, region_id):
+        entered.set()
+        assert release.wait(2)
+        return anchor(mapping, region_id)
+
+    owner.navigation.anchor = slow_anchor
+    try:
+        owner.request('allen', -315)
+        assert entered.wait(1)
+        assert owner.pending
+        assert owner.error is None
+        assert owner.drain() is None
+        assert owner.pending
+        release.set()
+        assert ready.wait(1)
+        assert owner.drain() == anchor('allen', -315)
+        assert not owner.pending
+        assert owner.error is None
+    finally:
+        release.set()
+        owner.close()
+
+
+def test_cancel_clears_pending_and_discards_late_anchor(source):
+    entered, release = Event(), Event()
+    owner = AutoSliceNavigation(source)
+    anchor = owner.navigation.anchor
+
+    def slow_anchor(mapping, region_id):
+        entered.set()
+        assert release.wait(2)
+        return anchor(mapping, region_id)
+
+    owner.navigation.anchor = slow_anchor
+    try:
+        owner.request('allen', -315)
+        assert entered.wait(1)
+        assert owner.pending
+        owner.cancel()
+        assert not owner.pending
+        release.set()
+        owner._worker._executor.submit(lambda: None).result(timeout=1)
+        assert owner.drain() is None
+        assert not owner.pending
+        assert owner.error is None
+    finally:
+        release.set()
+        owner.close()
+
+
+@pytest.mark.parametrize('resolve_by', ['new-request', 'cancel'])
+def test_lookup_error_remains_visible_until_replaced_or_cancelled(source, resolve_by):
+    ready = Event()
+    owner = AutoSliceNavigation(source, notify=lambda _: ready.set())
+
+    def fail(_mapping, _region_id):
+        raise ValueError('anchor lookup failed')
+
+    owner.navigation.anchor = fail
+    try:
+        owner.request('allen', -315)
+        assert owner.pending
+        assert ready.wait(1)
+        assert owner.drain() is None
+        assert not owner.pending
+        assert isinstance(owner.error, ValueError)
+        assert str(owner.error) == 'anchor lookup failed'
+        assert owner.status == 'Auto-slice unavailable: anchor lookup failed'
+        # Draining again must not erase the surfaced failure.
+        assert owner.drain() is None
+        assert str(owner.error) == 'anchor lookup failed'
+
+        if resolve_by == 'cancel':
+            owner.cancel()
+            assert not owner.pending
+            assert owner.error is None
+        else:
+            owner.navigation.anchor = lambda *_: (2, 7, 3)
+            ready.clear()
+            owner.request('allen', 315)
+            assert owner.pending
+            assert owner.error is None
+            assert ready.wait(1)
+            assert owner.drain() == (2, 7, 3)
+            assert owner.error is None
+            assert not owner.pending
+    finally:
+        owner.close()
+
+
+def test_close_clears_pending_and_error_state(source):
+    entered, release = Event(), Event()
+    owner = AutoSliceNavigation(source)
+
+    def slow_anchor(_mapping, _region_id):
+        entered.set()
+        assert release.wait(2)
+        raise ValueError('closed lookup failure')
+
+    owner.navigation.anchor = slow_anchor
+    owner.request('allen', -315)
+    assert entered.wait(1)
+    assert owner.pending
+    release.set()
+    owner.close()
+    assert not owner.pending
+    assert owner.error is None
+
+
+def test_request_submission_failure_sets_error_without_leaving_pending(source):
+    owner = AutoSliceNavigation(source)
+
+    def reject(_key, _token):
+        raise RuntimeError('worker queue rejected request')
+
+    owner._worker.request = reject
+    try:
+        with pytest.raises(RuntimeError, match='worker queue rejected request'):
+            owner.request('allen', -315)
+        assert not owner.pending
+        assert isinstance(owner.error, RuntimeError)
+        assert str(owner.error) == 'worker queue rejected request'
+        assert owner.status == 'Auto-slice unavailable: worker queue rejected request'
+    finally:
+        owner.close()
+
+
 def test_region_list_only_and_deselection_preserves_cursor(navigator):
     before = navigator.cursor
     navigator.selection.set_regions((-315,), mapping='allen')
@@ -81,6 +214,39 @@ def test_region_list_only_and_deselection_preserves_cursor(navigator):
     candidate.selected = []
     navigator._region_list_intent({'kind': 'select', 'id': '315'}, candidate)
     assert navigator._auto_slice.drain() is None
+
+
+def test_checkpoint_waits_for_real_region_anchor_before_slice_readiness(navigator):
+    owner = navigator._auto_slice
+    entered, release, ready = Event(), Event(), Event()
+    original_anchor = owner.navigation.anchor
+    owner._worker._notify = lambda _: ready.set()
+
+    def delayed_anchor(mapping, region_id):
+        entered.set()
+        assert release.wait(2)
+        return original_anchor(mapping, region_id)
+
+    owner.navigation.anchor = delayed_anchor
+    before = navigator.cursor
+    try:
+        with LinkedReadiness(navigator) as readiness:
+            owner.request('allen', -315)
+            assert entered.wait(1)
+            assert navigator.cursor == before
+            assert readiness.check().pending_navigation
+            release.set()
+            assert ready.wait(1)
+            # Completed worker output is still not accepted scientific navigation.
+            assert readiness.check().status == 'pending'
+            navigator._drain_auto_slice()
+            assert navigator.cursor.as_index() == original_anchor('allen', -315)
+            accepted = readiness.check()
+            assert not accepted.pending_navigation
+            # This CPU navigator prepares slices without uploading native textures.
+            assert accepted.status == 'pending' and accepted.pending_axes
+    finally:
+        release.set()
 
 
 @pytest.mark.parametrize('cancel', ['manual', 'mapping', 'disabled', 'selection', 'direct'])
@@ -108,6 +274,8 @@ def test_closed_viewer_joins_auto_slice_worker(navigator):
     owner = navigator._auto_slice
     navigator.close()
     assert navigator._auto_slice is None
+    with pytest.raises(RuntimeError, match='auto-slice navigation is closed'):
+        owner.request('allen', -315)
     with pytest.raises(RuntimeError, match='closed'):
         owner._worker.request('region', ('allen', -315))
 

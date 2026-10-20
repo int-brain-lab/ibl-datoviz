@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -291,6 +292,35 @@ def test_wait_reports_timeout_cancellation_and_upload_errors():
         assert cancelled.status == 'cancelled'
         assert readiness.check().status == 'cancelled'
     assert viewer._upload_slice_payload.__func__ is FakeLinkedViewer._upload_slice_payload
+
+
+def test_readiness_waits_for_navigation_then_its_new_slice_uploads():
+    viewer = FakeLinkedViewer()
+    viewer._auto_slice = SimpleNamespace(pending=True, error=None, enabled=True)
+    with LinkedReadiness(viewer) as readiness:
+        result = readiness.check()
+        assert result.status == 'pending'
+        assert result.pending_axes == () and result.pending_navigation
+        timed_out = readiness.wait(timeout=0, pump=lambda: None)
+        assert timed_out.status == 'timeout' and timed_out.pending_navigation
+        viewer._auto_slice.pending = False
+        viewer.set_cursor(AtlasCursor(2, 2, 3))
+        assert readiness.check().status == 'pending'
+        viewer._upload_slice_payload(viewer._slice_request('ap'), object())
+        assert readiness.check().status == 'ready'
+        viewer._auto_slice.error = RuntimeError('region anchor failed')
+        assert readiness.check().status == 'error'
+
+
+def test_fixture_restores_auto_slice_policy_through_public_controller():
+    viewer = FakeLinkedViewer()
+    viewer._auto_slice = SimpleNamespace(pending=False, error=None, enabled=True)
+    viewer.slices = SimpleNamespace(
+        set_auto_slice=lambda enabled: setattr(viewer._auto_slice, 'enabled', enabled)
+    )
+    original = fixture(viewer)
+    viewer._auto_slice.enabled = False
+    assert original.reset(viewer)['auto_slice_enabled'] is True
 
 
 def test_checkpoint_requires_rendered_capture_associated_with_current_requests():

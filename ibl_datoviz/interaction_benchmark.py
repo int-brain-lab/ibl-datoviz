@@ -117,6 +117,7 @@ def scientific_state(viewer) -> dict[str, Any]:
             'slice_indices': dict(zip(_AXES, cursor, strict=True)),
             'selected_region_ids': list(viewer.selected_region_ids()),
             'slice_renderer': viewer.slice_renderer,
+            'auto_slice_enabled': getattr(getattr(viewer, '_auto_slice', None), 'enabled', None),
             'displayed_slice_requests': requests,
             'layers': {
                 'anatomy': viewer.anatomy_visible,
@@ -132,6 +133,19 @@ def scientific_state(viewer) -> dict[str, Any]:
             },
         }
     )
+
+
+def _restore_auto_slice(viewer, initial, current):
+    """Restore navigation policy through the public slice controller."""
+    expected = initial.get('auto_slice_enabled')
+    observed = current.get('auto_slice_enabled')
+    if (expected is None) != (observed is None):
+        raise RuntimeError('fixture auto-slice availability changed')
+    if expected != observed:
+        setter = getattr(getattr(viewer, 'slices', None), 'set_auto_slice', None)
+        if not callable(setter):
+            raise RuntimeError('fixture reset has no public auto-slice setter')
+        setter(expected)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +233,8 @@ class ReviewFixture:
                 label = '.'.join(path)
                 raise RuntimeError(f'fixture reset has no public setter for changed {label}')
 
+        _restore_auto_slice(viewer, initial, current)
+
         camera = initial['camera']
         camera_controller = getattr(viewer, 'camera', None)
         if callable(getattr(camera_controller, 'reset', None)):
@@ -258,7 +274,7 @@ class ReviewFixture:
         restored = scientific_state(viewer)
         if restored['camera'] != camera:
             raise RuntimeError('public camera reset did not restore the captured camera state')
-        for key in ('mapping', 'cursor', 'selected_region_ids', 'layers'):
+        for key in ('mapping', 'cursor', 'selected_region_ids', 'layers', 'auto_slice_enabled'):
             if restored[key] != initial[key]:
                 raise RuntimeError(f'fixture reset did not restore {key}')
         for key in ('volume', 'surface', 'context'):
@@ -276,6 +292,7 @@ class ReadinessResult:
     accepted_requests: Mapping[str, Any] | None = None
     error: str | None = None
     proof: Mapping[str, Any] | None = None
+    pending_navigation: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Return the checkpoint outcome as JSON-compatible data."""
@@ -337,12 +354,20 @@ class LinkedReadiness:
             return ReadinessResult(
                 'error', error='readiness checks require the viewer owning thread'
             )
-        error = self._upload_error or getattr(self.viewer, '_slice_error', None)
+        navigation = getattr(self.viewer, '_auto_slice', None)
+        error = (
+            self._upload_error
+            or getattr(self.viewer, '_slice_error', None)
+            or getattr(navigation, 'error', None)
+        )
         if error is not None:
             return ReadinessResult('error', error=f'{type(error).__name__}: {error}')
         pending = tuple(axis for axis in _AXES if self._accepted.get(axis) != self._expected(axis))
-        status = 'pending' if pending else 'ready'
-        return ReadinessResult(status, pending, self.accepted_requests)
+        pending_navigation = bool(getattr(navigation, 'pending', False))
+        status = 'pending' if pending or pending_navigation else 'ready'
+        return ReadinessResult(
+            status, pending, self.accepted_requests, pending_navigation=pending_navigation
+        )
 
     def wait(
         self,
@@ -371,6 +396,7 @@ class LinkedReadiness:
                     result.pending_axes,
                     result.accepted_requests,
                     error='readiness wait cancelled',
+                    pending_navigation=result.pending_navigation,
                 )
             remaining = deadline - monotonic()
             if remaining <= 0:
@@ -378,7 +404,8 @@ class LinkedReadiness:
                     'timeout',
                     result.pending_axes,
                     result.accepted_requests,
-                    error='slice upload readiness timed out',
+                    error='linked scientific readiness timed out',
+                    pending_navigation=result.pending_navigation,
                 )
             pump()
             sleep(min(interval, remaining))

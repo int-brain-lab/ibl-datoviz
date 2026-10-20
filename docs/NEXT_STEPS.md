@@ -21,9 +21,11 @@ After that correction, a fresh 33-event real-mouse recording and two controlled 
 
 A second private-display mixed recording exercises 3D rotation, AP slice wheel steps, left-click cursor positioning and right-click region selection, then closes shortly after the final click. Both paced and controlled runs deliver all 36 observations and match terminal scientific state and RGBA8 pixels exactly. The cursor changes from `[132, 114, 80]` to `[136, 24, 62]`, selection changes from empty to signed region `-1035`, and slice revisions advance on all three axes. Final upload readiness and designated source captures are ready; artifacts are ignored under `build/input-checkpoint-mixed/`.
 
+Final readiness also includes pending region-browser auto-slice lookup work before any resulting slice revisions exist. The helper exposes owner-thread pending/error state; cancellation and stale completion cannot falsely keep a checkpoint pending or ready. Fixtures capture/reset the auto-slice policy, and lookup failures invalidate terminal proof. Focused tests cover navigation→slice-upload sequencing, timeout/cancellation, retained worker errors, stale completion and policy reset.
+
 Native `337da6a0a` also repairs an existing CI regression test's stale idle baseline. A deliberately injected focus-loss event reproduces the failure; fresh counters at the established idle boundary now prove that worker wake and a request for one viewport leave the other idle. The fix preserves the initial no-render assertions and passes repeated llvmpipe/NVIDIA synchronization validation.
 
-Validation passes all 1,326 native tests with zero failures/skips under private-display Vulkan synchronization validation, all 1,168 candidate-paired IBL tests with one existing optional skip, and 43 focused fixture/capture/wiring tests. Ruff, strict MkDocs and whitespace checks pass. The unchanged pinned-baseline suite also passes 1,167 tests with two existing optional skips. Hosted CI remains a separate check.
+Validation passes all 1,326 native tests with zero failures/skips under private-display Vulkan synchronization validation, all 1,177 candidate-paired IBL tests with one existing optional skip, and 64 focused fixture/capture/navigation/wiring tests. Ruff, strict MkDocs and whitespace checks pass. The unchanged pinned-baseline suite also passes 1,176 tests with two existing optional skips. Hosted CI remains a separate check.
 
 ## Continuous rendering review options — October 20 2026
 
