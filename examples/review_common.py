@@ -17,6 +17,7 @@ from ibl_datoviz.surface_style import RegionStyle
 
 # Named review orientation; visual acceptance is recorded with the review artifacts.
 RECORDING_CAMERA = (-1.15, -0.20, 2.50)
+INPUT_FIXTURE_WARMUP_FRAMES = 8
 
 
 def load_major_context(path):
@@ -118,12 +119,15 @@ def _input_runner(viewer, args, input_replay, input_trace, *, title, app_id, pre
         'sidebar_width': getattr(viewer, 'sidebar_width', None),
         'fit_workarea': getattr(viewer, 'fit_workarea', None),
         'layout': 'linked-four-panel',
+        'layout_warmup_frames': INPUT_FIXTURE_WARMUP_FRAMES,
         'hover': bool(getattr(viewer, 'enable_hover', False)),
         'fixture_options': dict(getattr(viewer, 'review_fixture_options', {})),
     }
     readiness = LinkedReadiness(viewer)
     try:
-        baseline = _settle_linked_readiness(viewer, readiness)
+        baseline = _settle_linked_readiness(
+            viewer, readiness, warmup_frames=INPUT_FIXTURE_WARMUP_FRAMES
+        )
         if baseline.status != 'ready':
             raise RuntimeError(
                 f'linked review is not ready at input boundary: {baseline.to_dict()}'
@@ -191,9 +195,8 @@ def _input_runner(viewer, args, input_replay, input_trace, *, title, app_id, pre
         readiness.close()
 
 
-def _settle_linked_readiness(viewer, readiness, *, pump=None):
-    """Pump owner-thread frames for GUI layout and current slice uploads."""
-    baseline = readiness.check()
+def _settle_linked_readiness(viewer, readiness, *, pump=None, warmup_frames=0):
+    """Draw requested owner-thread warmup frames, then settle current slice uploads."""
     if pump is None:
         app_step = getattr(viewer.dvz, 'dvz_app_step', None)
         if not callable(app_step):
@@ -204,11 +207,13 @@ def _settle_linked_readiness(viewer, readiness, *, pump=None):
             if outcome < 0:
                 raise RuntimeError(f'Datoviz owner-thread app step failed: {outcome}')
 
-    if baseline.status == 'pending':
-        return readiness.wait(timeout=10.0, pump=pump)
-    # Draw the initial dock layout before snapshotting the fixture or starting
-    # Recorder/Player. This frame is setup, outside the interaction interval.
-    pump()
+    for _ in range(warmup_frames):
+        request_frame = getattr(viewer.dvz, 'dvz_view_request_frame', None)
+        if not callable(request_frame):
+            raise RuntimeError('input replay requires Datoviz dvz_view_request_frame support')
+        if request_frame(viewer.view) != 0:
+            raise RuntimeError('could not request linked review fixture warmup frame')
+        pump()
     baseline = readiness.check()
     if baseline.status == 'pending':
         return readiness.wait(timeout=10.0, pump=pump)
@@ -224,8 +229,30 @@ def _sidebar_rect(viewer):
 
 
 def _panel_rects(viewer):
-    """Copy resolved native panel rectangles when this Datoviz build exposes them."""
+    """Copy actual panel bounds, preferring the ABI-simple inner/plot getters."""
     dvz = viewer.dvz
+    inner_getter = getattr(dvz, 'dvz_panel_inner_rect_px', None)
+    plot_getter = getattr(dvz, 'dvz_panel_plot_rect_px', None)
+    rect_type = getattr(dvz, 'DvzRect', None)
+    if callable(inner_getter) and callable(plot_getter) and rect_type is not None:
+        panels = {**viewer.slice_panels, '3d': viewer.panel}
+        result = {}
+        for name, panel in panels.items():
+            rects = {}
+            for kind, getter in (('inner', inner_getter), ('plot', plot_getter)):
+                rect = rect_type()
+                if not getter(panel, ctypes.byref(rect)):
+                    raise RuntimeError(f'could not read the {name} panel {kind} rectangle')
+                rects[kind] = [
+                    float(rect.x),
+                    float(rect.y),
+                    float(rect.width),
+                    float(rect.height),
+                ]
+            result[name] = rects
+        return result
+
+    # Retain compatibility with builds that expose only snapshot frame info.
     resolve = getattr(dvz, 'dvz_panel_resolve_frame', None)
     get_info = getattr(dvz, 'dvz_panel_frame_info', None)
     unref = getattr(dvz, 'dvz_panel_frame_unref', None)

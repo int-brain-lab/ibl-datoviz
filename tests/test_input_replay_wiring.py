@@ -91,6 +91,57 @@ def test_panel_rect_snapshot_copies_layout_and_releases_native_snapshots():
     assert len(released) == 4
 
 
+def test_panel_rects_use_alignment_safe_native_getters():
+    class Rect(ctypes.Structure):
+        _fields_ = [
+            ('x', ctypes.c_float),
+            ('y', ctypes.c_float),
+            ('width', ctypes.c_float),
+            ('height', ctypes.c_float),
+        ]
+
+    def getter(panel, output):
+        rect = output._obj
+        rect.x, rect.y, rect.width, rect.height = 1, 2, 3, 4
+        return True
+
+    viewer = SimpleNamespace(
+        dvz=SimpleNamespace(
+            DvzRect=Rect,
+            dvz_panel_inner_rect_px=getter,
+            dvz_panel_plot_rect_px=getter,
+        ),
+        slice_panels={'ap': object(), 'ml': object(), 'dv': object()},
+        panel=object(),
+    )
+    result = review_common._panel_rects(viewer)
+    assert result['ap'] == {'inner': [1.0, 2.0, 3.0, 4.0], 'plot': [1.0, 2.0, 3.0, 4.0]}
+    assert tuple(result) == ('ap', 'ml', 'dv', '3d')
+
+
+def test_fixture_warmup_requests_each_frame_before_layout_capture():
+    requests = []
+    steps = []
+
+    class Readiness:
+        def check(self):
+            return SimpleNamespace(status='ready')
+
+    viewer = SimpleNamespace(
+        dvz=SimpleNamespace(
+            dvz_view_request_frame=lambda view: requests.append(view) or 0,
+            dvz_app_step=lambda app, timeout: steps.append((app, timeout)) or 1,
+        ),
+        app='app',
+        view='view',
+    )
+    review_common._settle_linked_readiness(
+        viewer, Readiness(), warmup_frames=review_common.INPUT_FIXTURE_WARMUP_FRAMES
+    )
+    assert len(requests) == review_common.INPUT_FIXTURE_WARMUP_FRAMES == 8
+    assert len(steps) == 8
+
+
 def test_review_arguments_and_validation_preserve_normal_path(tmp_path):
     parser = ArgumentParser()
     add_review_arguments(parser)
@@ -146,6 +197,7 @@ def _runner_fakes(monkeypatch, trace):
 
         @classmethod
         def capture(cls, *_args, **_kwargs):
+            calls.append(('fixture-captured', _kwargs['metadata']))
             return cls()
 
         def assert_compatible(self, observed):
@@ -214,7 +266,10 @@ def _runner_fakes(monkeypatch, trace):
         ui_scale=1.0,
         app='app',
         view='view',
-        dvz=SimpleNamespace(dvz_app_step=lambda _app, _timeout: 1),
+        dvz=SimpleNamespace(
+            dvz_app_step=lambda _app, _timeout: 1,
+            dvz_view_request_frame=lambda _view: 0,
+        ),
         _sidebar=SimpleNamespace(sidebar_rect=(0.0, 0.0, 240.0, 600.0)),
         slice_panels={},
         panel='panel',
@@ -326,4 +381,5 @@ def test_replay_report_labels_display_checkpoint_unavailable(tmp_path, monkeypat
     assert finalization['ibl_benchmark_verdict'] == 'unavailable'
     assert 'scientific checkpoint comparison' in finalization['ibl_benchmark_verdict_reason']
     assert ('player-run',) in calls
-    assert ('finalization-pump',) in calls
+    metadata = next(call[1] for call in calls if call[0] == 'fixture-captured')
+    assert metadata['layout_warmup_frames'] == 8
