@@ -249,7 +249,7 @@ def _input_runner(viewer, args, input_replay, input_trace, *, title, app_id, pre
             run_loop()
             completed = True
         finally:
-            trace = recorder.stop()
+            trace = recorder.stop(cancel=completed)
             if completed:
                 trace = _record_terminal_trace(viewer, readiness, trace, input_trace, record)
             input_trace.write_trace(trace, record)

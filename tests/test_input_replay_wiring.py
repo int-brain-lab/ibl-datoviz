@@ -264,7 +264,8 @@ def _runner_fakes(monkeypatch, trace):
         def start(self):
             calls.append(('recorder-started',))
 
-        def stop(self):
+        def stop(self, *, cancel=False):
+            calls.append(('recorder-cancel', cancel))
             calls.append(('recorder-stopped',))
             return 'trace-data'
 
@@ -341,6 +342,7 @@ def test_record_runner_stops_and_writes_trace_when_host_loop_raises(monkeypatch)
             run_loop=lambda: (_ for _ in ()).throw(RuntimeError('loop failed')),
         )
     assert ('recorder-started',) in calls
+    assert ('recorder-cancel', False) in calls
     assert ('recorder-stopped',) in calls
     assert writes == [('trace-data', args.record_input)]
     assert calls[-1] == ('readiness-closed',)
@@ -495,3 +497,26 @@ def test_replay_preserves_report_before_raising_terminal_capture_error(tmp_path,
         )
     report = json.loads(args.replay_report.read_text())
     assert report['finalization']['ibl_display_checkpoint']['error'] == 'capture failed'
+
+
+def test_normal_recording_completion_explicitly_cancels_before_checkpoint(monkeypatch):
+    calls, writes, viewer, args, replay, trace_io = _runner_fakes(monkeypatch, None)
+
+    def terminal(*_args):
+        assert ('recorder-cancel', True) in calls
+        calls.append(('terminal-checkpoint',))
+        return 'completed-trace'
+
+    monkeypatch.setattr(review_common, '_record_terminal_trace', terminal)
+    review_common._input_runner(
+        viewer,
+        args,
+        replay,
+        trace_io,
+        title='review',
+        app_id='2',
+        preset='overlay',
+        run_loop=lambda: None,
+    )
+    assert writes == [('completed-trace', args.record_input)]
+    assert calls.index(('recorder-stopped',)) < calls.index(('terminal-checkpoint',))

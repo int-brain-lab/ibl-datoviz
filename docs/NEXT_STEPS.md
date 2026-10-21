@@ -9,6 +9,10 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Explicit recording stop cancellation — October 21 2026
+
+Normal review recording completion now calls `Recorder.stop(cancel=True)`: after detaching the observer, the recorder sends an explicit cancellation through native host ingress and records a terminal `datoviz.cancel` with reason `capture-stop`. This clears any held key/button and recognizer state before the scientific checkpoint, without inventing successful releases or clicks. Default recorder stop remains strict, and failed review loops do not request cancellation or acquire a successful terminal checkpoint. This handles close paths that terminate before a held input release arrives. Validation passes 100 native Python trace/player tests, 32 IBL wiring/checkpoint tests, Ruff and strict MkDocs. Private-display real-input recordings closed with either a mouse button or a keyboard key held both save complete traces with explicit cancellation and replay to matching terminal scientific state and pixels.
+
 ## Terminal scientific replay checkpoints — October 20 2026
 
 Recording completion now binds a settled scientific source capture into the trace fixture without extending the input clock. Replay compares full camera navigation, scientific slice/selection/layer state and exact RGBA8 pixels; scheduling revisions and native submission serials remain run-local evidence. PNGs and diagnostic reports are written under the caller's artifact paths. A required checkpoint failure remains an unsuccessful replay; matching terminal results still do not constitute an equal-work or performance verdict. See [current commands and limits](INTERACTION_REPLAY_BENCHMARK.md#current-commands-and-limits).
