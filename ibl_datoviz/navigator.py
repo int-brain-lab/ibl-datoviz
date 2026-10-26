@@ -83,18 +83,34 @@ def label_contours(labels: NDArray) -> tuple[NDArray[np.float32], NDArray[np.flo
     bl, br = padded[1:, :-1], padded[1:, 1:]
     edges = np.stack((tl != tr, tr != br, bl != br, tl != bl), axis=-1)
     counts = edges.sum(axis=-1)
+    # Most anatomical images have few crossing cells. Compact them once so
+    # each edge-pair query scans only crossings, retaining row-major order.
+    # Dense categorical images keep the full-grid path to avoid an expensive
+    # near-full advanced-index copy of the edge table.
+    active = counts >= 2
+    centers = None
+    if np.count_nonzero(active) * 2 <= active.size:
+        rows, columns = np.nonzero(active)
+        centers = np.column_stack((columns, rows))
+        counts = counts[rows, columns]
+        edges = edges[rows, columns]
+
+    def crossing_centers(mask):
+        if centers is not None:
+            return centers[mask]
+        rows, columns = np.nonzero(mask)
+        return np.column_stack((columns, rows))
+
     offsets = np.array(((0, -0.5), (0.5, 0), (0, 0.5), (-0.5, 0)))
     starts, ends = [], []
     for first in range(4):
         for second in range(first + 1, 4):
-            rows, columns = np.nonzero((counts == 2) & edges[..., first] & edges[..., second])
-            centers = np.column_stack((columns, rows))
-            starts.append(centers + offsets[first])
-            ends.append(centers + offsets[second])
-        rows, columns = np.nonzero((counts > 2) & edges[..., first])
-        centers = np.column_stack((columns, rows))
-        starts.append(centers + offsets[first])
-        ends.append(centers)
+            points = crossing_centers((counts == 2) & edges[..., first] & edges[..., second])
+            starts.append(points + offsets[first])
+            ends.append(points + offsets[second])
+        points = crossing_centers((counts > 2) & edges[..., first])
+        starts.append(points + offsets[first])
+        ends.append(points)
     scale = np.array((width, height))
     return (
         np.ascontiguousarray(np.concatenate(starts) / scale, dtype=np.float32),
