@@ -9,6 +9,76 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Retained layer updates and sparse slice contours — October 26 2026
+
+The user authorized the next measured performance batch, focused commits and a final
+push of `feature/datoviz-v04`. `main`, scientific inputs and the native dependency
+pin remain unchanged.
+
+- `44def82` compacts sparse categorical crossing cells before edge-pair queries.
+  Above 50% crossing density the original full-grid path remains active. Frozen
+  original-algorithm tests verify exact ordered float32 segment bytes for padding,
+  sparse/dense junctions, signed/unsigned identities, noncontiguous and empty inputs.
+- `9e00fb3` updates layer and recording visibility through retained native handles.
+  Group/path transactions compensate every attempted native write, including a
+  partially failing setter, before committing authored visibility. Failed recovery
+  closes the owner. Visibility preserves geometry, original IDs and picking keys.
+- `6eeab53` adds `tools/benchmark_layer_updates.py`, explicit synthetic annotations
+  on verified anatomy, warmed alternating public calls, median/p95 CPU times,
+  native allocation counters and exact script/package/native/source identities.
+  Fresh scenes isolate populations from native historical visual-ID capacity;
+  oversized explicit path workloads fail with context rather than being reduced.
+- `887c7fe` updates point/sphere colors and sizes in place, with retained positioned
+  row lookup, selected highlights and complete scalar identity checks. Native color,
+  alpha and radius failures restore prior state; failed recovery closes component
+  and owner. Path styling and selection transactions still rebuild candidates.
+
+Three alternating baseline/candidate process pairs, 30 measured calls after 6 warmup
+calls, compare against package `58d880e` with identical native library, script,
+anatomy, deterministic positions and workloads. At 10,000 synthetic rows: point
+visibility/color/size medians fall from 1.3426/1.3621/1.3526 ms to
+0.0021/0.1066/0.0136 ms; sphere values fall from 1.3216/1.3319/1.3158 ms to
+0.0021/0.1109/0.0117 ms. Group visibility falls from 2.3957 to 0.0045 ms.
+These operations allocate no replacement visuals. Selection remains near 1.6 ms.
+Numbers are medians of trial medians including observer overhead, without a frame
+loop or GPU completion; no FPS or physical interaction-latency improvement is claimed.
+See [benchmark commands and limits](development.md#measure-scientific-layer-update-calls).
+
+Nine alternating paired full-preparation trials over 21 new real 50 µm indices per
+axis/mapping (Allen/Beryl, exceeding the 16-entry boundary cache) compare all six
+prepared arrays bitwise. Unselected CPU preparation falls 17–26%; preparation with
+present selected regions falls 29–40%. Dense tracing stays approximately 5.34 ms.
+Copies cost roughly 0.01 ms in the initial phase profile, so no image cache was added.
+No slice GPU-upload gain is established. Native real-data review images, selected
+point/sphere/group visibility and supported color/size/scalar changes compare exactly:
+12 visibility/real-data RGBA frames, 12 supported style frames, and 12 CPU attribute
+snapshots all match the baseline. Pixel changes on hide/style transitions make these
+checks nonvacuous; restored frames and exact scientific IDs remain unchanged.
+
+Independent review found no remaining blocker in the changed paths. Translucent
+sphere WBOIT rendering fails on this Mac native library in the original baseline too
+(`sphere ... WBOIT requires family-conformant accumulation shaders`). Opaque sphere
+and translucent point renders are covered; sphere alpha-policy and rollback tests
+match CPU state, without claiming native translucent-sphere rendering. No renderer
+policy workaround or native build/revision change was introduced.
+
+Final configured Mac/Python 3.13 suite: **1,297 passed, one optional registered 10 µm
+asset skip**. Pinned source-only suite: **1,204 passed, 94 skips** (native/GPU tests
+unavailable there plus optional registered assets). Ruff, strict MkDocs, whitespace,
+wheel/sdist builds, isolated installed-wheel CPU checks and both three-frame Mac
+review startups pass. Exact native identity remains `536d78c7d`, library SHA256
+`5dd015cea23df2b473a15529b00560e3dbe7aa8f1a2ce87f6b15cadb54dc31c3`.
+Strict doctor/test/review still reject the existing `73d0f0bc` pin/runtime mismatch;
+representative Mac input recording remains blocked by the incomplete optional native
+replay API. Raw profiles, matching receipts, PNGs, source archives and scripts remain
+ignored under `build/perf-20261026/`. Baseline/candidate Python source SHA256 values
+are `7c6bfa037ed3050b101bd602aaaf073bb080fea1f300a85d437bcd71e8a321d6` and
+`336e1368476b4d55af51d9035734ae660e9c1302a81a15a0f1baf39d45d84fe6`.
+
+Next measured targets are selection candidate reconstruction and full-surface snapshot
+cost during cursor updates. Native sphere transparency, complete input replay and
+exact pinned-native GPU validation remain separate capability/release gates.
+
 ## API consolidation and owned components completed — October 26 2026
 
 Commit `d02afd8` completes the authorized API/modularity batch. Both existing
