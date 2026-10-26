@@ -50,6 +50,49 @@ class UnavailableLayerError(LookupError):
     """A recording did not supply the requested population."""
 
 
+@dataclass(frozen=True)
+class _VisibilityUpdate:
+    """One retained component visibility write with its prior applied value."""
+
+    component: object
+    previous: bool
+    visible: bool
+    path_id: int | None = None
+
+    def apply(self, visible):
+        if self.path_id is None:
+            self.component.set_visible(visible)
+        else:
+            self.component.set_visible(self.path_id, visible)
+
+
+def _apply_visibility(registry, updates):
+    """Restore every attempted native write, including a partially failing setter."""
+    attempted = []
+    try:
+        for update in updates:
+            if update.previous == update.visible:
+                continue
+            attempted.append(update)
+            update.apply(update.visible)
+    except Exception:
+        rollback_error = None
+        for update in reversed(attempted):
+            try:
+                update.apply(update.previous)
+            except Exception as error:
+                rollback_error = error
+        if rollback_error is not None:
+            # A viewer owns its scene; standalone internal registries can at
+            # least release their owned components when no viewer close exists.
+            close = getattr(registry.viewer, 'close', registry.close)
+            close()
+            raise RuntimeError(
+                'layer visibility rollback failed; owner closed'
+            ) from rollback_error
+        raise
+
+
 def _color(value):
     if not isinstance(value, str) or len(value) not in (7, 9) or not value.startswith('#'):
         raise ValueError('color must be #RRGGBB or #RRGGBBAA')
@@ -266,13 +309,23 @@ class LayerHandle:
         self._registry._check()
         self._require_open()
 
+    def _visibility_updates(self, visible):
+        if self._glyph == 'path':
+            return tuple(
+                _VisibilityUpdate(self._visual, item.visible, visible, path_id)
+                for path_id, item in self._visual._insertions.items()
+            )
+        return (_VisibilityUpdate(self._visual, self._visual._visible, visible),)
+
     def set_visible(self, visible):
         """Change authored visibility without changing observations or selection."""
         self._mutate()
         if not isinstance(visible, (bool, np.bool_)):
             raise ValueError('visible must be boolean')
+        if bool(visible) == self._visible:
+            return
         effective = bool(visible) and (self._group is None or self._group.visible)
-        self._replace(visible=effective)
+        _apply_visibility(self._registry, self._visibility_updates(effective))
         self._visible = bool(visible)
 
     def set_color(self, color):
@@ -412,17 +465,14 @@ class RecordingHandle:
             raise RuntimeError('recording is removed or closed')
         if not isinstance(visible, (bool, np.bool_)):
             raise ValueError('visible must be boolean')
-        candidates = []
-        try:
-            for layer in self.layers:
-                candidates.append((layer, layer._build(visible=bool(visible) and layer.visible)))
-        except Exception:
-            for layer, candidate in candidates:
-                layer._dispose(candidate)
-            raise
-        for layer, candidate in candidates:
-            old, layer._visual = layer._visual, candidate
-            layer._dispose(old)
+        if bool(visible) == self._visible:
+            return
+        updates = tuple(
+            update
+            for layer in self.layers
+            for update in layer._visibility_updates(bool(visible) and layer.visible)
+        )
+        _apply_visibility(self._registry, updates)
         self._visible = bool(visible)
 
 

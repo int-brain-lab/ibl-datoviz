@@ -24,6 +24,14 @@ class FakeVisual:
     def __init__(self, state):
         self.state = state
         self.closed = False
+        self._visible = state['visible']
+        self._insertions = {1: SimpleNamespace(visible=self._visible)}
+
+    def set_visible(self, *args):
+        self._visible = bool(args[-1])
+        self.state['visible'] = self._visible
+        for item in self._insertions.values():
+            item.visible = self._visible
 
     def close(self):
         self.closed = True
@@ -105,9 +113,6 @@ def test_failed_replacement_preserves_state_and_live_visual(registry, monkeypatc
         raise RuntimeError('injected native upload failure')
 
     monkeypatch.setattr(layer, '_build', fail)
-    with pytest.raises(RuntimeError, match='injected'):
-        layer.set_visible(False)
-    assert layer.visible and layer._visual is old and not old.closed
     with pytest.raises(RuntimeError, match='injected'):
         layer.set_color('#112233')
     assert layer._visual is old and not old.closed
@@ -282,7 +287,7 @@ def test_endpoint_gap_style_survives_layer_rebuilds_and_rejects_unsupported_runt
     route.set_color('#ff0000')
     route.set_visible(False)
     registry.update_selection([route.observation('route')])
-    assert gaps == [(4, 6)] * 5
+    assert gaps == [(4, 6)] * 4
     assert route.endpoint_gaps_px == (4, 6)
     with pytest.raises(ValueError, match='endpoint gaps'):
         route.set_endpoint_gaps_px(-1, 3)
