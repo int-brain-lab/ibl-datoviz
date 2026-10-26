@@ -178,10 +178,16 @@ def test_selection_candidate_failure_rolls_back_all_layers(registry, monkeypatch
     first, second = registry.add_points(points()), registry.add_points(points())
     old = (first._visual, second._visual)
 
-    def fail(**_kwargs):
-        raise RuntimeError('second highlight failure')
+    update_colors = second._visual.update_colors
+    failed = []
 
-    monkeypatch.setattr(second, '_build', fail)
+    def fail_once(colors):
+        if not failed:
+            failed.append(True)
+            raise RuntimeError('second highlight failure')
+        update_colors(colors)
+
+    monkeypatch.setattr(second._visual, 'update_colors', fail_once)
     with pytest.raises(RuntimeError, match='highlight'):
         registry.update_selection([first.observation(0), second.observation(0)])
     assert not first._selected and not second._selected

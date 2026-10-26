@@ -66,6 +66,17 @@ class _VisibilityUpdate:
             self.component.set_visible(self.path_id, visible)
 
 
+@dataclass
+class _SelectionUpdate:
+    """One layer's staged scientific highlight and optional native color write."""
+
+    layer: object
+    selected: frozenset
+    colors: np.ndarray | None = None
+    previous_colors: np.ndarray | None = None
+    candidate: object = None
+
+
 def _apply_visibility(registry, updates):
     """Restore every attempted native write, including a partially failing setter."""
     attempted = []
@@ -405,12 +416,7 @@ class LayerHandle:
             return
         try:
             if colors is not None:
-                displayed = colors[self._positioned_rows]
-                for ref in self._selected:
-                    row = self._native_rows_by_ref.get(ref)
-                    if row is not None:
-                        displayed[row] = (255, 70, 180, 255)
-                self._visual.update_colors(displayed)
+                self._visual.update_colors(self._display_colors(colors))
             elif self._glyph == 'point':
                 self._visual.update_sizes(size)
             else:
@@ -420,6 +426,35 @@ class LayerHandle:
                 close = getattr(self._registry.viewer, 'close', self._registry.close)
                 close()
             raise
+
+    def _display_colors(self, colors=None, *, selected=None):
+        colors = self._colors if colors is None else colors
+        selected = self._selected if selected is None else selected
+        displayed = colors[self._positioned_rows]
+        for ref in selected:
+            row = self._native_rows_by_ref.get(ref)
+            if row is not None:
+                displayed[row] = (255, 70, 180, 255)
+        return displayed
+
+    def _selection_update(self, selected):
+        update = _SelectionUpdate(self, selected)
+        if self._glyph == 'path':
+            return update
+        old_rows = {
+            self._native_rows_by_ref[ref]
+            for ref in self._selected
+            if ref in self._native_rows_by_ref
+        }
+        new_rows = {
+            self._native_rows_by_ref[ref] for ref in selected if ref in self._native_rows_by_ref
+        }
+        if old_rows != new_rows:
+            previous = self._display_colors()
+            colors = self._display_colors(selected=selected)
+            if not np.array_equal(previous, colors):
+                update.previous_colors, update.colors = previous, colors
+        return update
 
     def set_visible(self, visible):
         """Change authored visibility without changing observations or selection."""
@@ -590,6 +625,7 @@ class LayerRegistry:
         self._before_mutation, self._on_remove = before_mutation, on_remove
         self._validate_frame = validate_frame
         self._layers, self._recordings = [], []
+        self._ref_layers = {}
         self._closed = False
 
     @property
@@ -622,6 +658,7 @@ class LayerRegistry:
         self._validate_payload(payload)
         layer = LayerHandle(self, payload, name, glyph)
         self._layers.append(layer)
+        self._ref_layers.update((ref, layer) for ref in layer.refs)
         return layer
 
     def add_paths(self, payload, *, name=''):
@@ -632,6 +669,7 @@ class LayerRegistry:
         self._validate_payload(payload)
         layer = LayerHandle(self, payload, name, 'path')
         self._layers.append(layer)
+        self._ref_layers.update((ref, layer) for ref in layer.refs)
         return layer
 
     def add_recording(self, recording, *, name='', show=('path', 'channels')):
@@ -671,33 +709,93 @@ class LayerRegistry:
             raise
         self._recordings.append(group)
         self._layers.extend(group.layers)
+        self._ref_layers.update((ref, layer) for layer in group.layers for ref in layer.refs)
         return group
 
     def contains(self, ref):
         """Whether an exact attachment identity is currently live in this registry."""
-        return isinstance(ref, LayerObservationRef) and any(
-            ref in layer.refs for layer in self.layers
-        )
+        if not isinstance(ref, LayerObservationRef):
+            return False
+        try:
+            return ref in self._ref_layers
+        except TypeError:
+            return False
+
+    def _selection_updates(self, refs):
+        """Validate exact identities and stage each changed layer's immutable colors."""
+        selected = frozenset(refs)
+        by_layer = {}
+        for ref in selected:
+            if not self.contains(ref):
+                raise ValueError('selection contains a foreign or removed observation')
+            by_layer.setdefault(self._ref_layers[ref], set()).add(ref)
+        updates = []
+        for layer in self.layers:
+            local = frozenset(by_layer.get(layer, ()))
+            if local != layer._selected:
+                updates.append(layer._selection_update(local))
+        return updates
 
     def update_selection(self, refs):
         """Commit highlights transactionally without invoking public mutation guards."""
-        selected = frozenset(refs)
-        if any(not self.contains(ref) for ref in selected):
-            raise ValueError('selection contains a foreign or removed observation')
-        candidates = []
+        updates = self._selection_updates(refs)
+        if not updates:
+            return
+        picking = getattr(self.viewer, 'picking', None)
+        if picking is not None:
+            picking.invalidate()
+        attempted = []
         try:
-            for layer in self.layers:
-                local = frozenset(selected.intersection(layer.refs))
-                if local != layer._selected:
-                    candidates.append((layer, local, layer._build(selected=local)))
+            # Paths retain staged replacement until their renderer supports the
+            # same retained color contract. Stage them before touching live colors.
+            for update in updates:
+                if update.layer._glyph == 'path':
+                    update.candidate = update.layer._build(selected=update.selected)
+            for update in updates:
+                if update.colors is not None:
+                    attempted.append(update)
+                    update.layer._visual.update_colors(update.colors)
         except Exception:
-            for layer, _, candidate in candidates:
-                layer._dispose(candidate)
+            self._restore_selection(updates, attempted)
             raise
-        for layer, local, candidate in candidates:
-            old, layer._visual = layer._visual, candidate
-            layer._selected = local
-            layer._dispose(old)
+        retired = []
+        for update in updates:
+            layer = update.layer
+            if update.candidate is not None:
+                retired.append((layer, layer._visual))
+                layer._visual = update.candidate
+            layer._selected = update.selected
+        try:
+            for layer, previous in retired:
+                layer._dispose(previous)
+        except Exception as error:
+            close = getattr(self.viewer, 'close', self.close)
+            close()
+            raise RuntimeError('selection visual retirement failed; owner closed') from error
+
+    def _restore_selection(self, updates, attempted):
+        failures = []
+        for update in reversed(attempted):
+            component = update.layer._visual
+            if component._closed:
+                failures.append(RuntimeError('selection component recovery failed'))
+                continue
+            try:
+                component.update_colors(update.previous_colors)
+            except Exception as error:
+                failures.append(error)
+        for update in reversed(updates):
+            if update.candidate is not None:
+                try:
+                    update.layer._dispose(update.candidate)
+                except Exception as error:
+                    failures.append(error)
+        if failures:
+            close = getattr(self.viewer, 'close', self.close)
+            close()
+            raise RuntimeError('selection highlight rollback failed; owner closed') from failures[
+                0
+            ]
 
     def remove_layer(self, layer):
         """Remove a generic layer and prune only its observation attachments."""
@@ -706,6 +804,8 @@ class LayerRegistry:
             raise ValueError('layer must be a live generic attachment owned by this viewer')
         layer._close()
         self._layers.remove(layer)
+        for ref in layer.refs:
+            self._ref_layers.pop(ref)
         if self._on_remove is not None:
             self._on_remove(layer.refs)
 
@@ -718,6 +818,8 @@ class LayerRegistry:
         for layer in reversed(recording.layers):
             layer._close()
             self._layers.remove(layer)
+            for ref in layer.refs:
+                self._ref_layers.pop(ref)
         recording._closed = True
         self._recordings.remove(recording)
         if self._on_remove is not None:
@@ -762,6 +864,7 @@ class LayerRegistry:
             recording._closed = True
         self._layers.clear()
         self._recordings.clear()
+        self._ref_layers.clear()
         self._closed = True
         if errors:
             raise RuntimeError('failed to release layer resources') from errors[0]

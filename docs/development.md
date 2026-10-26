@@ -202,8 +202,9 @@ were:
 | Sphere radius | 1.3158 | 0.0117 |
 | Recording group visibility | 2.3957 | 0.0045 |
 
-These calls allocate no replacement visuals after the change. Point/sphere selection
-still rebuilds candidates and remains around 1.6 ms in this workload. Attribute updates
+These calls allocate no replacement visuals after the change. At that checkpoint, point/sphere selection
+still rebuilt candidates and remained around 1.6 ms in this workload; the selection
+follow-up below removes that reconstruction. Attribute updates
 retain one positioned-row mask and exact-ref/native-row index per immutable layer;
 no cross-frame geometry cache or scientific identity join is inferred. The results
 measure instrumented CPU API calls on one Mac, including observer overhead, with no
@@ -255,4 +256,43 @@ Introducing a separate cursor-only rollback path is not justified by this
 measurement. No app/view frame loop, render, or GPU-completion wait ran during
 timing; these instrumented CPU setter results establish neither frame rate nor
 input-to-photon latency. The diagnostic script and raw phase receipt remain
+ignored under `build/selection-cursor-20261026/`.
+
+### October 26 selection follow-up
+
+Against package `7f1fd54`, three alternating baseline/candidate process pairs used
+identical verified anatomy, native dylib, deterministic positions and benchmark
+script. The existing single-positioned-ref/empty selection workload stayed unchanged:
+30 calls after 6 warmup calls per glyph/population, with fresh isolated scenes.
+Median-of-trial-medians CPU calls for 10,000 rows fell from 1.6278 to 0.1911 ms
+for points and 1.5866 to 0.1963 ms for spheres. No replacement visuals or query
+registrations are allocated by those point/sphere selection changes.
+
+Separate explicitly synthetic scenarios alternate two nonempty sets, rather than
+silently changing the original benchmark workload:
+
+| Selection scenario | Before, ms | After, ms |
+| --- | ---: | ---: |
+| Last two refs in one 10,000-row point layer | 3.5888 | 0.1995 |
+| Disjoint sets of 1,000 refs in one 2,000-row point layer | 152.8608 | 1.4739 |
+| One last-row ref in each of four 2,500-row point/sphere layers | 5.9375 | 0.2437 |
+
+These supplemental cases used three alternating process pairs and four warmup
+calls: 20 measured calls for last-ref and cross-layer cases, eight for dense sets.
+Their raw reports include positions, population/selection counts, allocations and
+exact package/native identities. Source hashes stayed stable within each build.
+The exact-ref-to-layer index removes the dense workload's repeated population scans.
+Its dictionary alone retains approximately 295 KB for 10,000 refs on this Python
+build, excluding existing ref objects and arrays; this is not a total RSS claim.
+The index publishes only after successful attachment and is pruned before removal
+callbacks. Point/sphere colors and derived alpha recover together across all layers;
+path candidates are staged before retained writes, and scientific selection commits
+only after success. Failed recovery closes the owner.
+
+All measurements include observer overhead and time CPU calls only, without a
+render loop, GPU completion or desktop latency measurement. Twelve baseline/current
+native frames and scientific/table/event metadata match exactly, including mixed
+glyphs, missing refs, clearing selection, exact no-ops, and hidden-group edits.
+Sphere rendered comparisons use supported opaque styling; the existing native
+translucent-sphere limitation remains. Receipts and supplementary scripts remain
 ignored under `build/selection-cursor-20261026/`.

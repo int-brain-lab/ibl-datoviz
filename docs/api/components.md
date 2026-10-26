@@ -56,7 +56,11 @@ visibility and scalar edits preserve selection. Layer and recording-group visibi
 updates retained native handles without rebuilding geometry. Point/sphere color and
 size edits also update attributes in place, retaining exact picking keys and selected
 highlights. Partial native failures restore prior attributes; failed recovery closes
-the owning viewer. Path styling and selection changes still rebuild candidates.
+the owning viewer. Point/sphere selection colors also update retained visuals as one
+transaction across layers; exact IDs, tables and selection notifications commit only
+after every update succeeds. Missing-only selections retain scientific references
+without uploading unchanged colors. Path styling and path selection still stage
+replacement candidates.
 Dense animation frame rate and GPU upload throughput are not qualified by CPU-call
 benchmarks. The configured Mac native candidate cannot render translucent sphere
 WBOIT: opaque sphere styling and translucent points have rendered equivalence evidence,

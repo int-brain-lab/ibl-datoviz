@@ -60,12 +60,26 @@ def test_highlight_failure_restores_premutated_table_and_scientific_state(app, m
     # Native input changes the table before its selection event reaches Python.
     table.widget.set_selection(table.selection_keys((missing,)), 'simulate table input')
 
-    def fail(**_changes):
-        raise RuntimeError('injected highlight creation failure')
+    original = app.dvz.dvz_visual_set_data
+    target_id = int(app.dvz.dvz_visual_id(layer._visual.visual))
+    failed = False
+    writes = []
 
-    monkeypatch.setattr(layer, '_build', fail)
-    with pytest.raises(RuntimeError, match='highlight creation'):
+    def fail_after_write(visual, attribute, values):
+        nonlocal failed
+        status = original(visual, attribute, values)
+        if attribute == 'color' and int(app.dvz.dvz_visual_id(visual)) == target_id:
+            writes.append(np.array(values, copy=True))
+            if not failed:
+                failed = True
+                return -1  # Native colors changed before the failure was reported.
+        return status
+
+    monkeypatch.setattr(app.dvz, 'dvz_visual_set_data', fail_after_write)
+    with pytest.raises(RuntimeError, match='point colors'):
         app.selection.set_observations((missing,))
+    assert failed
+    np.testing.assert_array_equal(writes[-1], [[255, 70, 180, 255]])
     assert table.selected_refs() == (first,)
     assert app.selection.observations == (first,)
     assert layer._selected == frozenset((first,))
