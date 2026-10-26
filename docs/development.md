@@ -217,3 +217,42 @@ full-grid path. Nine alternating paired trials over 21 real 50 µm indices per a
 anatomy, annotations, boundaries and selection outlines. CPU preparation fell 17–26%
 without selection and 29–40% with present selected regions; dense categorical tracing
 remained approximately 5.34 ms. No slice upload or GPU timing gain is established.
+
+### October 26 cursor phase attribution
+
+A separate diagnostic used the verified D070 mesh (486,674 source vertices) and
+complete Allen 50 µm source, mapping `allen`, `render_volume=False`, and hover
+disabled on this Mac. It timed `app.slices.set_position(..., units="voxel")`
+with `select_region=False`. Each case discarded four warmup calls and measured
+40 alternating calls: AP 132/133 alone, or AP 132/133, ML 114/115, and DV 80/81
+together. The other coordinates stayed at AP 132, ML 114, DV 80. Cases ran with
+no regional selection and with signed Allen region `-672` already selected;
+selecting that region was outside the measured interval. Repeated indices use
+warmed composer/boundary caches; these results do not describe cold scrolling.
+
+| Cursor movement | Total median, ms | Surface snapshot median, ms | Snapshot / total |
+| --- | ---: | ---: | ---: |
+| AP, no selection | 1.175 | 0.035 | 3.0% |
+| AP, selected `-672` | 1.792 | 0.036 | 2.0% |
+| AP/ML/DV, no selection | 5.281 | 0.065 | 1.2% |
+| AP/ML/DV, selected `-672` | 7.191 | 0.060 | 0.8% |
+
+The diagnostic wrapped surface snapshot creation, complete slice preparation,
+prepared-payload application, crosshair updates, and cursor-marker updates.
+Each phase timer includes its callees; the outer public-call timer includes
+all phases plus guards, request/control updates, notifications, and timer
+instrumentation. Reported phase medians are separate distributions, not an
+additive decomposition of the total median. Prepared-payload application includes
+native scene setters and any associated CPU staging; it does not time GPU upload
+completion. Preparation dominated: approximately 0.76–1.32 ms for AP changes and
+4.35–6.24 ms for three-axis changes. Payload application took approximately
+0.15–0.18 ms and 0.56–0.60 ms respectively.
+
+One full surface snapshot retains 1,970,428 bytes of owned color data, in addition
+to its retained state references. Its measured cost is approximately 1–3% of
+these calls, so the existing full cursor recovery path remains unchanged.
+Introducing a separate cursor-only rollback path is not justified by this
+measurement. No app/view frame loop, render, or GPU-completion wait ran during
+timing; these instrumented CPU setter results establish neither frame rate nor
+input-to-photon latency. The diagnostic script and raw phase receipt remain
+ignored under `build/selection-cursor-20261026/`.
