@@ -1,9 +1,12 @@
 # Real-data interactive example roadmap
 
-Status: the reviewer accepted the current app-1 recording-context demo after the reset and panned-rotation corrections. The user has also approved the consolidated API direction. Generic layers and
-recording composition are implemented; the next gate is workflow review, with
-reviewed source-frame evidence required for actual BWM geometry. App 2 and
-further platforms have separate acceptance scope.
+Status: the user reviewed and accepted the current numbered apps 1 and 2 on this
+Mac on October 26, 2026. The subsequent API/modularity refactor preserves their
+real-data offscreen pixels and passes bounded Mac startup checks; see the current
+handoff for validation and limits. The approved scientific payload/handle API is
+implemented and consolidated around one concrete `AtlasViewer`. Additional
+scientific workflows still require reviewed source-frame evidence for actual BWM
+geometry. Other platforms and unreviewed datasets retain separate acceptance scope.
 
 The current API design and implementation stages are in the
 [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md). It uses

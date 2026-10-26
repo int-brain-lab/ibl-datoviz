@@ -9,6 +9,68 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## API consolidation and owned components completed — October 26 2026
+
+Commit `d02afd8` completes the authorized API/modularity batch. Both existing
+numbered apps were accepted by the user on this Mac before the refactor.
+`AtlasViewer` is now one concrete class for 3D and linked layouts: hidden `__new__`
+subclass dispatch and the separate public `LinkedAtlasNavigator` are removed.
+Linked-source factories remain on `AtlasViewer`; cursor, layers, physical planes
+and volume controls use `app.slices`. Scientific payloads and owned handles are
+the recommended root API; lower-level primitives/data helpers live in
+`ibl_datoviz.components`. Public probe/insertion/regional setters were removed
+and repository clients migrated. Distinct diagnostic probe/table semantics are
+retained privately rather than silently replaced by observation selection.
+See [API migration](api/index.md#migration-from-the-previous-api).
+
+`LinkedSlices` owns slice state, visuals, revisions, workers and input subscriptions.
+`SurfacePresentation` owns styles, masks, applied caches and typed rollback snapshots
+with immutable copied RGBA storage. `ProbePresentation` owns diagnostic payload/upload
+recovery. `ViewerLayout` assembles host/GUI resources while the viewer retains native
+lifetime ownership. Mapping and selection still coordinate both presentation domains
+before notification. Regional quantities now have transactional `set_opacity()` so
+migrated clients preserve authored alpha. See [ownership boundaries](development.md#viewer-ownership-and-internal-components).
+
+Independent reviews found and corrected stale observation-picking adapter construction,
+auto-slice cancellation routing, replay resets bypassing public controller policies,
+recursive plane/volume rollback, and diagnostic cleanup preceding shutdown guards.
+Regression tests cover coordinate routing in both layouts, committed-hook recovery,
+owner-thread/reentrant close rejection, deferred visual destruction and native failures.
+The existing rollback, stale-worker, retained-array and callback lifetime checks remain.
+
+Validation on configured macOS arm64/Python 3.13 passes **1,207 tests, one skip**
+(the explicitly materialized registered 10 um asset set is unavailable). The isolated
+pinned-source environment passes **1,117 tests, 91 skips**: native/GPU cases unavailable
+there plus the optional registered-assets case. Ruff, strict MkDocs, whitespace,
+wheel/sdist builds and the isolated installed-wheel CPU check pass. Both numbered
+apps pass bounded three-frame startup on this Mac. Native source/library remain
+`536d78c7df431e6a2931ebc959d6528776177109` / SHA256
+`5dd015cea23df2b473a15529b00560e3dbe7aa8f1a2ce87f6b15cadb54dc31c3`.
+
+The two real-data app offscreen captures are pixel-identical to `6a29c33`. Seven
+small-fixture states (initial, selection, cursor, mapping, slice layers, physical
+plane, bounded volume) also match full scientific state and exact RGBA pixels.
+Some fixture slices are uniform, so state equality is stronger than visual coverage
+for those cursor/layer changes. These checks preserve existing review evidence;
+they do not establish a new interaction or performance verdict. Receipts/scripts,
+archive, captures and environment checks remain ignored under `build/refactor-20261026/`.
+The old ignored anatomy cache was preserved there and the active fixture cache
+refreshed to locked anatomy `95ae242` without changing package dependencies.
+
+Remaining gates: configured native runtime differs from immutable `73d0f0bc`, so
+`doctor --strict`, `test --strict` and `review all --strict` correctly reject it.
+No native revision/build/pin was changed. An actual bounded recording launch fails
+optional API preflight because this Mac library lacks the complete input-replay API;
+no successful Mac recording/replay is claimed. Hosted CI, exact pinned native GPU
+validation and a representative physical-input replay remain separate evidence.
+Nothing was pushed or merged; `main` remains unchanged.
+
+Next engineering work should measure styling/scalar-update rebuild cost and slice
+preparation/upload cost against the consolidated API before choosing optimizations.
+Dense layer animation, broader path/plane picking, voxel quantities, saved workspace
+state and alignment comparisons remain separately scoped. No renderer optimization
+or new performance gain is claimed by this structural batch.
+
 ## Autonomous API and modularity refactor — October 26 2026
 
 The user reviewed apps 1 and 2 on this Mac and accepted their current behavior.
