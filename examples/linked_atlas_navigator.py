@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 
 from ibl_anatomy import bundled_registered_asset_set, verify_materialized_registered_asset_set
-from ibl_datoviz import LinkedAtlasNavigator
+from ibl_datoviz import AtlasViewer
 
 
 def main() -> int:
@@ -58,7 +58,7 @@ def main() -> int:
         assets = verify_materialized_registered_asset_set(
             bundled_registered_asset_set(), args.registered_asset_root
         )
-        navigator = LinkedAtlasNavigator.from_registered_assets(
+        navigator = AtlasViewer.from_registered_assets(
             args.mesh_pack,
             args.volume_pack,
             args.slice_intensity_pack,
@@ -66,7 +66,7 @@ def main() -> int:
             **common,
         )
     elif high_resolution:
-        navigator = LinkedAtlasNavigator.from_anatomy_packs(
+        navigator = AtlasViewer.from_anatomy_packs(
             args.mesh_pack,
             args.volume_pack,
             args.slice_intensity_pack,
@@ -74,7 +74,7 @@ def main() -> int:
             **common,
         )
     else:
-        navigator = LinkedAtlasNavigator.from_packs(args.mesh_pack, args.volume_pack, **common)
+        navigator = AtlasViewer.from_packs(args.mesh_pack, args.volume_pack, **common)
     with navigator:
         if args.offscreen:
             rgba = navigator.render_offscreen(args.offscreen)

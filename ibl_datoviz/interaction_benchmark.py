@@ -73,7 +73,7 @@ def _camera_navigation(viewer) -> dict[str, Any] | None:
     state = dvz.DvzArcballState()
     if not dvz.dvz_arcball_state(viewer.arcball, ctypes.byref(state)):
         raise RuntimeError('could not snapshot arcball navigation')
-    panels = {'brain': viewer.panel, **getattr(viewer, 'slice_panels', {})}
+    panels = {'brain': viewer.panel, **getattr(viewer._linked, 'slice_panels', {})}
     cameras = {}
     for name, panel in panels.items():
         camera = dvz.dvz_panel_camera(panel)
@@ -102,8 +102,10 @@ def _camera_navigation(viewer) -> dict[str, Any] | None:
 
 def scientific_state(viewer) -> dict[str, Any]:
     """Return the committed linked-view state in deterministic JSON form."""
-    cursor = viewer.cursor.as_index()
-    requests = {axis: _request_dict(viewer._displayed_slice_requests.get(axis)) for axis in _AXES}
+    cursor = viewer._linked.cursor.as_index()
+    requests = {
+        axis: _request_dict(viewer._linked._displayed_slice_requests.get(axis)) for axis in _AXES
+    }
     return _json_value(
         {
             'camera': {
@@ -116,18 +118,20 @@ def scientific_state(viewer) -> dict[str, Any]:
             'cursor': list(cursor),
             'slice_indices': dict(zip(_AXES, cursor, strict=True)),
             'selected_region_ids': list(viewer.selected_region_ids()),
-            'slice_renderer': viewer.slice_renderer,
-            'auto_slice_enabled': getattr(getattr(viewer, '_auto_slice', None), 'enabled', None),
+            'slice_renderer': viewer._linked.slice_renderer,
+            'auto_slice_enabled': getattr(
+                getattr(viewer._linked, '_auto_slice', None), 'enabled', None
+            ),
             'displayed_slice_requests': requests,
             'layers': {
-                'anatomy': viewer.anatomy_visible,
-                'annotations': viewer.annotation_visible,
-                'boundaries': viewer.boundaries_visible,
+                'anatomy': viewer._linked.anatomy_visible,
+                'annotations': viewer._linked.annotation_visible,
+                'boundaries': viewer._linked.boundaries_visible,
             },
             'opacity': {
-                'volume': viewer.volume_opacity,
-                'annotations': viewer.annotation_opacity,
-                'boundaries': viewer.boundary_opacity,
+                'volume': viewer._linked.volume_opacity,
+                'annotations': viewer._linked.annotation_opacity,
+                'boundaries': viewer._linked.boundary_opacity,
                 'surface': getattr(viewer, 'surface_opacity', None),
                 'context': getattr(viewer, 'context_opacity', None),
             },
@@ -253,19 +257,21 @@ class ReviewFixture:
         if viewer.mapping != initial['mapping']:
             viewer.set_mapping(initial['mapping'])
         target_cursor = AtlasCursor(*initial['cursor'])
-        if viewer.cursor != target_cursor:
-            viewer.set_cursor(target_cursor)
+        if viewer._linked.cursor != target_cursor:
+            viewer.slices.set_position(
+                ap=target_cursor.ap, ml=target_cursor.ml, dv=target_cursor.dv, units='voxel'
+            )
         if tuple(viewer.selected_region_ids()) != tuple(initial['selected_region_ids']):
             viewer.set_selected_region_ids(initial['selected_region_ids'])
         layers = initial['layers']
-        viewer.set_slice_layers(
+        viewer.slices.set_layers(
             anatomy=layers['anatomy'],
             annotations=layers['annotations'],
             boundaries=layers['boundaries'],
         )
         opacity = initial['opacity']
-        if opacity['volume'] != viewer.volume_opacity:
-            viewer.set_volume_opacity(opacity['volume'])
+        if opacity['volume'] != viewer._linked.volume_opacity:
+            viewer.slices.set_volume_opacity(opacity['volume'])
         if opacity['surface'] is not None and opacity['surface'] != viewer.surface_opacity:
             viewer.set_surface_opacity(opacity['surface'])
         if opacity['context'] is not None and opacity['context'] != viewer.context_opacity:
@@ -308,11 +314,11 @@ class LinkedReadiness:
 
     def __init__(self, viewer) -> None:
         self.viewer = viewer
-        self._original_upload = viewer._upload_slice_payload
+        self._original_upload = viewer._linked._upload_slice_payload
         self._wrapper = None
         self._closed = False
         self._upload_error: Exception | None = None
-        self._accepted = dict(getattr(viewer, '_displayed_slice_requests', {}))
+        self._accepted = dict(getattr(viewer._linked, '_displayed_slice_requests', {}))
 
         def tracked_upload(request, payload):
             owner_thread = getattr(viewer, '_owner_thread', None)
@@ -326,16 +332,16 @@ class LinkedReadiness:
             axis = request.axis
             if (
                 not self._closed
-                and viewer._displayed_slice_requests.get(axis) == request
-                and viewer._slice_revisions.get(axis) == request.revision
-                and viewer._slice_request(axis) == request
+                and viewer._linked._displayed_slice_requests.get(axis) == request
+                and viewer._linked._slice_revisions.get(axis) == request.revision
+                and viewer._linked._slice_request(axis) == request
             ):
                 self._accepted[axis] = request
                 self._upload_error = None
             return result
 
         self._wrapper = tracked_upload
-        viewer._upload_slice_payload = tracked_upload
+        viewer._linked._upload_slice_payload = tracked_upload
 
     @property
     def accepted_requests(self) -> dict[str, dict[str, Any]]:
@@ -343,7 +349,7 @@ class LinkedReadiness:
         return {axis: _request_dict(self._accepted.get(axis)) for axis in _AXES}
 
     def _expected(self, axis: str):
-        return self.viewer._slice_request(axis)
+        return self.viewer._linked._slice_request(axis)
 
     def check(self) -> ReadinessResult:
         """Inspect current request identities without blocking or rendering."""
@@ -354,10 +360,10 @@ class LinkedReadiness:
             return ReadinessResult(
                 'error', error='readiness checks require the viewer owning thread'
             )
-        navigation = getattr(self.viewer, '_auto_slice', None)
+        navigation = getattr(self.viewer._linked, '_auto_slice', None)
         error = (
             self._upload_error
-            or getattr(self.viewer, '_slice_error', None)
+            or getattr(self.viewer._linked, '_slice_error', None)
             or getattr(navigation, 'error', None)
         )
         if error is not None:
@@ -501,8 +507,8 @@ class LinkedReadiness:
         if self._closed:
             return
         self._closed = True
-        if getattr(self.viewer, '_upload_slice_payload', None) is self._wrapper:
-            self.viewer._upload_slice_payload = self._original_upload
+        if getattr(self.viewer._linked, '_upload_slice_payload', None) is self._wrapper:
+            self.viewer._linked._upload_slice_payload = self._original_upload
 
     def __enter__(self) -> LinkedReadiness:
         """Return this adapter for use as a scoped context manager."""

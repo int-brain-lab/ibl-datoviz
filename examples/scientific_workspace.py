@@ -147,7 +147,7 @@ def main():
             layout=app.layout,
             cursor_voxel_apmldv=list(app.slices.position.index),
             cursor_world_mlapdv_um=list(app.slices.position.world_um),
-            plane_axes=list(app._slice_planes.visible_axes),
+            plane_axes=list(app._linked._slice_planes.visible_axes),
             observation_picking_unavailable=app.picking.unavailable_reason,
             signal_reads='not_requested',
         )

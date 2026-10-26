@@ -20,7 +20,7 @@ def test_native_region_hemisphere_empty_restore_and_palette_alpha():
                 pytest.skip('native runtime/GPU context unavailable')
             raise
         assert pixels.shape == (192, 256, 4)
-        assert viewer._surface_alpha_mode == viewer.dvz.DVZ_ALPHA_WBOIT
+        assert viewer._surface_presentation.alpha_mode == viewer.dvz.DVZ_ALPHA_WBOIT
         positions, indices = viewer.mesh_data.positions.copy(), viewer.mesh_data.indices.copy()
 
         def capture():

@@ -17,10 +17,13 @@ if TYPE_CHECKING:
 
 def _assert_callback_success(viewer):
     """Reject failures retained by callbacks that ctypes cannot propagate."""
-    for name in ('_gui_callback_error', '_slice_error', '_review_error'):
+    for name in ('_gui_callback_error', '_review_error'):
         error = getattr(viewer, name, None)
         if error:
             raise RuntimeError(f'{name} during terminal checkpoint: {error}')
+    slice_error = getattr(viewer._linked, '_slice_error', None)
+    if slice_error:
+        raise RuntimeError(f'_slice_error during terminal checkpoint: {slice_error}')
     error = getattr(getattr(viewer, 'review_controls', None), 'error', None)
     if error:
         raise RuntimeError(f'review controls failed during terminal checkpoint: {error}')
@@ -69,7 +72,7 @@ def _capture_terminal_checkpoint(viewer, readiness, *, output: Path | None = Non
         # Closed host views still drain owner-thread posts before skipping draw.
         if dvz.dvz_view_render_once(viewer.view) < 0:
             raise RuntimeError('terminal owner-thread work failed')
-        drain = getattr(viewer, '_drain_prepared_slices', None)
+        drain = getattr(viewer._linked, '_drain_prepared_slices', None)
         if callable(drain):
             drain(viewer.view, None)
         _assert_callback_success(viewer)

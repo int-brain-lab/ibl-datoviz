@@ -33,8 +33,10 @@ def main() -> int:
         surface_opacity=0.16,
         camera_angles=BWM_CAMERA_ANGLES,
     ) as viewer:
-        viewer.set_probe((sites.positions_um[0], sites.positions_um[-1]), width_px=2)
-        viewer.set_probe_data(
+        viewer._probe_presentation.set_path(
+            (sites.positions_um[0], sites.positions_um[-1]), width_px=2
+        )
+        viewer._probe_presentation.set_data(
             sites,
             value_range=value_range,
             radius_um=85,

@@ -28,14 +28,14 @@ def test_surface_layer_toggle_retains_hemispheres_styles_and_selection(viewer):
     assert viewer.selected_region_ids() == (-315,)
     viewer.set_mapping('beryl')
     viewer.set_mapping('allen')
-    assert not viewer._surface_visible
-    assert viewer._surface_style.hemispheres == {'left': True, 'right': False}
+    assert not viewer._surface_presentation.visible
+    assert viewer._surface_presentation.style.hemispheres == {'left': True, 'right': False}
     assert viewer.selected_region_ids() == ()  # Existing mapping-reset policy.
     visibility = [call for call in viewer.dvz.calls if call[0] == 'visible']
     assert visibility[-1][2] is False
     viewer.set_surface_visible(True)
     assert viewer.visible_region_ids() == (-315,)
-    assert viewer._surface_style.regions[('allen', -315)].opacity == 0.4
+    assert viewer._surface_presentation.style.regions[('allen', -315)].opacity == 0.4
     assert viewer.panel is panel and viewer.camera_angles == camera
 
 
@@ -75,8 +75,8 @@ def test_review_reset_is_explicit_and_restores_initial_viewer_state(viewer):
     assert viewer.panel is panel and viewer.scene is scene
     assert viewer.camera_angles == controls.initial_camera
     assert viewer.visible_region_ids() == (-315, 315)
-    assert viewer.surface_opacity == 1 and viewer._surface_visible
-    assert not viewer._surface_style.regions and not viewer.selected_region_ids()
+    assert viewer.surface_opacity == 1 and viewer._surface_presentation.visible
+    assert not viewer._surface_presentation.style.regions and not viewer.selected_region_ids()
 
 
 @pytest.mark.parametrize('axis', ['ap', 'ml', 'dv'])

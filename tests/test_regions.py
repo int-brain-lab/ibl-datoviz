@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ibl_datoviz import AtlasRegionValues
+from ibl_datoviz.components import AtlasRegionValues
 
 ROOT = Path(__file__).resolve().parents[1]
 

@@ -78,7 +78,7 @@ def capture(viewer, *, readiness_error=None):
     viewer.view = object()
     viewer.viewport = object()
     if readiness_error is not None:
-        viewer._slice_error = readiness_error
+        viewer._linked._slice_error = readiness_error
     with LinkedReadiness(viewer) as readiness:
         result = capture_terminal_checkpoint(viewer, readiness)
     return result, native
@@ -112,7 +112,7 @@ def test_terminal_capture_reports_missing_source_apis_and_readiness_failures():
     assert unavailable['status'] == 'unavailable'
 
     viewer = FakeLinkedViewer()
-    viewer.set_cursor(AtlasCursor(2, 2, 3))
+    viewer._linked.set_cursor(AtlasCursor(2, 2, 3))
     native = FakeSourceDatoviz()
     viewer.dvz, viewer.view, viewer.viewport = native, object(), object()
     with LinkedReadiness(viewer) as readiness:
@@ -125,13 +125,13 @@ def test_terminal_capture_reports_missing_source_apis_and_readiness_failures():
     assert result['status'] == 'error'
 
     viewer = FakeLinkedViewer()
-    viewer.set_cursor(AtlasCursor(2, 2, 3))
-    viewer.raise_upload = True
+    viewer._linked.set_cursor(AtlasCursor(2, 2, 3))
+    viewer._linked.raise_upload = True
     native = FakeSourceDatoviz()
     viewer.dvz, viewer.view, viewer.viewport = native, object(), object()
     with LinkedReadiness(viewer) as readiness:
         with suppress(RuntimeError):
-            viewer._upload_slice_payload(viewer._slice_request('ap'), object())
+            viewer._linked._upload_slice_payload(viewer._linked._slice_request('ap'), object())
         result = capture_terminal_checkpoint(viewer, readiness)
     assert result['status'] == 'error'
 
@@ -177,7 +177,7 @@ def test_terminal_capture_rejects_invalid_rgba_and_source_advancement_during_cap
 def test_scientific_state_change_during_capture_cannot_produce_ready_checkpoint():
     viewer = FakeLinkedViewer()
     native = FakeSourceDatoviz()
-    native.change_scientific_state = lambda: viewer.set_cursor(AtlasCursor(2, 2, 3))
+    native.change_scientific_state = lambda: viewer._linked.set_cursor(AtlasCursor(2, 2, 3))
     viewer.dvz, viewer.view, viewer.viewport = native, object(), object()
     with LinkedReadiness(viewer) as readiness:
         result = capture_terminal_checkpoint(viewer, readiness)

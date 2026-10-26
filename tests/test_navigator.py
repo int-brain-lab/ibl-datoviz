@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import MaterializedRegisteredAssets, open_volume_pack
-from ibl_datoviz import AtlasMesh, LinkedAtlasNavigator
+from ibl_datoviz import AtlasMesh, AtlasViewer
 from ibl_datoviz.linked_atlas import volume_render_geometry
 from ibl_datoviz.navigator import (
     AtlasCursor,
@@ -113,27 +113,18 @@ def test_volume_geometry_uses_voxel_edges_and_numpy_texture_order(volumes):
 def test_navigator_rejects_incompatible_mesh_catalog(volumes):
     mesh = AtlasMesh.from_pack(MESH_FIXTURE)
     with pytest.raises(ValueError, match='IDs are absent'):
-        LinkedAtlasNavigator(mesh, volumes)
+        AtlasViewer(mesh, volumes, layout='linked')
 
 
 def test_navigator_rejects_palette_that_would_desynchronize_slices(volumes):
     mesh = AtlasMesh.from_pack(MESH_FIXTURE)
     with pytest.raises(ValueError, match='verified catalog palette'):
-        LinkedAtlasNavigator(mesh, volumes, palette={315: (1, 2, 3, 255)})
+        AtlasViewer(mesh, volumes, layout='linked', palette={315: (1, 2, 3, 255)})
 
 
-@pytest.mark.parametrize(
-    ('factory_name', 'args'),
-    [
-        ('from_pack', (MESH_FIXTURE,)),
-        ('from_assets', (object(),)),
-        ('from_asset_set', (MESH_FIXTURE,)),
-    ],
-)
-def test_navigator_rejects_inherited_surface_only_factories(factory_name, args):
-    factory = getattr(LinkedAtlasNavigator, factory_name)
-    with pytest.raises(TypeError, match=r'requires atlas volumes.*from_packs\(\)'):
-        factory(*args)
+@pytest.mark.parametrize('factory_name', ['from_pack', 'from_assets', 'from_asset_set'])
+def test_surface_factories_are_available_on_canonical_viewer(factory_name):
+    assert callable(getattr(AtlasViewer, factory_name))
 
 
 def test_registered_asset_factory_consumes_verified_projection_readers(monkeypatch):
@@ -160,13 +151,11 @@ def test_registered_asset_factory_consumes_verified_projection_readers(monkeypat
     mesh = object()
     slice_source = object()
     monkeypatch.setattr(
-        'ibl_datoviz.linked_atlas.open_volume_pack',
+        'ibl_datoviz.viewer.open_volume_pack',
         lambda path: SimpleNamespace(load_volumes=lambda: volumes),
     )
-    monkeypatch.setattr(
-        'ibl_datoviz.linked_atlas.open_intensity_block_pack', lambda path: intensity
-    )
-    monkeypatch.setattr('ibl_datoviz.linked_atlas.AtlasMesh.from_pack', lambda path: mesh)
+    monkeypatch.setattr('ibl_datoviz.viewer.open_intensity_block_pack', lambda path: intensity)
+    monkeypatch.setattr('ibl_datoviz.viewer.AtlasMesh.from_pack', lambda path: mesh)
 
     def fake_slice_source(actual_intensity, actual_projections, actual_regions):
         assert actual_intensity is intensity
@@ -181,19 +170,24 @@ def test_registered_asset_factory_consumes_verified_projection_readers(monkeypat
     def fake_init(self, actual_mesh, actual_volumes, *, slice_source, **kwargs):
         self.factory_inputs = (actual_mesh, actual_volumes, slice_source, kwargs)
 
-    monkeypatch.setattr('ibl_datoviz.linked_atlas.AtlasSliceSource', fake_slice_source)
-    monkeypatch.setattr(LinkedAtlasNavigator, '__init__', fake_init)
+    monkeypatch.setattr('ibl_datoviz.viewer.AtlasSliceSource', fake_slice_source)
+    monkeypatch.setattr(AtlasViewer, '__init__', fake_init)
 
-    navigator = LinkedAtlasNavigator.from_registered_assets(
+    navigator = AtlasViewer.from_registered_assets(
         'mesh', 'volume', 'intensity', assets, width=640
     )
 
-    assert navigator.factory_inputs == (mesh, volumes, slice_source, {'width': 640})
+    assert navigator.factory_inputs == (
+        mesh,
+        volumes,
+        slice_source,
+        {'layout': 'linked', 'width': 640},
+    )
 
 
 def test_registered_asset_factory_rejects_unverified_input():
     with pytest.raises(TypeError, match='verified MaterializedRegisteredAssets'):
-        LinkedAtlasNavigator.from_registered_assets('mesh', 'volume', 'intensity', object())
+        AtlasViewer.from_registered_assets('mesh', 'volume', 'intensity', object())
 
 
 def test_composed_slice_is_rgba_and_preserves_void_template(volumes):
@@ -288,7 +282,9 @@ def test_selection_without_dimming_skips_membership_mask(volumes, monkeypatch, l
     compose = composer.compose_layers if layered else composer.compose
     baseline = compose('dv', 1, selection_dim_factor=1.0)
     monkeypatch.setattr(
-        np, 'isin', lambda *_args, **_kwargs: pytest.fail('unneeded selection mask'),
+        np,
+        'isin',
+        lambda *_args, **_kwargs: pytest.fail('unneeded selection mask'),
     )
     selected = compose('dv', 1, selected_region_ids=(997,), selection_dim_factor=1.0)
     if layered:

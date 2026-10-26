@@ -101,7 +101,7 @@ def capture_case(  # noqa: PLR0915
     dvz, output, sign, order, angle_index, angles, alpha_mode, *, gaps=None, geometry='line'
 ):
     """Render point-only, combined, and opaque-mesh-occluded frames."""
-    from ibl_datoviz import (  # noqa: PLC0415
+    from ibl_datoviz.components import (  # noqa: PLC0415
         InsertionCollectionVisual,
         PointCollection,
         PointCollectionVisual,

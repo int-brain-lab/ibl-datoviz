@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_volume_pack
-from ibl_datoviz import AtlasCursor, AtlasMesh, AtlasViewer
+from ibl_datoviz import AtlasMesh, AtlasViewer
+from ibl_datoviz.components import AtlasCursor
 from ibl_datoviz.contour_source import ContourSection
 from ibl_datoviz.navigator import oriented_slice
 from ibl_datoviz.slice_preparation import prepare_slice_layers
@@ -70,20 +71,20 @@ def test_contour_source_is_explicit_and_validated_before_native_creation():
 
 def test_contours_owned_under_same_viewer_and_original_signed_mapping(viewer, tmp_path):
     app = viewer
-    assert set(app._accepted_contours) == {'ap', 'ml', 'dv'}
+    assert set(app._linked._accepted_contours) == {'ap', 'ml', 'dv'}
     app.selection.set_regions((-315,), mapping='allen')
     app.render_offscreen(tmp_path / 'contours.png')
     assert (tmp_path / 'contours.png').is_file()
-    for axis, (request, payload) in app._accepted_contours.items():
+    for axis, (request, payload) in app._linked._accepted_contours.items():
         assert request.renderer == 'contours' and request.mapping == app.mapping
         assert payload.contours.mapping == request.mapping
         assert payload.contours.components
-        assert len(app._contour_visuals[axis]._buffers) == 2
+        assert len(app._linked._contour_visuals[axis]._buffers) == 2
     app.set_mapping('cosmos')
 
     def accepted():
         app._process_gui_frame()
-        return all(r.mapping == 'cosmos' for r, _ in app._accepted_contours.values())
+        return all(r.mapping == 'cosmos' for r, _ in app._linked._accepted_contours.values())
 
     wait_until(accepted)
 
@@ -91,26 +92,26 @@ def test_contours_owned_under_same_viewer_and_original_signed_mapping(viewer, tm
 def test_hover_and_click_use_displayed_section_while_new_request_is_pending(viewer):
     app = viewer
     axis = 'ap'
-    old_request, payload = app._accepted_contours[axis]
+    old_request, payload = app._linked._accepted_contours[axis]
     component = payload.contours.components[0]
     svg = component.outer.mean(axis=0)
     matrix = np.asarray(payload.svg_to_fraction).reshape(3, 3)
     fraction = svg @ matrix[:2, :2].T + matrix[:2, 2]
-    quad, _ = app._slice_quad(axis)
+    quad, _ = app._linked._slice_quad(axis)
     point = quad[0, :2] + fraction * (quad[3, :2] - quad[0, :2])
-    app.cursor = AtlasCursor(1 - old_request.index, 2, 1)
-    assert app._cursor_at_slice_data(axis, *point).ap == old_request.index
-    assert app._contour_region_at(axis, *point) == component.atlas_id
-    app._set_slice_hover(axis, *point)
+    app._linked.cursor = AtlasCursor(1 - old_request.index, 2, 1)
+    assert app._linked._cursor_at_slice_data(axis, *point).ap == old_request.index
+    assert app._linked._contour_region_at(axis, *point) == component.atlas_id
+    app._linked._set_slice_hover(axis, *point)
     assert app._hovered_region_ids == (component.atlas_id,)
-    cursor = app.cursor
-    assert app._select_region_at_slice_data(axis, *point)
+    cursor = app._linked.cursor
+    assert app._linked._select_region_at_slice_data(axis, *point)
     assert app.selected_region_ids() == (component.atlas_id,)
-    assert app.cursor == cursor
+    assert app._linked.cursor == cursor
     app.mapping = 'cosmos'
-    assert app._cursor_at_slice_data(axis, *point) is None
-    assert app._contour_region_at(axis, *point) is None
-    assert not app._select_region_at_slice_data(axis, *point)
+    assert app._linked._cursor_at_slice_data(axis, *point) is None
+    assert app._linked._contour_region_at(axis, *point) is None
+    assert not app._linked._select_region_at_slice_data(axis, *point)
     assert app.selected_region_ids() == (component.atlas_id,)
     app.mapping = 'allen'
 
@@ -119,12 +120,16 @@ def test_raster_right_click_uses_displayed_section_during_pending_navigation(
     monkeypatch, native_datoviz
 ):
     with AtlasViewer(
-        atlas=AtlasMesh.from_pack(MESH), layout='linked', slice_source=ExactSource(),
+        atlas=AtlasMesh.from_pack(MESH),
+        layout='linked',
+        slice_source=ExactSource(),
         render_volume=False,
     ) as app:
-        request = app._displayed_slice_requests['ap']
-        app.cursor = app.cursor.replace('ap', 0, app.slice_source.grid.shape)
-        cursor = app.cursor
+        request = app._linked._displayed_slice_requests['ap']
+        app._linked.cursor = app._linked.cursor.replace(
+            'ap', 0, app._linked.slice_source.grid.shape
+        )
+        cursor = app._linked.cursor
         sampled = []
         selected = []
         original_region = AtlasCursor.region
@@ -135,40 +140,40 @@ def test_raster_right_click_uses_displayed_section_during_pending_navigation(
 
         monkeypatch.setattr(AtlasCursor, 'region', region)
         monkeypatch.setattr(app, 'set_selected_region_ids', selected.append)
-        assert app._select_region_at_slice_data('ap', 0, 0)
+        assert app._linked._select_region_at_slice_data('ap', 0, 0)
         assert sampled == [request.index]
         assert selected
-        assert app.cursor == cursor
+        assert app._linked.cursor == cursor
         app.mapping = 'cosmos'
-        assert not app._select_region_at_slice_data('ap', 0, 0)
+        assert not app._linked._select_region_at_slice_data('ap', 0, 0)
         assert sampled == [request.index]
-        assert app.cursor == cursor
+        assert app._linked.cursor == cursor
 
 
 def test_stale_request_does_not_replace_geometry_or_identity(viewer):
     app = viewer
-    request, payload = app._accepted_contours['ap']
-    app._slice_revisions['ap'] += 1
-    active = app._contour_visuals['ap']._active
-    app._upload_slice_payload(request, payload)
-    assert app._contour_visuals['ap']._active == active
-    assert app._accepted_contours['ap'][0] == request
+    request, payload = app._linked._accepted_contours['ap']
+    app._linked._slice_revisions['ap'] += 1
+    active = app._linked._contour_visuals['ap']._active
+    app._linked._upload_slice_payload(request, payload)
+    assert app._linked._contour_visuals['ap']._active == active
+    assert app._linked._accepted_contours['ap'][0] == request
 
 
 def test_zoom_remaps_accepted_geometry_without_new_slice_io(viewer, monkeypatch):
     app = viewer
-    before = app._accepted_contours.copy()
+    before = app._linked._accepted_contours.copy()
     monkeypatch.setattr(
-        app.slice_source, 'contour_slice', lambda *_: pytest.fail('zoom read source')
+        app._linked.slice_source, 'contour_slice', lambda *_: pytest.fail('zoom read source')
     )
-    app._slice_zoom['ap'] = 2
-    app._update_slice_geometry('ap')
-    assert app._accepted_contours == before
+    app._linked._slice_zoom['ap'] = 2
+    app._linked._update_slice_geometry('ap')
+    assert app._linked._accepted_contours == before
 
 
 def test_prepared_contours_are_captured_and_do_not_mutate_with_owner(viewer):
-    request = viewer._slice_request('ap')
-    payload = prepare_slice_layers(viewer.slice_composer, request)
+    request = viewer._linked._slice_request('ap')
+    payload = prepare_slice_layers(viewer._linked.slice_composer, request)
     assert payload.contours.mapping == request.mapping
     assert isinstance(payload.svg_to_fraction, tuple)
     assert payload.boundary_starts.flags.writeable is False
@@ -177,14 +182,17 @@ def test_prepared_contours_are_captured_and_do_not_mutate_with_owner(viewer):
 @pytest.mark.parametrize('offset', [0.1, 0.5, 0.9])
 def test_exact_cell_interior_roundtrips_to_the_same_cursor_and_identity(viewer, offset):
     app = viewer
-    for axis, (request, _payload) in app._accepted_contours.items():
+    for axis, (request, _payload) in app._linked._accepted_contours.items():
         x_axis, y_axis = {'ap': ('ml', 'dv'), 'ml': ('ap', 'dv'), 'dv': ('ml', 'ap')}[axis]
-        grid = app.slice_source.grid
-        corners, _ = app._slice_quad(axis)
+        grid = app._linked.slice_source.grid
+        corners, _ = app._linked._slice_quad(axis)
         for x in range(grid.shape[grid.array_axes.index(x_axis)]):
             for y in range(grid.shape[grid.array_axes.index(y_axis)]):
                 fraction = np.array(
-                    [app._slice_fraction(x_axis, x), app._slice_fraction(y_axis, y)]
+                    [
+                        app._linked._slice_fraction(x_axis, x),
+                        app._linked._slice_fraction(y_axis, y),
+                    ]
                 )
                 fraction += (offset - 0.5) / np.array(
                     [
@@ -193,53 +201,53 @@ def test_exact_cell_interior_roundtrips_to_the_same_cursor_and_identity(viewer, 
                     ]
                 )
                 point = corners[0, :2] + fraction * (corners[3, :2] - corners[0, :2])
-                cursor = app._cursor_at_slice_data(axis, *point)
+                cursor = app._linked._cursor_at_slice_data(axis, *point)
                 expected = dict(zip(('ap', 'ml', 'dv'), cursor.as_index(), strict=True))
                 assert expected[axis] == request.index
                 assert expected[x_axis] == x and expected[y_axis] == y
-                row = cursor.region(app.slice_source, app.mapping)
+                row = cursor.region(app._linked.slice_source, app.mapping)
                 region_id = None if row is None or row.atlas_id == 0 else row.atlas_id
-                assert app._contour_region_at(axis, *point) == region_id
+                assert app._linked._contour_region_at(axis, *point) == region_id
 
 
 def test_unknown_pending_geometry_does_not_clear_existing_selection(viewer, monkeypatch):
     app = viewer
     app.selection.set_regions((-315,), mapping='allen')
-    old = app.cursor.as_index()
+    old = app._linked.cursor.as_index()
     next_cursor = AtlasCursor(*(0 if value else 1 for value in old))
     # The async path changes requested state before any new plane is accepted.
-    monkeypatch.setattr(app, '_refresh_slices', lambda *_: None)
-    app.set_cursor(next_cursor, select_region=True)
-    assert app._contour_region_query() == (False, None)
+    monkeypatch.setattr(app._linked, '_refresh_slices', lambda *_: None)
+    app._linked.set_cursor(next_cursor, select_region=True)
+    assert app._linked._contour_region_query() == (False, None)
     assert app.selection.regions == (('allen', -315),)
 
 
 def test_contours_omit_unused_panel_textures_but_keep_physical_plane_pixels(viewer):
-    assert viewer._annotation_fields == viewer._annotation_images == {}
-    assert viewer._hover_fields == viewer._hover_images == {}
-    assert set(viewer._slice_fields) == {'ap', 'ml', 'dv'}
-    for axis, accepted in viewer._accepted_contours.items():
+    assert viewer._linked._annotation_fields == viewer._linked._annotation_images == {}
+    assert viewer._linked._hover_fields == viewer._linked._hover_images == {}
+    assert set(viewer._linked._slice_fields) == {'ap', 'ml', 'dv'}
+    for axis, accepted in viewer._linked._accepted_contours.items():
         request, payload = accepted
-        assert viewer._slice_planes._accepted[axis] == accepted
+        assert viewer._linked._slice_planes._accepted[axis] == accepted
         assert payload.annotation.shape == payload.anatomy.shape
         assert payload.annotation.dtype == np.uint8
         assert np.any(payload.annotation[..., 3])
         assert request.renderer == 'contours'
-    viewer._slice_planes.show('ap')
-    assert viewer._slice_planes.visible_axes == ('ap',)
-    viewer._slice_planes.show('ap', False)
+    viewer._linked._slice_planes.show('ap')
+    assert viewer._linked._slice_planes.visible_axes == ('ap',)
+    viewer._linked._slice_planes.show('ap', False)
 
 
 def test_close_releases_viewer_preparation_caches_but_preserves_shared_source(viewer):
     from weakref import ref  # noqa: PLC0415 - inspect ownership at this boundary.
 
-    preparation = ref(viewer._slice_preparation)
-    source = viewer.slice_source
-    index = viewer.cursor.ap
+    preparation = ref(viewer._linked._slice_preparation)
+    source = viewer._linked.slice_source
+    index = viewer._linked.cursor.ap
     count = len(source.contour_slice('ap', index).paths)
     assert count > 0
     assert preparation().contour_cache_info()['ap'][0] > 0
     viewer.close()
-    assert viewer._slice_preparation is None
+    assert viewer._linked._slice_preparation is None
     assert preparation() is None
     assert len(source.contour_slice('ap', index).paths) == count

@@ -110,3 +110,38 @@ The report records NVIDIA driver diagnostics, the Vulkan device inventory, Vulka
 The report also records sparse interaction-state setter calls, changed-word counts and requested payload bytes (four bytes per word). These are API payload measurements; native emitted-upload checks establish GPU transfer size. After warmup, hover and selection should upload no dense vertex colors and cause no static query-geometry refreshes.
 
 For deeper Python attribution, add `--profile-emphasis` to a separate diagnostic run. It records function call counts, self time and cumulative time for measured emphasis updates, including ontology expansion and presentation-state updates. Profiling adds overhead: compare ordinary timings with profiling disabled, and do not sum nested cumulative times. Tree relationships and presentation-to-region mappings are cached; report cold startup separately from warmed steady-state timings.
+
+## Viewer ownership and internal components
+
+`AtlasViewer` is the public application owner for both `layout="3d"` and
+`layout="linked"`. Layout selection does not change its concrete class. Prepared
+scientific payloads enter through `add_points`, `add_paths`, `add_recording`, and
+`add_region_values`; returned handles and public controllers are the application API.
+Caller-owned rendering primitives live in `ibl_datoviz.components`.
+
+The viewer coordinates mapping/selection transactions and owns the scene lifetime.
+Its internal components have distinct responsibilities:
+
+| Component | Owned state and work |
+| --- | --- |
+| `LinkedSlices` | Slice sources/composers, cursor, accepted requests, visuals, workers, and input subscription |
+| `SurfacePresentation` | Authored styles, applied surface masks/cache, and typed transaction snapshots/recovery |
+| `ProbePresentation` | Diagnostic probe payloads, colors, pending candidates, and upload recovery |
+| `ViewerLayout` | Host/view/GUI assembly and docking; native handles remain owned by the viewer |
+
+Mapping and selection updates coordinate anatomy and slices before publishing events.
+Rejected work advances slice revisions during recovery, so old worker completions
+cannot become current. Rollback restores native data as well as host state; a failed
+rollback closes the viewer. Snapshot color payloads retain immutable owned storage.
+
+Native GUI/input callbacks may request shutdown but must not release their resources
+until dispatch scopes unwind. Close guards run before diagnostic visuals are released;
+slice workers join and input subscriptions detach before app/scene destruction.
+External source caches remain caller-owned. Public mutations require the owner thread
+and cannot run reentrantly from selection or cursor notifications.
+
+Application-specific cursor/volume hooks run after the scientific update succeeds.
+Restoration paths use internal setters deliberately when repeating a committed hook
+would recurse. Review fixture resets use public controllers, so application policies
+also apply during replay. Change these boundaries with failure-injection and lifetime
+checks, not only successful startup tests.

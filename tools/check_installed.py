@@ -16,6 +16,13 @@ from pathlib import Path
 import numpy as np
 
 
+def _check_exports(module):
+    """Check every declared export without constructing native resources."""
+    for name in module.__all__:
+        if not hasattr(module, name):
+            raise RuntimeError(f'missing API in {module.__name__}: {name}')
+
+
 def check_installation():
     """Reject editable/source imports and exercise the installed CPU contracts."""
     if not sys.flags.isolated:
@@ -40,16 +47,17 @@ def check_installation():
     ibl_anatomy = import_module('ibl_anatomy')
     ibl_datoviz = import_module('ibl_datoviz')
 
-    for name in ibl_datoviz.__all__:
-        if not hasattr(ibl_datoviz, name):
-            raise RuntimeError(f'missing public API: {name}')
+    _check_exports(ibl_datoviz)
+
+    components = import_module('ibl_datoviz.components')
+    _check_exports(components)
 
     positions = np.array([[0, 0, 0], [1, 2, 3]], dtype=np.float32)
-    points = ibl_datoviz.PointCollection.from_arrays(
+    points = components.PointCollection.from_arrays(
         positions, [[255, 0, 0, 255], [0, 255, 0, 128]]
     )
-    trajectory = ibl_datoviz.InsertionTrajectory.from_arrays(positions)
-    plane = ibl_datoviz.SampledPlane.from_arrays(
+    trajectory = components.InsertionTrajectory.from_arrays(positions)
+    plane = components.SampledPlane.from_arrays(
         [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]],
         np.full((2, 2, 4), 255, dtype=np.uint8),
     )
@@ -72,6 +80,7 @@ def check_installation():
         'python': sys.version,
         'packages': packages,
         'public_api': ibl_datoviz.__all__,
+        'component_api': components.__all__,
         'bundled_assets': {
             'surface': surface.asset_id,
             'surface_source_sha256': surface.source.sha256,

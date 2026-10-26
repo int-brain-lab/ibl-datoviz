@@ -1,11 +1,16 @@
-# Insertion trajectories
+# Lower-level insertion trajectories
+
+For viewer-owned scientific paths use `app.add_paths(Paths(...))` or
+`app.add_recording(Recording(...))` and the returned handles. This page documents
+explicit scene composition for custom renderers and diagnostic clients.
+
 
 `InsertionTrajectory` stores one immutable path in atlas-world micrometres.
 `InsertionCollectionVisual` manages several independently identified path
 visuals in a caller-owned Datoviz scene and panel.
 
 ```python
-from ibl_datoviz.insertions import InsertionCollectionVisual
+from ibl_datoviz.components import InsertionCollectionVisual
 
 insertions = InsertionCollectionVisual(
     dvz,
@@ -51,7 +56,7 @@ mutations raise `RuntimeError`. Validation occurs before native mutation. Failed
 updates restore the previous upload; if native rollback also fails, that path
 is destroyed and removed from the collection.
 
-Insertion paths are independent of `ProbeSites`, probe-site tables, and the
-viewer’s legacy single-probe path. The current path rendering support is opaque;
+These caller-owned paths are independent of viewer-owned observation tables
+and scientific selection. The current path rendering support is opaque;
 this API does not claim transparency-order independence or a broader native
 scientific rendering profile.

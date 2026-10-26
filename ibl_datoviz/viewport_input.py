@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ctypes
 
-from .slice_input import SliceInputAdapter
+from .slice_input import pointer_figure_position
 
 
 class ViewportInputAdapter:
@@ -37,7 +37,7 @@ class ViewportInputAdapter:
 
     def _request_observation(self, pointer):
         owner, dvz = self.owner, self.owner.dvz
-        figure_position = SliceInputAdapter(owner, self.router).pointer_figure_position(pointer)
+        figure_position = pointer_figure_position(owner, self.router, pointer)
         if figure_position is None:
             return
         source = (ctypes.c_double * 2)(*figure_position)
@@ -62,12 +62,16 @@ class ViewportInputAdapter:
             return
         pointer = event.content.pointer
         event_type = pointer.type
-        if event_type in (
-            dvz.DVZ_POINTER_EVENT_PRESS,
-            getattr(dvz, 'DVZ_POINTER_EVENT_CLICK', -1),
-            getattr(dvz, 'DVZ_POINTER_EVENT_WHEEL', -1),
-        ) and hasattr(self.owner, '_cancel_auto_slice'):
-            self.owner._cancel_auto_slice()
+        if (
+            event_type
+            in (
+                dvz.DVZ_POINTER_EVENT_PRESS,
+                getattr(dvz, 'DVZ_POINTER_EVENT_CLICK', -1),
+                getattr(dvz, 'DVZ_POINTER_EVENT_WHEEL', -1),
+            )
+            and self.owner._linked is not None
+        ):
+            self.owner._linked._cancel_auto_slice()
         if event_type in (
             dvz.DVZ_POINTER_EVENT_PRESS,
             dvz.DVZ_POINTER_EVENT_DRAG_START,

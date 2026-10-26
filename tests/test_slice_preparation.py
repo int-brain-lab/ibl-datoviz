@@ -6,8 +6,9 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_volume_pack
-from ibl_datoviz import LinkedAtlasNavigator
+from ibl_datoviz import AtlasViewer
 from ibl_datoviz.contour_geometry import prepare_contour_geometry
+from ibl_datoviz.linked_atlas import LinkedSlices
 from ibl_datoviz.navigator import AtlasCursor, AtlasSliceComposer
 from ibl_datoviz.slice_preparation import (
     PreparedSliceLayers,
@@ -15,7 +16,6 @@ from ibl_datoviz.slice_preparation import (
     prepare_slice_layers,
 )
 from ibl_datoviz.slice_scheduler import SliceRequest, SliceScheduler
-from ibl_datoviz.viewer import AtlasViewer
 from tests import FIXTURES
 from tests.test_contour_workspace import ExactSource
 
@@ -59,9 +59,15 @@ def test_sync_and_worker_preparation_match_without_mutating_cache(source, mappin
     composer = AtlasSliceComposer(source)
     worker = SlicePreparation(source, 'allen')
     request = SliceRequest(
-        'dv', 1, 3, mapping=mapping, annotation_opacity=0.4,
-        selected_region_ids=(315,), selection_dim_factor=0.2,
-        anatomy_visible=visible, annotation_visible=visible,
+        'dv',
+        1,
+        3,
+        mapping=mapping,
+        annotation_opacity=0.4,
+        selected_region_ids=(315,),
+        selection_dim_factor=0.2,
+        anatomy_visible=visible,
+        annotation_visible=visible,
     )
     synchronous = prepare_slice_layers(composer, request)
     asynchronous = worker(request)
@@ -76,24 +82,25 @@ def test_sync_and_worker_preparation_match_without_mutating_cache(source, mappin
 
 
 def test_owner_request_captures_state_before_worker_runs(source):
-    viewer = LinkedAtlasNavigator.__new__(LinkedAtlasNavigator)
+    viewer = LinkedSlices.__new__(LinkedSlices)
+    viewer.viewer = SimpleNamespace(_check=AtlasViewer._check)
     viewer.cursor = AtlasCursor(2, 2, 1)
     viewer._slice_revisions = {'dv': 3}
     viewer._slice_source_id = 'registered-10um'
     viewer.slice_renderer = 'raster'
-    viewer.mapping = 'allen'
+    viewer.viewer.mapping = 'allen'
     viewer.annotation_opacity = 0.4
     viewer.anatomy_visible = True
     viewer.annotation_visible = True
-    viewer._selected_region_ids = [315]
-    viewer.selection_dim_factor = 0.2
+    viewer.viewer._selected_region_ids = [315]
+    viewer.viewer.selection_dim_factor = 0.2
     request = viewer._slice_request('dv')
     viewer.cursor = AtlasCursor(2, 2, 2)
-    viewer.mapping = 'cosmos'
-    viewer._selected_region_ids[:] = [997]
+    viewer.viewer.mapping = 'cosmos'
+    viewer.viewer._selected_region_ids[:] = [997]
     viewer.anatomy_visible = False
     # Worker is independent of the viewer, including its native attributes.
-    viewer.dvz = SimpleNamespace()
+    viewer.viewer.dvz = SimpleNamespace()
     assert request.index == 1
     assert request.mapping == 'allen'
     assert request.selected_region_ids == (315,)
@@ -151,20 +158,22 @@ def test_navigator_close_joins_preparation_before_destroying_scene(monkeypatch):
         closing.set()
         real_close()
 
-    def close_scene(_viewer):
+    def close_scene():
+        viewer.close()
         assert finished.is_set()
-        assert _viewer._slice_preparation is None
+        assert viewer._slice_preparation is None
         destroyed.set()
 
     scheduler.close = close_workers
-    monkeypatch.setattr(AtlasViewer, 'close', close_scene)
-    viewer = LinkedAtlasNavigator.__new__(LinkedAtlasNavigator)
+    viewer = LinkedSlices.__new__(LinkedSlices)
+    viewer.viewer = SimpleNamespace(_check=AtlasViewer._check)
     viewer._slice_loader = scheduler
     preparation = viewer._slice_preparation = object()
     viewer._input_subscription = 0
+    viewer._auto_slice = None
     scheduler.submit(SliceRequest('dv', 1, 1))
     assert started.wait(2)
-    close_thread = Thread(target=viewer.close)
+    close_thread = Thread(target=close_scene)
     close_thread.start()
     try:
         assert closing.wait(2)
@@ -182,14 +191,15 @@ def test_navigator_close_joins_preparation_before_destroying_scene(monkeypatch):
 
 
 def test_empty_boundary_upload_hides_without_native_zero_count_updates():
-    viewer = LinkedAtlasNavigator.__new__(LinkedAtlasNavigator)
+    viewer = LinkedSlices.__new__(LinkedSlices)
+    viewer.viewer = SimpleNamespace(_check=AtlasViewer._check)
     events = []
     visual = object()
     viewer.boundary_color = (238, 242, 247)
     viewer.boundary_opacity = 0.82
     viewer.boundaries_visible = True
     viewer.boundary_width_px = 0.7
-    viewer.dvz = SimpleNamespace(
+    viewer.viewer.dvz = SimpleNamespace(
         dvz_visual_set_data_many=lambda handle, data: events.append(('data', handle, data)) or 0,
         dvz_visual_set_visible=lambda handle, shown: (
             events.append(('visible', handle, shown)) or 0
@@ -210,8 +220,9 @@ def test_empty_boundary_upload_hides_without_native_zero_count_updates():
 
 
 def test_boundary_visibility_failure_is_checked():
-    viewer = LinkedAtlasNavigator.__new__(LinkedAtlasNavigator)
-    viewer.dvz = SimpleNamespace(dvz_visual_set_visible=lambda *_args: -1)
+    viewer = LinkedSlices.__new__(LinkedSlices)
+    viewer.viewer = SimpleNamespace(_check=AtlasViewer._check)
+    viewer.viewer.dvz = SimpleNamespace(dvz_visual_set_visible=lambda *_args: -1)
     empty = np.empty((0, 3), dtype=np.float32)
     with pytest.raises(RuntimeError, match='boundaries visibility'):
         viewer._upload_boundaries(object(), empty, empty, 'boundaries')
@@ -316,8 +327,12 @@ def test_superseded_decode_skips_geometry_and_raster_then_prepares_latest(monkey
         return original_geometry(*args, **kwargs)
 
     monkeypatch.setattr('ibl_datoviz.slice_preparation.prepare_contour_geometry', geometry)
-    scheduler = SliceScheduler(worker, prepare_cancellable=worker.prepare_cancellable,
-                               notify=lambda _: notified.set(), max_workers=1)
+    scheduler = SliceScheduler(
+        worker,
+        prepare_cancellable=worker.prepare_cancellable,
+        notify=lambda _: notified.set(),
+        max_workers=1,
+    )
     request = SliceRequest('dv', 1, 1, renderer='contours')
     try:
         scheduler.submit(request)
@@ -388,8 +403,9 @@ def test_closed_worker_waiting_for_axis_lock_skips_decode_and_joins(monkeypatch)
     monkeypatch.setattr(worker._composers['dv'].volumes, 'contour_slice', unexpected_decode)
     worker._locks['dv'] = SignaledLock()
     notifications = []
-    scheduler = SliceScheduler(worker, prepare_cancellable=worker.prepare_cancellable,
-                               notify=notifications.append)
+    scheduler = SliceScheduler(
+        worker, prepare_cancellable=worker.prepare_cancellable, notify=notifications.append
+    )
     original_close = scheduler._executor.close
 
     def close_executor():
@@ -429,11 +445,13 @@ def test_close_during_source_decode_skips_remaining_preparation(monkeypatch):
 
     monkeypatch.setattr(source, 'contour_slice', decode)
     monkeypatch.setattr(
-        'ibl_datoviz.slice_preparation.prepare_contour_geometry', unexpected_geometry,
+        'ibl_datoviz.slice_preparation.prepare_contour_geometry',
+        unexpected_geometry,
     )
     notifications = []
-    scheduler = SliceScheduler(worker, prepare_cancellable=worker.prepare_cancellable,
-                               notify=notifications.append)
+    scheduler = SliceScheduler(
+        worker, prepare_cancellable=worker.prepare_cancellable, notify=notifications.append
+    )
     original_close = scheduler._executor.close
 
     def close_executor():

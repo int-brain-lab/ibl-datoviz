@@ -19,7 +19,7 @@ import datoviz as dvz
 import numpy as np
 
 from ibl_anatomy import open_volume_pack
-from ibl_datoviz import AtlasSliceComposer
+from ibl_datoviz.components import AtlasSliceComposer
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

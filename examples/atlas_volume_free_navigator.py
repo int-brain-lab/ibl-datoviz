@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ibl_datoviz import LinkedAtlasNavigator
+from ibl_datoviz import AtlasViewer
 
 
 def main() -> int:
@@ -20,7 +20,7 @@ def main() -> int:
     parser.add_argument('--ui-scale', type=float, default=1.0)
     args = parser.parse_args()
 
-    with LinkedAtlasNavigator.from_packs(
+    with AtlasViewer.from_packs(
         args.mesh_pack,
         args.volume_pack,
         mapping=args.mapping,

@@ -26,10 +26,12 @@ def test_face_visibility_uses_compact_authored_alpha_with_mutable_palette(
         render = viewer._surface_mesh
 
         def dense_reference():
-            alpha = viewer._surface_style.apply(mapping, render.colors(mapping, palette))[:, 3]
+            alpha = viewer._surface_presentation.style.apply(
+                mapping, render.colors(mapping, palette)
+            )[:, 3]
             minimum = np.full(len(render.presentations), 255, np.uint8)
             np.minimum.at(minimum, render.presentation_ids, alpha)
-            return viewer._surface_style.visible_faces(mapping) & (
+            return viewer._surface_presentation.style.visible_faces(mapping) & (
                 minimum[render.face_presentation_ids] > 0
             )
 
@@ -99,15 +101,15 @@ def test_palette_alpha_selects_wboit_and_survives_selection_hover_mapping(mesh):
     palette = {-315: (220, 30, 40, 128), 315: (30, 180, 40, 255)}
     with AtlasViewer(mesh, datoviz=fake, palette=palette) as viewer:
         render = viewer._surface_mesh
-        assert viewer._surface_alpha_mode == fake.DVZ_ALPHA_WBOIT
+        assert viewer._surface_presentation.alpha_mode == fake.DVZ_ALPHA_WBOIT
         viewer.set_selected_region_ids((-315,))
         viewer._set_hovered_region_ids((-315,))
         left = render.mapping_ids('allen') < 0
         np.testing.assert_array_equal(last_colors(fake)[left, 3], 128)
         viewer.clear_selection()
-        assert viewer._surface_alpha_mode == fake.DVZ_ALPHA_WBOIT
+        assert viewer._surface_presentation.alpha_mode == fake.DVZ_ALPHA_WBOIT
         viewer.set_mapping('cosmos', {-315: (220, 30, 40, 255), 315: (30, 180, 40, 255)})
-        assert viewer._surface_alpha_mode == fake.DVZ_ALPHA_OPAQUE
+        assert viewer._surface_presentation.alpha_mode == fake.DVZ_ALPHA_OPAQUE
 
 
 def test_authored_opacity_independent_of_global_selection_opacity(mesh):
@@ -143,7 +145,7 @@ def test_region_overrides_are_mapping_scoped_and_hemispheres_persist(mesh):
         np.testing.assert_array_equal(
             last_colors(fake)[:, :3], [[10, 20, 30]] * len(render.positions)
         )
-        assert viewer._surface_alpha_mode == fake.DVZ_ALPHA_WBOIT
+        assert viewer._surface_presentation.alpha_mode == fake.DVZ_ALPHA_WBOIT
         viewer.set_hemisphere('right')
         viewer.set_mapping('allen')
         assert viewer.visible_region_ids() == (315,)
@@ -177,10 +179,10 @@ def test_invalid_styles_do_not_mutate_viewer_or_gpu(mesh, method, args):
     fake = FakeDatoviz()
     with AtlasViewer(mesh, datoviz=fake) as viewer:
         calls = len(fake.calls)
-        style = viewer._surface_style
+        style = viewer._surface_presentation.style
         with pytest.raises(ValueError):
             getattr(viewer, method)(*args)
-        assert viewer._surface_style is style
+        assert viewer._surface_presentation.style is style
         assert len(fake.calls) == calls
 
 
@@ -210,7 +212,7 @@ def test_unmapped_presentations_stay_hidden_through_mapping_and_interaction(mesh
     with AtlasViewer(mesh, datoviz=fake, mapping='beryl') as viewer:
         render = viewer._surface_mesh
         mapped = render.face_mapping_ids('beryl') != 0
-        np.testing.assert_array_equal(viewer._surface_face_mask, mapped)
+        np.testing.assert_array_equal(viewer._surface_presentation.face_mask, mapped)
         if mapped.any():
             np.testing.assert_array_equal(
                 last_keys(fake), render.face_mapping_ids('beryl')[mapped]
@@ -225,14 +227,14 @@ def test_unmapped_presentations_stay_hidden_through_mapping_and_interaction(mesh
         viewer._set_hovered_region_ids((8,))
         viewer.set_explode(1)
         viewer.set_hemisphere('left')
-        assert not viewer._surface_face_mask.any()
+        assert not viewer._surface_presentation.face_mask.any()
         viewer.set_hemisphere('both')
-        np.testing.assert_array_equal(viewer._surface_face_mask, mapped)
+        np.testing.assert_array_equal(viewer._surface_presentation.face_mask, mapped)
         viewer.set_mapping('allen')
-        assert viewer._surface_face_mask.all()
+        assert viewer._surface_presentation.face_mask.all()
         np.testing.assert_array_equal(last_keys(fake), render.face_mapping_ids('allen'))
         viewer.set_mapping('beryl')
-        np.testing.assert_array_equal(viewer._surface_face_mask, mapped)
+        np.testing.assert_array_equal(viewer._surface_presentation.face_mask, mapped)
 
 
 def test_linked_selection_remains_signed_when_selected_region_hidden(mesh):

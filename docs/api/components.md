@@ -113,10 +113,9 @@ with AtlasViewer(
     app.show()
 ```
 
-The linked layout reuses the existing navigator implementation behind `AtlasViewer`:
+The linked layout composes its slice implementation inside `AtlasViewer`:
 there is one scene, layer registry, selection controller, table owner and slice
-scheduler. `LinkedAtlasNavigator` remains available for existing callers. Layout
-is fixed at construction. A 3D viewer loads no slice assets; `app.slices.available`
+scheduler. Layout is fixed at construction. A 3D viewer loads no slice assets; `app.slices.available`
 is false there. A linked viewer requires explicit volumes or an explicit
 `slice_source` with `render_volume=False`; missing coverage is never substituted.
 
@@ -212,17 +211,19 @@ aggregation from raw signals:
 ```python
 quantity = app.add_region_values(prepared_region_values, mapping_reduction="weighted_mean")
 quantity.color_by("value", cmap="sequential", limits=(0, 20))
+quantity.set_opacity(0.78)
 coverage = quantity.mapped()
 quantity.set_visible(False)
 quantity.remove()
 ```
 
 One quantity can own the detailed anatomy mesh's scalar colors at a time. Remove
-it before attaching another or using the legacy `set_region_data` entry point.
+it before attaching another.
 Hiding/removing restores the prior scalar presentation under the current mapping,
 without changing observations or region selection. Supported schemes are
 `sequential` and `diverging`; units appear in native scalar labels. Coarse context
-surfaces retain their anatomical colors.
+surfaces retain their anatomical colors. Opacity changes use the same transactional
+anatomy update and retain the complete scalar payload and encoding.
 
 `coverage.declared_weights` includes missing source rows;
 `coverage.finite_weights` is the actual finite-value weighted-mean denominator.
@@ -241,7 +242,7 @@ and normal depth tests are preserved; closed paths ignore these radii.
 
 This opt-in style requires a native candidate exposing
 `dvz_path_set_endpoint_gaps`. The supported pinned baseline does not expose it:
-nonzero values raise a clear compatibility error before replacing the layer.
+nonzero values raise a clear capability error before replacing the layer.
 Default `(0, 0)` preserves existing rendering. The style survives layer selection,
 color, width and visibility changes. Radii have no automatic relationship to point
 size or visibility; callers must update or clear them when changing that relationship.
@@ -286,11 +287,11 @@ retaining a table identity does not establish supported native query coverage.
 `PointCollection` and `SampledPlane` are independent CPU payloads. Their constructors
 copy inputs into immutable contiguous arrays without changing the caller's write
 flags. Positions and corners remain in atlas-world micrometres. These components
-do not change `ProbeSites`, its stable site IDs, signed Allen labels, linked tables,
+do not change legacy preparation records, stable site IDs, signed Allen labels, linked tables,
 or existing non-empty payload requirement.
 
 ```python
-from ibl_datoviz import PointCollection, PointCollectionVisual
+from ibl_datoviz.components import PointCollection, PointCollectionVisual
 
 points = PointCollection.from_arrays(positions_um, rgba, sizes_px=3.0)
 display = PointCollectionVisual(
@@ -330,7 +331,7 @@ are rejected. Range, scientific units, legends, and scalar reduction remain call
 policy. The payload retains the resulting colors rather than original scalars.
 
 ```python
-from ibl_datoviz import SampledPlane, SampledPlaneVisual
+from ibl_datoviz.components import SampledPlane, SampledPlaneVisual
 
 plane = SampledPlane.from_arrays(corners_um, rgba_image, sampling="nearest")
 display = SampledPlaneVisual(

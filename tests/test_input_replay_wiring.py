@@ -82,7 +82,7 @@ def test_panel_rect_snapshot_copies_layout_and_releases_native_snapshots():
             dvz_panel_frame_unref=lambda snapshot: released.append(snapshot.value),
             DvzPanelFrameInfo=FrameInfo,
         ),
-        slice_panels={'ap': object(), 'ml': object(), 'dv': object()},
+        _linked=SimpleNamespace(slice_panels={'ap': object(), 'ml': object(), 'dv': object()}),
         panel=object(),
     )
     rectangles = review_common._panel_rects(viewer)
@@ -111,7 +111,7 @@ def test_panel_rects_use_alignment_safe_native_getters():
             dvz_panel_inner_rect_px=getter,
             dvz_panel_plot_rect_px=getter,
         ),
-        slice_panels={'ap': object(), 'ml': object(), 'dv': object()},
+        _linked=SimpleNamespace(slice_panels={'ap': object(), 'ml': object(), 'dv': object()}),
         panel=object(),
     )
     result = review_common._panel_rects(viewer)
@@ -214,7 +214,7 @@ def test_review_input_options_reject_incompatible_combinations(updates, message)
     )
     for key, value in updates.items():
         setattr(args, key, value)
-    viewer = SimpleNamespace(cursor=object(), slices=object())
+    viewer = SimpleNamespace(_linked=SimpleNamespace(cursor=object()), slices=object())
     with pytest.raises(ValueError, match=message):
         finish_review(viewer, args, 'title')
 
@@ -291,7 +291,7 @@ def _runner_fakes(monkeypatch, trace):
     writes = []
     trace_io.write_trace = lambda value, path: writes.append((value, path))
     viewer = SimpleNamespace(
-        cursor=object(),
+        _linked=SimpleNamespace(cursor=object(), slice_panels={}),
         slices=object(),
         mapping='allen',
         width=800,
@@ -304,7 +304,6 @@ def _runner_fakes(monkeypatch, trace):
             dvz_view_request_frame=lambda _view: 0,
         ),
         _sidebar=SimpleNamespace(sidebar_rect=(0.0, 0.0, 240.0, 600.0)),
-        slice_panels={},
         panel='panel',
         review_fixture_options={},
     )

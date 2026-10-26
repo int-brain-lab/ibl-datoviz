@@ -1,17 +1,20 @@
-"""IBL atlas visualization components for Datoviz v0.4."""
+"""Scientific atlas viewers, prepared payloads, and viewer-owned handles.
+
+Caller-owned rendering primitives and legacy data helpers live in
+:mod:`ibl_datoviz.components`.
+"""
 
 from .atlas import AtlasMesh
 from .atlas_slice_source import AtlasSliceSource
+from .controllers import SelectionEvent, SelectionState, SelectionSubscription
 from .envelope import AtlasEnvelope
-from .insertions import InsertionCollectionVisual, InsertionTrajectory
-from .layers import LayerCapabilities, LayerObservationRef, UnavailableLayerError
-from .linked_atlas import LinkedAtlasNavigator
-from .navigator import (
-    AtlasCursor,
-    AtlasSliceComposer,
-    compose_atlas_slice,
+from .layers import (
+    LayerCapabilities,
+    LayerHandle,
+    LayerObservationRef,
+    RecordingHandle,
+    UnavailableLayerError,
 )
-from .ontology import AtlasTreeModel
 from .payloads import (
     Channels,
     Clusters,
@@ -24,35 +27,35 @@ from .payloads import (
     Trajectory,
     WorldFrame,
 )
-from .points import PointCollection, PointCollectionVisual
-from .probe import ProbeSites
-from .regional_quantities import RegionValues
-from .regions import AtlasRegionValues
-from .sampled_plane import SampledPlane, SampledPlaneVisual
+from .regional_quantities import MappedRegionValues, RegionalQuantityHandle, RegionValues
 from .viewer import AtlasViewer
 
 __all__ = [
-    'Points', 'Paths', 'Channels', 'Clusters', 'Sites', 'Trajectory', 'Recording',
-    'WorldFrame', 'SourceKey', 'SourceObservationKey', 'LayerObservationRef',
-    'LayerCapabilities', 'UnavailableLayerError',
+    'AtlasViewer',
     'AtlasMesh',
     'AtlasEnvelope',
     'AtlasSliceSource',
-    'AtlasCursor',
-    'AtlasSliceComposer',
-    'AtlasRegionValues',
+    'Points',
+    'Paths',
+    'Channels',
+    'Clusters',
+    'Sites',
+    'Trajectory',
+    'Recording',
+    'WorldFrame',
+    'SourceKey',
+    'SourceObservationKey',
     'RegionValues',
-    'AtlasTreeModel',
-    'AtlasViewer',
-    'LinkedAtlasNavigator',
-    'ProbeSites',
-    'compose_atlas_slice',
-    'PointCollection',
-    'PointCollectionVisual',
-    'SampledPlane',
-    'SampledPlaneVisual',
-    'InsertionTrajectory',
-    'InsertionCollectionVisual',
+    'LayerHandle',
+    'RecordingHandle',
+    'RegionalQuantityHandle',
+    'MappedRegionValues',
+    'LayerObservationRef',
+    'LayerCapabilities',
+    'UnavailableLayerError',
+    'SelectionState',
+    'SelectionEvent',
+    'SelectionSubscription',
 ]
 
 __version__ = '0.2.0.dev0'

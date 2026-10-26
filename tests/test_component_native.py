@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ibl_datoviz import (
+from ibl_datoviz.components import (
     PointCollection,
     PointCollectionVisual,
     SampledPlane,

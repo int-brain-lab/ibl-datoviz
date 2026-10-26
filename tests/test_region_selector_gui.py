@@ -7,20 +7,21 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_region_catalog, open_volume_pack
-from ibl_datoviz import (
-    AtlasMesh,
-    AtlasRegionValues,
-    AtlasTreeModel,
-    AtlasViewer,
-    LinkedAtlasNavigator,
-)
+from ibl_datoviz import AtlasMesh, AtlasViewer
+from ibl_datoviz.components import AtlasRegionValues, AtlasTreeModel
 from ibl_datoviz.gui_data import GuiWidget
+from ibl_datoviz.linked_atlas import LinkedSlices
 from ibl_datoviz.ontology import ROOT_PARENT, encode_region_key
 from ibl_datoviz.region_selector import RegionSelector, SelectorRegion
 from ibl_datoviz.region_selector_gui import RegionSelectorGui, signed_selection
 from ibl_datoviz.selection import selection_decision
 from tests.test_atlas import FIXTURE, REGIONS, FakeDatoviz
-from tests.test_volume_free_navigator import VOLUME, CpuNavigator
+from tests.test_volume_free_navigator import (
+    VOLUME,
+    cpu_slice_visuals,  # noqa: F401 - shared fixture
+)
+
+_refresh_linked_slices = LinkedSlices._refresh_slices
 
 
 class InputDatoviz(FakeDatoviz):
@@ -271,7 +272,13 @@ def test_data_transactions_refresh_selector_without_frame_recomputation(monkeypa
     ) as viewer:
         viewer._replace_region_tree()
         data = AtlasRegionValues.from_arrays([-997, -8], [1.0, 2.5], value_name='Rate')
-        viewer.set_region_data(data, mapping_reduction='weighted_mean')
+        viewer._set_owned_region_data(
+            data,
+            mapping_reduction='weighted_mean',
+            value_range=None,
+            color_scheme='sequential',
+            opacity=None,
+        )
         model = viewer._selector_model
         assert model.values == viewer._selector_values(model)
         assert model.values
@@ -290,17 +297,35 @@ def test_data_transactions_refresh_selector_without_frame_recomputation(monkeypa
         monkeypatch.setattr(fake, 'dvz_gui_tree_set_annotations', fail_once)
         replacement = AtlasRegionValues.from_arrays([-997, -8], [4.0, 5.0], value_name='New')
         with pytest.raises(RuntimeError, match='annotations'):
-            viewer.set_region_data(replacement, mapping_reduction='weighted_mean')
+            viewer._set_owned_region_data(
+                replacement,
+                mapping_reduction='weighted_mean',
+                value_range=None,
+                color_scheme='sequential',
+                opacity=None,
+            )
         assert viewer._selector_model is model
         assert viewer.region_data is data
         assert viewer._selector_gui.value_name == 'Rate'
         assert [call[1] for call in fake.calls if call[0] == 'tree_annotations'][-1] == annotations
-        viewer.set_region_data(replacement, mapping_reduction='weighted_mean')
+        viewer._set_owned_region_data(
+            replacement,
+            mapping_reduction='weighted_mean',
+            value_range=None,
+            color_scheme='sequential',
+            opacity=None,
+        )
         assert viewer._selector_model.values == viewer._selector_values(viewer._selector_model)
         assert viewer._selector_gui.value_name == 'New'
         viewer.set_mapping('beryl')
         assert viewer._selector_model.values == viewer._selector_values(viewer._selector_model)
-        viewer.set_region_data(None, mapping_reduction='weighted_mean')
+        viewer._set_owned_region_data(
+            None,
+            mapping_reduction='weighted_mean',
+            value_range=None,
+            color_scheme='sequential',
+            opacity=None,
+        )
         assert viewer._selector_model.values == {}
         assert viewer._selector_gui.value_name == 'Value'
 
@@ -671,31 +696,32 @@ def test_partial_surface_style_failure_forces_previous_feedback_back(viewer, mon
 
 
 @pytest.fixture
-def linked_feedback():
+def linked_feedback(request):
+    request.getfixturevalue('cpu_slice_visuals')
     fake = InputDatoviz()
     fake.DVZ_FIELD_FORMAT_RGBA8_UNORM = 1
     fake.DVZ_FIELD_SEMANTIC_COLOR = 1
     fake.DVZ_FIELD_DIM_2D = 2
     source = open_volume_pack(VOLUME).load_volumes()
-    navigator = CpuNavigator.from_slice_source(AtlasMesh.from_pack(FIXTURE), source, datoviz=fake)
+    navigator = AtlasViewer.from_slice_source(AtlasMesh.from_pack(FIXTURE), source, datoviz=fake)
     navigator._replace_region_tree()
-    navigator._slice_loader.close()
+    navigator._linked._slice_loader.close()
     submitted = []
-    navigator._slice_loader = SimpleNamespace(submit=submitted.append, close=lambda: None)
+    navigator._linked._slice_loader = SimpleNamespace(submit=submitted.append, close=lambda: None)
     navigator.view = object()
-    navigator._slice_fields = {axis: object() for axis in ('ap', 'ml', 'dv')}
-    navigator._crosshairs = {
-        axis: SimpleNamespace(name=f'{axis}_crosshair') for axis in navigator._slice_fields
+    navigator._linked._slice_fields = {axis: object() for axis in ('ap', 'ml', 'dv')}
+    navigator._linked._crosshairs = {
+        axis: SimpleNamespace(name=f'{axis}_crosshair') for axis in navigator._linked._slice_fields
     }
-    navigator._hover_fields = {
-        axis: SimpleNamespace(name=axis) for axis in navigator._slice_fields
+    navigator._linked._hover_fields = {
+        axis: SimpleNamespace(name=axis) for axis in navigator._linked._slice_fields
     }
-    navigator._refresh_slices = MethodType(LinkedAtlasNavigator._refresh_slices, navigator)
+    navigator._linked._refresh_slices = MethodType(_refresh_linked_slices, navigator._linked)
     pixels = {}
     fake.dvz_sampled_field_update_from_array = lambda field, values, **_kwargs: pixels.update(
         {field.name: np.array(values, copy=True)}
     )
-    navigator._refresh_hover_overlays()
+    navigator._linked._refresh_hover_overlays()
     yield navigator, fake, submitted, pixels
     navigator.close()
 
@@ -730,7 +756,7 @@ def test_linked_partial_second_axis_hover_failure_restores_all_fields_and_reques
         assert rejected.selected_region_ids == (-315,)
         assert restored.selected_region_ids == ()
         assert restored.revision > rejected.revision
-        assert navigator._slice_revisions[axis] == restored.revision
+        assert navigator._linked._slice_revisions[axis] == restored.revision
 
 
 def test_linked_late_selection_failure_invalidates_queued_rejected_slice_revisions(
@@ -758,7 +784,7 @@ def test_linked_late_selection_failure_invalidates_queued_rejected_slice_revisio
         assert rejected.selected_region_ids == (-315,)
         assert restored.selected_region_ids == ()
         assert restored.revision == rejected.revision + 1
-        assert restored.revision == navigator._slice_revisions[axis]
+        assert restored.revision == navigator._linked._slice_revisions[axis]
     assert not navigator._closed
 
 
@@ -774,7 +800,7 @@ def test_linked_feedback_rollback_failure_closes_owner(linked_feedback, monkeypa
     with pytest.raises(RuntimeError, match='frame rollback failed; viewer closed'):
         navigator._commit_selector_frame(candidate, (), None)
     assert navigator._closed
-    assert navigator._slice_loader is None
+    assert navigator._linked._slice_loader is None
 
 
 def test_disabled_tree_hover_retains_click_selection(viewer):
@@ -821,12 +847,12 @@ def test_hemisphere_header_reads_authoritative_state_and_can_hide_both(viewer):
     assert fake.combo_values[b'##ibl_hemisphere'] == 2
     fake.combos[b'##ibl_hemisphere'] = 3
     viewer._gui_callback(None, None, None)
-    assert viewer._surface_style.hemispheres == {'left': False, 'right': False}
+    assert viewer._surface_presentation.style.hemispheres == {'left': False, 'right': False}
     viewer._gui_callback(None, None, None)
     assert fake.combo_values[b'##ibl_hemisphere'] == 3
     fake.combos[b'##ibl_hemisphere'] = 0
     viewer._gui_callback(None, None, None)
-    assert viewer._surface_style.hemispheres == {'left': True, 'right': True}
+    assert viewer._surface_presentation.style.hemispheres == {'left': True, 'right': True}
 
 
 def test_tables_remain_live_in_separate_window_with_scene_closed(viewer):

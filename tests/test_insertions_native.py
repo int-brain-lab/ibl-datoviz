@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ibl_datoviz import AtlasMesh, AtlasViewer, InsertionCollectionVisual
+from ibl_datoviz import AtlasMesh, AtlasViewer
+from ibl_datoviz.components import InsertionCollectionVisual
 from tests.test_atlas import FIXTURE, FakeDatoviz
 
 
@@ -185,14 +186,16 @@ def test_atlas_viewer_insertion_wrappers_keep_ids_separate_from_probe():
     mesh = AtlasMesh.from_pack(FIXTURE)
     fake = InsertionsFake()
     viewer = AtlasViewer(mesh, datoviz=fake)
-    viewer.set_insertion('probe-A', [[0, 0, 0], [100, 100, 100]])
-    viewer.set_insertion(22, [[50, 0, 0], [100, 50, 0]], color=(20, 30, 40))
-    viewer.set_insertion_color('probe-A', (60, 70, 80))
-    viewer.set_insertion_width(22, 6)
-    viewer.set_insertion_visible('probe-A', False)
-    assert viewer.insertion_ids == ('probe-A', 22)
-    viewer.remove_insertion(22)
-    assert viewer.insertion_ids == ('probe-A',)
+    viewer._insertion_collection().set_insertion('probe-A', [[0, 0, 0], [100, 100, 100]])
+    viewer._insertion_collection().set_insertion(
+        22, [[50, 0, 0], [100, 50, 0]], color=(20, 30, 40)
+    )
+    viewer._insertion_collection().set_color('probe-A', (60, 70, 80))
+    viewer._insertion_collection().set_width(22, 6)
+    viewer._insertion_collection().set_visible('probe-A', False)
+    assert viewer._insertion_collection().ids == ('probe-A', 22)
+    viewer._insertion_collection().remove(22)
+    assert viewer._insertion_collection().ids == ('probe-A',)
     insertion_visual = viewer._insertions._insertions['probe-A'].visual
     viewer.close()
     assert len(fake.destroyed_visuals) == 2  # Removed path plus viewer-owned survivor.

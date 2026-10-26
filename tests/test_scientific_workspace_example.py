@@ -49,7 +49,7 @@ def test_workspace_source_uses_shared_reader_and_keeps_receipt(tmp_path, monkeyp
             self.tables = SimpleNamespace(show=lambda _table: None)
             self.layout = 'linked'
             self.slices = SimpleNamespace(position=SimpleNamespace(index=(), world_um=()))
-            self._slice_planes = SimpleNamespace(visible_axes=())
+            self._linked = SimpleNamespace(_slice_planes=SimpleNamespace(visible_axes=()))
             self.picking = SimpleNamespace(unavailable_reason='not requested')
 
         def __enter__(self):

@@ -6,7 +6,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ibl_datoviz import LinkedAtlasNavigator
+from ibl_datoviz import AtlasViewer
+from ibl_datoviz.linked_atlas import LinkedSlices
 
 
 class GeometryDesc(ctypes.Structure):
@@ -17,11 +18,14 @@ class GeometryDesc(ctypes.Structure):
 
 def navigator():
     """Exercise the actual geometry builder with a recording native boundary."""
-    viewer = LinkedAtlasNavigator.__new__(LinkedAtlasNavigator)
+    viewer = LinkedSlices.__new__(LinkedSlices)
+    viewer.viewer = SimpleNamespace(_check=AtlasViewer._check)
     state = SimpleNamespace(position=(0, 0, 0), uploads=[], fail=False, creates=0)
     viewer.cursor = SimpleNamespace(world_um=lambda _: state.position)
     viewer.slice_source = object()
-    viewer.mesh_data = SimpleNamespace(display_scale=1, normalize_points=lambda points: points)
+    viewer.viewer.mesh_data = SimpleNamespace(
+        display_scale=1, normalize_points=lambda points: points
+    )
     viewer.cursor_marker = object()
 
     def create(_):
@@ -32,7 +36,7 @@ def navigator():
         state.uploads.append(args)
         return -1 if state.fail else 0
 
-    viewer.dvz = SimpleNamespace(
+    viewer.viewer.dvz = SimpleNamespace(
         dvz_geometry_sphere_desc=GeometryDesc,
         dvz_geometry_cylinder_desc=GeometryDesc,
         DvzColor=lambda *rgba: rgba,

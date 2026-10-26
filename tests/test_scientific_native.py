@@ -2,7 +2,12 @@
 
 import numpy as np
 
-from ibl_datoviz import PointCollection, PointCollectionVisual, SampledPlane, SampledPlaneVisual
+from ibl_datoviz.components import (
+    PointCollection,
+    PointCollectionVisual,
+    SampledPlane,
+    SampledPlaneVisual,
+)
 from tests import test_component_native
 
 native_components = test_component_native.native_components

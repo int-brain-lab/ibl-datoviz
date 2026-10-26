@@ -33,7 +33,7 @@ def test_focus_signed_faces_and_opaque_draw_preserve_retained_geometry():
         original = viewer.mesh_data.indices.copy()
         viewer.set_selected_region_ids((-315,))
         assert viewer.visible_region_ids() == (-315,)
-        assert viewer._surface_alpha_mode == viewer.dvz.DVZ_ALPHA_OPAQUE
+        assert viewer._surface_presentation.alpha_mode == viewer.dvz.DVZ_ALPHA_OPAQUE
         assert not viewer._surface_state.handle.active
         words = viewer._surface_state.words
         ids = viewer._surface_mesh.face_mapping_ids('allen')
@@ -47,7 +47,7 @@ def test_focus_signed_faces_and_opaque_draw_preserve_retained_geometry():
         viewer.set_selection_presentation('all')
         assert viewer.visible_region_ids() == (-315, 315)
         assert viewer.selected_region_ids() == (-315,)
-        assert viewer._surface_alpha_mode == viewer.dvz.DVZ_ALPHA_OPAQUE
+        assert viewer._surface_presentation.alpha_mode == viewer.dvz.DVZ_ALPHA_OPAQUE
         viewer.set_selection_presentation('isolate')
         assert viewer.visible_region_ids() == (-315,)
         viewer.set_selection_presentation('legacy')
@@ -62,11 +62,11 @@ def test_focus_signed_faces_and_opaque_draw_preserve_retained_geometry():
 def test_focus_authored_alpha_only_considers_rendered_selection():
     with make_viewer(palette={-315: (240, 20, 30, 255), 315: (20, 240, 30, 80)}) as viewer:
         viewer.set_selected_region_ids((-315,))
-        assert viewer._surface_alpha_mode == viewer.dvz.DVZ_ALPHA_OPAQUE
+        assert viewer._surface_presentation.alpha_mode == viewer.dvz.DVZ_ALPHA_OPAQUE
         viewer.set_region_opacity(-315, 0.5)
-        assert viewer._surface_alpha_mode == viewer.dvz.DVZ_ALPHA_WBOIT
+        assert viewer._surface_presentation.alpha_mode == viewer.dvz.DVZ_ALPHA_WBOIT
         viewer.set_selected_region_ids((315,))
-        assert viewer._surface_alpha_mode == viewer.dvz.DVZ_ALPHA_WBOIT
+        assert viewer._surface_presentation.alpha_mode == viewer.dvz.DVZ_ALPHA_WBOIT
         viewer.hide_region(315)
         assert viewer.visible_region_ids() == ()
 
@@ -191,7 +191,7 @@ def test_focus_failures_preserve_committed_masks_and_authoring(operation):
         assert viewer.mapping == 'allen'
         assert viewer.selected_region_ids() == (-315,)
         assert viewer.visible_region_ids() == (-315,)
-        assert not viewer._surface_style.regions
+        assert not viewer._surface_presentation.style.regions
         assert_native_restored(viewer, before)
 
 
@@ -321,5 +321,5 @@ def test_reset_view_keeps_selection_styles_and_explode(monkeypatch):
         assert reset == [viewer.arcball]
         assert viewer.selected_region_ids() == (-315,)
         assert viewer.explode == 0.4
-        assert viewer._surface_style.regions[('allen', -315)].color == (210, 40, 50)
+        assert viewer._surface_presentation.style.regions[('allen', -315)].color == (210, 40, 50)
         assert native.combo_values[b'##selection_presentation'] == 0

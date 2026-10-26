@@ -6,7 +6,8 @@ from examples.linked_atlas_review import SLICE_REPRESENTATIONS, LinkedAtlasRevie
 from examples.review_common import load_review_slice
 from examples.scientific_scene_review import ScientificSceneReview
 from ibl_anatomy import open_volume_pack
-from ibl_datoviz import AtlasMesh, ProbeSites
+from ibl_datoviz import AtlasMesh
+from ibl_datoviz.components import ProbeSites
 from tests.test_atlas import FIXTURE
 from tests.test_smoke import _skip_without_native_datoviz
 
@@ -71,16 +72,16 @@ def test_native_linked_review_retains_all_four_panels_while_updating_layers():
             AtlasMesh.from_pack(FIXTURE), volumes, width=320, height=240
         ) as viewer:
             viewer._create_view(offscreen=True, title='Linked review regression')
-            panels = tuple(viewer.slice_panels.values())
+            panels = tuple(viewer._linked.slice_panels.values())
             handles = (viewer.scene, viewer.figure, viewer.panel, viewer.app, viewer.view, *panels)
             baseline = render(viewer)
             # Drawing a zero-opacity volume must not change the hidden-volume result.
-            assert viewer.volume_opacity == 0
-            assert viewer.dvz.dvz_visual_set_visible(viewer.volume, True) == 0
+            assert viewer._linked.volume_opacity == 0
+            assert viewer.dvz.dvz_visual_set_visible(viewer._linked.volume, True) == 0
             np.testing.assert_array_equal(render(viewer), baseline)
             viewer.set_volume_opacity(0.1)
             render(viewer)
-            viewer.set_volume_opacity(0)
+            viewer._linked.set_volume_opacity(0)
             np.testing.assert_array_equal(render(viewer), baseline)
             for preset in ('labels', 'physical-slice', 'volume-context', 'anatomy', 'overlay'):
                 viewer.apply_preset(preset)
@@ -91,23 +92,25 @@ def test_native_linked_review_retains_all_four_panels_while_updating_layers():
                     viewer.panel,
                     viewer.app,
                     viewer.view,
-                    *viewer.slice_panels.values(),
+                    *viewer._linked.slice_panels.values(),
                 )
                 assert all(before is after for before, after in zip(handles, current, strict=True))
                 assert pixels.shape == baseline.shape
             np.testing.assert_array_equal(pixels, baseline)
-            cursor = viewer.cursor
+            cursor = viewer._linked.cursor
             for _, (anatomy, annotations, boundaries) in SLICE_REPRESENTATIONS:
-                viewer.set_slice_layers(
+                viewer._linked.set_slice_layers(
                     anatomy=anatomy, annotations=annotations, boundaries=boundaries
                 )
                 pixels = render(viewer)
-                assert viewer.cursor == cursor
+                assert viewer._linked.cursor == cursor
                 if not annotations:
                     assert np.any(pixels != baseline)
             viewer.apply_preset('physical-slice')
             viewer.configure_physical_plane(axis='ml', layer='annotation', mode='mask', cutoff=0.4)
-            viewer.set_cursor(viewer.cursor.replace('ml', 0, viewer.slice_source.grid.shape))
+            viewer._linked.set_cursor(
+                viewer._linked.cursor.replace('ml', 0, viewer._linked.slice_source.grid.shape)
+            )
             render(viewer)
             viewer.set_volume_opacity(0.1)
             assert not viewer.plane_visible

@@ -13,7 +13,8 @@ from ibl_anatomy import (
     open_intensity_block_pack,
     open_volume_pack,
 )
-from ibl_datoviz import AtlasSliceComposer, AtlasSliceSource
+from ibl_datoviz import AtlasSliceSource
+from ibl_datoviz.components import AtlasSliceComposer
 
 
 def _measure(callable_):

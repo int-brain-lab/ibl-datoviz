@@ -1,10 +1,13 @@
-# Scientific viewer API proposal
+# Scientific viewer API design and implementation
 
 Status: API direction and intended-use scripts approved by the user, October 15,
-2026. Staged implementation is authorized. Generic payloads, owned handles,
+2026. Apps 1 and 2 were reviewed and accepted on macOS on October 26, 2026.
+The current refactor is authorized to break legacy compatibility while preserving
+scientific identity, state, and native ownership contracts. Staged implementation is authorized. Generic payloads, owned handles,
 recording composition, exact point/sphere scene selection, linked observation tables,
 linked slices with physical planes, prepared regional quantities and Layers controls
-are now implemented; visual acceptance of these workflows remains open. Later sections
+are now implemented. Acceptance of a review app does not establish every
+optional dataset, glyph, or source-backed workflow described below. Later sections
 cover intended interfaces, including voxel quantities and supplied alignment
 work not yet implemented. This is not an announcement of API stability. The earlier
 `IBLWorkbench` sketches are superseded.
@@ -230,7 +233,7 @@ app.remove_recording(recording)
 ```
 
 Only supplied populations have available layer handles; missing-layer access
-raises `UnavailableLayerError` (proposed name), rather than returning `None`.
+raises `UnavailableLayerError`, rather than returning `None`.
 A supplied but entirely unpositioned population is not an unavailable population.
 Layer controls use a small shared vocabulary:
 
@@ -340,7 +343,7 @@ that source key to target attachments; it does not merge their ownership.
 Notifications expose scientific identities rather than native visual indices.
 GUI and Python edits produce the same authoritative state changes. Subscription
 cleanup belongs to the viewer lifetime; callers can also close subscriptions
-explicitly. The proposed immutable event contains previous/current region and
+explicitly. The immutable selection event contains previous/current region and
 observation references, a reason and a monotonically increasing committed revision.
 Emit once after retained state and native updates both commit; failure rolls back
 without a success event. Callback exceptions cannot undo a completed commit, and
@@ -494,7 +497,7 @@ The old `IBLWorkbench` experiment remains ignored engineering evidence, not an
 additional facade to merge or publish.
 
 Keep native implementation and focused commits on `feature/datoviz-v04`. Generic
-engine changes, if needed, remain on `rc4/scientific-3d`. Shared anatomy assets
+engine changes, if needed, remain on `rc4/integration`. Shared anatomy assets
 retain their own catalog and binary provenance. Choose the data-adapter repository
 and branch explicitly before editing it; the viewer must not embed a duplicate
 data reader. Publish only under the applicable repository authorization rules.
@@ -520,9 +523,11 @@ scientific identity contracts through that migration.
 - Specify volume quantities and supplied alignment workflows at their later gate;
   their requirements must not force speculative renderer abstractions into stage 1.
 
-The next user review is the working generic annotation and recording workflows.
-Exact supported-glyph picking and the unified linked layout are implemented; their
-interactive acceptance remains separate from implementation validation.
+The canonical API is one `AtlasViewer` with explicit layout composition and
+viewer-owned handles. Lower-level rendering primitives live in
+`ibl_datoviz.components`; they are not alternate application facades. App-1/app-2
+acceptance covers their reviewed behavior, while optional source-backed
+recording workflows and unsupported picking coverage remain separate gates.
 The current supported API remains documented in the [API reference](api/index.md).
 
 ## Architecture audit of the consolidated proposal
@@ -533,6 +538,6 @@ October 15, 2026. Its final reread reported no remaining P1/P2 architecture or
 consolidation findings after revisions. The review addressed generic identities,
 source versus attachment scope, verified frames, scalar row alignment, selection
 transitions, committed events and resource ownership. This is a design audit,
-not approval of the proposed API or evidence that its interfaces are implemented.
+a historical design review rather than validation of later implementation changes.
 The user approved the scripts and architecture after this audit; verified
 BWM frame evidence and capability-specific native picking retain separate gates.

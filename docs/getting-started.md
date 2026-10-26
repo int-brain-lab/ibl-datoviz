@@ -364,7 +364,8 @@ from ibl_anatomy import (
     bundled_registered_asset_set, open_intensity_block_pack, open_volume_pack,
     verify_materialized_registered_asset_set,
 )
-from ibl_datoviz import AtlasSliceComposer, AtlasSliceSource
+from ibl_datoviz import AtlasSliceSource
+from ibl_datoviz.components import AtlasSliceComposer
 
 assets = verify_materialized_registered_asset_set(
     bundled_registered_asset_set(), "build/atlas-registered-10um"

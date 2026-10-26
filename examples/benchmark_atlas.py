@@ -11,7 +11,8 @@ from pathlib import Path
 from time import perf_counter
 
 from ibl_anatomy import bundled_asset_set, verify_materialized_asset_set
-from ibl_datoviz import AtlasMesh, AtlasTreeModel, AtlasViewer
+from ibl_datoviz import AtlasMesh, AtlasViewer
+from ibl_datoviz.components import AtlasTreeModel
 
 
 def _measure_face_queries(viewer: AtlasViewer) -> list[dict]:

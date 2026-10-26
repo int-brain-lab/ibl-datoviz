@@ -52,7 +52,7 @@ class SliceController:
     @property
     def available(self):
         """Whether construction supplied a linked layout and explicit slice source."""
-        return getattr(self.viewer, 'layout', None) == 'linked'
+        return self.viewer._linked is not None
 
     def _check(self):
         self.viewer._require_open()
@@ -72,8 +72,10 @@ class SliceController:
 
     def _snapshot(self):
         return CursorState(
-            self.viewer.cursor.as_index(),
-            tuple(map(float, self.viewer.cursor.world_um(self.viewer.slice_source))),
+            self.viewer._linked.cursor.as_index(),
+            tuple(
+                map(float, self.viewer._linked.cursor.world_um(self.viewer._linked.slice_source))
+            ),
         )
 
     @property
@@ -97,37 +99,64 @@ class SliceController:
             world = np.asarray((ml, ap, dv), dtype=float)
             if not np.isfinite(world).all():
                 raise ValueError('world cursor coordinates must be finite numbers')
-            indices = np.asarray(self.viewer.slice_source.grid.world_to_index(world))
-            shape = np.asarray(self.viewer.slice_source.grid.shape)
+            indices = np.asarray(self.viewer._linked.slice_source.grid.world_to_index(world))
+            shape = np.asarray(self.viewer._linked.slice_source.grid.shape)
             if np.any(indices < -1e-8) or np.any(indices > shape - 1 + 1e-8):
                 raise IndexError('cursor coordinate is outside the volume')
             values = tuple(map(int, np.rint(indices)))
         else:
             raise ValueError('cursor units must be voxel or um')
-        self.viewer.set_cursor(AtlasCursor(*values), select_region=select_region)
+        self.viewer._linked.set_cursor(AtlasCursor(*values), select_region=select_region)
 
     @property
     def auto_slice(self):
         """Whether subsequent Regions-list selections move all three slices."""
         self._check()
-        return self.viewer._auto_slice.enabled
+        return self.viewer._linked._auto_slice.enabled
 
     def set_auto_slice(self, enabled):
         """Enable future region navigation without recentering the current selection."""
         self._check()
-        self.viewer._auto_slice.set_enabled(enabled)
+        self.viewer._linked._auto_slice.set_enabled(enabled)
 
     def set_layers(self, *, anatomy=None, annotations=None, boundaries=None):
         """Change presentation in the existing slice panels."""
         self._check()
-        self.viewer.set_slice_layers(
+        self.viewer._linked.set_slice_layers(
             anatomy=anatomy, annotations=annotations, boundaries=boundaries
         )
 
     def show_plane(self, axis, *, in_3d=True):
         """Show or remove the physical slice plane at the current cursor."""
         self._check()
-        self.viewer.set_slice_plane(axis, in_3d=in_3d)
+        self.viewer._linked.set_slice_plane(axis, in_3d=in_3d)
+
+    def step(self, axis, delta):
+        """Move one slice by a signed voxel step without selecting anatomy."""
+        self._check()
+        return self.viewer._linked.step_slice(axis, delta)
+
+    def select_region(self):
+        """Toggle the anatomical region at the current spatial cursor."""
+        self._check()
+        self.viewer._linked.toggle_cursor_region_selection()
+
+    def set_volume_opacity(self, opacity):
+        """Set the optional 3-D volume opacity, hiding it at zero."""
+        self._check()
+        component = self.viewer._linked
+        previous = component.volume_opacity
+        component.set_volume_opacity(opacity)
+        try:
+            self.viewer._on_volume_opacity_committed(opacity)
+        except Exception as error:
+            if not self.viewer._closed:
+                try:
+                    component.set_volume_opacity(previous)
+                except Exception:
+                    self.viewer.close()
+                    raise RuntimeError('volume context rollback failed; viewer closed') from error
+            raise
 
     def on_changed(self, callback):
         """Subscribe to accepted cursor movement; failures do not undo commits."""

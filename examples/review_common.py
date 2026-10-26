@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from ibl_anatomy import bundled_surface_catalog, load_surface_catalog, open_volume_pack
-from ibl_datoviz import SampledPlane
+from ibl_datoviz.components import SampledPlane
 from ibl_datoviz.context import DEFAULT_CONTEXT_LANDMARKS, AtlasContextSurface
 from ibl_datoviz.navigator import SLICE_DISPLAY_AXES, AtlasSliceComposer
 from ibl_datoviz.surface_style import RegionStyle
@@ -69,7 +69,7 @@ def _input_options(args, viewer=None):
     if report and not replay:
         raise ValueError('--replay-report requires --replay-input')
     if (record or replay) and (
-        viewer is None or not hasattr(viewer, 'cursor') or not hasattr(viewer, 'slices')
+        viewer is None or getattr(viewer, '_linked', None) is None or not hasattr(viewer, 'slices')
     ):
         raise ValueError('input replay is currently supported only by linked review app 2')
     return record, replay, mode, report
@@ -295,7 +295,8 @@ def _settle_linked_readiness(viewer, readiness, *, pump=None, warmup_frames=0):
 def _raise_fixture_callback_error(viewer):
     """Surface errors retained by native callbacks before a trace is accepted."""
     for name in ('_gui_callback_error', '_slice_error', '_review_error'):
-        error = getattr(viewer, name, None)
+        owner = getattr(viewer, '_linked', None) if name == '_slice_error' else viewer
+        error = getattr(owner, name, None)
         if error:
             raise RuntimeError(f'linked review {name[1:-6]} failed during fixture setup: {error}')
     controls = getattr(viewer, 'review_controls', None)
@@ -333,7 +334,7 @@ def _panel_rects(viewer):
     plot_getter = getattr(dvz, 'dvz_panel_plot_rect_px', None)
     rect_type = getattr(dvz, 'DvzRect', None)
     if callable(inner_getter) and callable(plot_getter) and rect_type is not None:
-        panels = {**viewer.slice_panels, '3d': viewer.panel}
+        panels = {**viewer._linked.slice_panels, '3d': viewer.panel}
         result = {}
         for name, panel in panels.items():
             rects = {}
@@ -357,7 +358,7 @@ def _panel_rects(viewer):
     info_type = getattr(dvz, 'DvzPanelFrameInfo', None)
     if not all(callable(value) for value in (resolve, get_info, unref)) or info_type is None:
         return None
-    panels = {**viewer.slice_panels, '3d': viewer.panel}
+    panels = {**viewer._linked.slice_panels, '3d': viewer.panel}
     result = {}
     for name, panel in panels.items():
         snapshot = resolve(panel)
@@ -514,7 +515,7 @@ class ReviewControls:
                 dvz.dvz_gui_text(gui, f'Change failed: {self.error}'.encode())
             return
         if dvz.dvz_gui_collapsing_header(gui, b'3D atlas', 1 << 5):
-            visible = ctypes.c_bool(self.viewer._surface_visible)
+            visible = ctypes.c_bool(self.viewer._surface_presentation.visible)
             if dvz.dvz_gui_checkbox(gui, b'Atlas visible', ctypes.byref(visible)):
                 self._attempt(self.viewer.set_surface_visible, visible.value)
             self._draw_styles(gui)
@@ -523,7 +524,7 @@ class ReviewControls:
 
     def _draw_styles(self, gui):
         viewer, dvz = self.viewer, self.viewer.dvz
-        if hasattr(viewer, 'slice_panels'):
+        if getattr(viewer, '_linked', None) is not None:
             dvz.dvz_gui_text(gui, b'Slice labels keep mapping colors.')
         opacity = ctypes.c_float(viewer.surface_opacity)
         if dvz.dvz_gui_slider_float(gui, b'Surface opacity', ctypes.byref(opacity), 0, 1):
@@ -542,7 +543,7 @@ class ReviewControls:
             return
         key = (viewer.mapping, region)
         if key != self._region_key:
-            style = viewer._surface_style.regions.get(key, RegionStyle())
+            style = viewer._surface_presentation.style.regions.get(key, RegionStyle())
             color = style.color
             if color is None:
                 color = (viewer.palette or {}).get(region, (120, 160, 220, 255))

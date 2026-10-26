@@ -65,13 +65,13 @@ class RegionBrowserSidebar:
         ):
             viewer.set_mapping(viewer.mesh_data.mapping_names[viewer._mapping_control.value])
         dvz.dvz_gui_same_line(gui, 0.0, gap)
-        sides = viewer._surface_style.hemispheres
+        sides = viewer._surface_presentation.style.hemispheres
         choices = ((True, True), (True, False), (False, True), (False, False))
         hemisphere = ctypes.c_int(choices.index((sides['left'], sides['right'])))
         items = (ctypes.c_char_p * 4)(b'Both sides', b'Left only', b'Right only', b'None')
         dvz.dvz_gui_set_next_item_width(gui, field_width)
         if dvz.dvz_gui_combo(gui, b'##ibl_hemisphere', ctypes.byref(hemisphere), items, 4):
-            candidate = viewer._surface_style.copy()
+            candidate = viewer._surface_presentation.style.copy()
             for side, visible in zip(('left', 'right'), choices[hemisphere.value], strict=True):
                 candidate.set_hemisphere_visible(side, visible)
             viewer._commit_surface_style(candidate)

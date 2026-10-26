@@ -157,10 +157,10 @@ class AnatomicalContext:
     def update(self, *, force=False):
         """Update hemisphere coverage only when presentation changes; tint sparsely."""
         owner = self.owner
-        hemispheres = owner._surface_style.hemispheres
+        hemispheres = owner._surface_presentation.style.hemispheres
         presentation = (
             owner.mapping,
-            owner._surface_visible,
+            owner._surface_presentation.visible,
             owner.anatomy_presentation,
             owner.context_opacity,
             tuple(hemispheres.values()),
@@ -219,7 +219,7 @@ class AnatomicalContext:
                 self._check(
                     owner.dvz.dvz_visual_set_visible(
                         visual,
-                        owner._surface_visible
+                        owner._surface_presentation.visible
                         and owner.anatomy_presentation == 'major'
                         and owner.context_opacity > 0
                         and bool(np.any(mask)),

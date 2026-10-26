@@ -224,7 +224,7 @@ class AnatomyController:
     def set_hemispheres(self, *, left, right):
         """Apply hemisphere visibility as one surface-style update."""
         self.viewer._require_open()
-        candidate = self.viewer._surface_style.copy()
+        candidate = self.viewer._surface_presentation.style.copy()
         candidate.set_hemisphere_visible('left', left)
         candidate.set_hemisphere_visible('right', right)
         self.viewer._commit_surface_style(candidate)

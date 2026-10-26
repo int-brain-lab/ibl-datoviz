@@ -1,15 +1,15 @@
 # Volume-free linked navigation
 
-`LinkedAtlasNavigator` can display a surface, three orthogonal slice panels,
-linked selection, boundaries, cursor overlays, probe sites, and trajectories
+`AtlasViewer` can display a surface, three orthogonal slice panels,
+boundaries, cursor overlays, and owned scientific layers
 without constructing a native volume visual or uploading a 3D sampled field.
 Existing factories retain `render_volume=True` by default.
 
 ```python
-from ibl_datoviz import AtlasMesh, LinkedAtlasNavigator
+from ibl_datoviz import AtlasMesh, AtlasViewer
 
 mesh = AtlasMesh.from_pack(mesh_pack)
-with LinkedAtlasNavigator.from_slice_source(mesh, slice_source) as navigator:
+with AtlasViewer.from_slice_source(mesh, slice_source) as navigator:
     navigator.show()
 ```
 
@@ -24,7 +24,7 @@ an existing `AtlasMesh` and always selects `render_volume=False`.
 To reuse a dense pack as a CPU slice source while skipping GPU volume rendering:
 
 ```python
-with LinkedAtlasNavigator.from_packs(
+with AtlasViewer.from_packs(
     mesh_pack, volume_pack, render_volume=False
 ) as navigator:
     navigator.show()
@@ -38,7 +38,7 @@ transport, and an explicitly verified region catalog:
 from ibl_anatomy import open_region_catalog
 
 catalog = open_region_catalog(catalog_path, sha256=catalog_sha256)
-with LinkedAtlasNavigator.from_registered_slices(
+with AtlasViewer.from_registered_slices(
     mesh_pack, intensity_pack, verified_registered_assets, catalog=catalog
 ) as navigator:
     navigator.show()
@@ -52,10 +52,10 @@ exactly one AP, ML, and DV registered projection and never calls `open_volume_pa
 grid identity, plane shapes, slice counts, and affine correspondence.
 
 The direct constructor also accepts
-`LinkedAtlasNavigator(mesh, volumes=None, slice_source=source, render_volume=False)`.
+`AtlasViewer(mesh, layout="linked", slice_source=source, render_volume=False)`.
 Omitting both sources or requesting `render_volume=True` without volumes raises
-an error. In volume-free mode, `volume` and `volume_field` are `None` and
-`volume_resolution_label` is `None`. No volume-opacity GUI slider is shown, and
+an error. Volume-free mode creates no native volume visual or 3D sampled field;
+internal render handles are not part of the public viewer API. No volume-opacity GUI slider is shown, and
 the resolution label explicitly says the 3D volume is disabled. The surface alpha
 mode uses the ordinary `AtlasViewer` policy, including palette alpha and selection.
 

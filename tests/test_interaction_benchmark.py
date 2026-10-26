@@ -10,6 +10,7 @@ import pytest
 
 from ibl_datoviz.interaction_benchmark import LinkedReadiness, ReviewFixture, scientific_state
 from ibl_datoviz.navigator import AtlasCursor
+from ibl_datoviz.slice_controller import SliceController
 from ibl_datoviz.slice_scheduler import SliceRequest
 
 
@@ -32,12 +33,18 @@ class FakeCamera:
 
 def test_scientific_snapshot_tracks_pan_and_zoom_even_when_model_is_unchanged():
     class ArcballState(ctypes.Structure):
-        _fields_ = [('zoom', ctypes.c_float), ('pan', ctypes.c_float * 2),
-                    ('interacting', ctypes.c_bool)]
+        _fields_ = [
+            ('zoom', ctypes.c_float),
+            ('pan', ctypes.c_float * 2),
+            ('interacting', ctypes.c_bool),
+        ]
 
     class CameraView(ctypes.Structure):
-        _fields_ = [('eye', ctypes.c_float * 3), ('target', ctypes.c_float * 3),
-                    ('up', ctypes.c_float * 3)]
+        _fields_ = [
+            ('eye', ctypes.c_float * 3),
+            ('target', ctypes.c_float * 3),
+            ('up', ctypes.c_float * 3),
+        ]
 
     class CameraProjection(ctypes.Structure):
         _fields_ = [('type', ctypes.c_int), ('fov_y', ctypes.c_float)]
@@ -65,7 +72,7 @@ def test_scientific_snapshot_tracks_pan_and_zoom_even_when_model_is_unchanged():
 
     viewer = FakeLinkedViewer()
     viewer.dvz = NavigationDatoviz()
-    viewer.panel, viewer.slice_panels = 'brain', {'ap': 'fixed-slice'}
+    viewer.panel, viewer._linked.slice_panels = 'brain', {'ap': 'fixed-slice'}
     before = scientific_state(viewer)
     viewer.dvz.zoom, viewer.dvz.pan = 2.0, (0.25, -0.5)
     after = scientific_state(viewer)
@@ -76,26 +83,19 @@ def test_scientific_snapshot_tracks_pan_and_zoom_even_when_model_is_unchanged():
     assert after['camera']['navigation']['panels']['ap'] is None
 
 
-class FakeLinkedViewer:
-    def __init__(self):
+class FakeLinkedSlices:
+    """Explicit component boundary for snapshot and upload-observer tests."""
+
+    def __init__(self, viewer):
+        self.viewer = viewer
         self.cursor = AtlasCursor(1, 2, 3)
-        self.mapping = 'allen'
-        self._selected = (315,)
-        self._selection_revision = 4
-        self.selection = type('Selection', (), {'revision': 4})()
         self.slice_renderer = 'raster'
-        self.camera_angles = (-1.15, -0.2, 2.5)
-        self.camera = FakeCamera(self)
-        self.arcball = object()
-        self.dvz = FakeDatoviz()
         self.anatomy_visible = True
         self.annotation_visible = True
         self.boundaries_visible = True
         self.volume_opacity = 0.0
         self.annotation_opacity = 1.0
         self.boundary_opacity = 0.82
-        self.surface_opacity = 1.0
-        self.context_opacity = 0.12
         self._slice_source_id = 'fixture-grid'
         self._slice_revisions = dict.fromkeys(('ap', 'ml', 'dv'), 0)
         self._displayed_slice_requests = {}
@@ -111,8 +111,8 @@ class FakeLinkedViewer:
             index,
             self._slice_revisions[axis],
             source_id=self._slice_source_id,
-            mapping=self.mapping,
-            selected_region_ids=self._selected,
+            mapping=self.viewer.mapping,
+            selected_region_ids=self.viewer._selected,
             annotation_opacity=self.annotation_opacity,
             anatomy_visible=self.anatomy_visible,
             annotation_visible=self.annotation_visible,
@@ -124,27 +124,12 @@ class FakeLinkedViewer:
         if request == self._slice_request(request.axis):
             self._displayed_slice_requests[request.axis] = request
 
-    def selected_region_ids(self):
-        return self._selected
-
-    def set_camera_angles(self, angles):
-        self.camera_angles = tuple(float(value) for value in angles)
-
-    def set_mapping(self, mapping):
-        self.mapping = mapping
-        self._selected = ()
-        self._bump_all()
-
     def set_cursor(self, cursor):
         old = self.cursor.as_index()
         self.cursor = cursor
         for axis, before, after in zip(('ap', 'ml', 'dv'), old, cursor.as_index(), strict=True):
             if before != after:
                 self._slice_revisions[axis] += 1
-
-    def set_selected_region_ids(self, ids):
-        self._selected = tuple(ids)
-        self._bump_all()
 
     def set_slice_layers(self, *, anatomy, annotations, boundaries):
         self.anatomy_visible = anatomy
@@ -154,15 +139,52 @@ class FakeLinkedViewer:
     def set_volume_opacity(self, opacity):
         self.volume_opacity = opacity
 
+    def _bump_all(self):
+        for axis in self._slice_revisions:
+            self._slice_revisions[axis] += 1
+
+
+class FakeLinkedViewer:
+    def __init__(self):
+        self.mapping = 'allen'
+        self._selected = (315,)
+        self._selection_revision = 4
+        self.selection = type('Selection', (), {'revision': 4})()
+        self.camera_angles = (-1.15, -0.2, 2.5)
+        self.camera = FakeCamera(self)
+        self.arcball = object()
+        self.dvz = FakeDatoviz()
+        self.surface_opacity = 1.0
+        self.context_opacity = 0.12
+        self._linked = FakeLinkedSlices(self)
+        self.slices = SimpleNamespace(
+            set_volume_opacity=self._linked.set_volume_opacity,
+            set_layers=self._linked.set_slice_layers,
+            set_position=lambda *, ap, ml, dv, units: self._linked.set_cursor(
+                AtlasCursor(ap, ml, dv)
+            ),
+        )
+
+    def selected_region_ids(self):
+        return self._selected
+
+    def set_camera_angles(self, angles):
+        self.camera_angles = tuple(float(value) for value in angles)
+
+    def set_mapping(self, mapping):
+        self.mapping = mapping
+        self._selected = ()
+        self._linked._bump_all()
+
+    def set_selected_region_ids(self, ids):
+        self._selected = tuple(ids)
+        self._linked._bump_all()
+
     def set_surface_opacity(self, opacity):
         self.surface_opacity = opacity
 
     def set_context_opacity(self, opacity):
         self.context_opacity = opacity
-
-    def _bump_all(self):
-        for axis in self._slice_revisions:
-            self._slice_revisions[axis] += 1
 
 
 def fixture(viewer):
@@ -211,10 +233,10 @@ def test_fixture_reset_uses_viewer_setters_and_restores_scientific_state():
     viewer = FakeLinkedViewer()
     original = fixture(viewer)
     viewer.set_mapping('beryl')
-    viewer.set_cursor(AtlasCursor(2, 2, 3))
+    viewer._linked.set_cursor(AtlasCursor(2, 2, 3))
     viewer.set_selected_region_ids((-315,))
-    viewer.set_slice_layers(anatomy=False, annotations=False, boundaries=False)
-    viewer.set_volume_opacity(0.7)
+    viewer._linked.set_slice_layers(anatomy=False, annotations=False, boundaries=False)
+    viewer._linked.set_volume_opacity(0.7)
     viewer.set_surface_opacity(0.4)
     viewer.set_context_opacity(0.8)
     restored = original.reset(viewer)
@@ -227,22 +249,46 @@ def test_fixture_reset_uses_viewer_setters_and_restores_scientific_state():
     assert restored['opacity']['context'] == 0.12
 
 
+def test_reset_volume_runs_public_controller_hook_before_accepting_restored_state():
+    viewer = FakeLinkedViewer()
+    viewer._linked.volume_opacity = 0.24
+    original = fixture(viewer)
+    viewer._linked.set_volume_opacity(0.0)
+    plane = SimpleNamespace(visible=True)
+    observed = []
+
+    def committed(opacity):
+        # Review-app physical planes must be hidden when volume context returns.
+        observed.append(opacity)
+        if opacity > 0:
+            plane.visible = False
+
+    viewer._require_open = lambda: None
+    viewer._on_volume_opacity_committed = committed
+    viewer.slices = SliceController(viewer)
+    restored = original.reset(viewer)
+
+    assert restored['opacity']['volume'] == 0.24
+    assert observed == [0.24]
+    assert not plane.visible
+
+
 def test_reset_refuses_unsettable_opacity_before_mutating_viewer():
     viewer = FakeLinkedViewer()
     original = fixture(viewer)
-    viewer.annotation_opacity = 0.5
-    before = viewer.mapping, viewer.cursor, viewer.selected_region_ids()
+    viewer._linked.annotation_opacity = 0.5
+    before = viewer.mapping, viewer._linked.cursor, viewer.selected_region_ids()
     with pytest.raises(RuntimeError, match='opacity.annotations'):
         original.reset(viewer)
-    assert (viewer.mapping, viewer.cursor, viewer.selected_region_ids()) == before
+    assert (viewer.mapping, viewer._linked.cursor, viewer.selected_region_ids()) == before
 
 
 def test_readiness_tracks_only_successful_current_owner_uploads_and_restores_wrapper():
     viewer = FakeLinkedViewer()
-    original_upload = viewer._upload_slice_payload
+    original_upload = viewer._linked._upload_slice_payload
     with LinkedReadiness(viewer) as readiness:
-        viewer.set_cursor(AtlasCursor(2, 2, 3))
-        latest = viewer._slice_request('ap')
+        viewer._linked.set_cursor(AtlasCursor(2, 2, 3))
+        latest = viewer._linked._slice_request('ap')
         stale = SliceRequest(
             'ap',
             latest.index,
@@ -251,75 +297,75 @@ def test_readiness_tracks_only_successful_current_owner_uploads_and_restores_wra
             mapping=latest.mapping,
             selected_region_ids=latest.selected_region_ids,
         )
-        viewer._upload_slice_payload(stale, object())
+        viewer._linked._upload_slice_payload(stale, object())
         assert readiness.check().status == 'pending'
-        viewer.raise_upload = True
+        viewer._linked.raise_upload = True
         with pytest.raises(RuntimeError, match='upload failed'):
-            viewer._upload_slice_payload(latest, object())
+            viewer._linked._upload_slice_payload(latest, object())
         assert readiness.check().status == 'error'
         assert readiness.accepted_requests['ap']['revision'] == 0
-        viewer.raise_upload = False
-        viewer._slice_error = None
+        viewer._linked.raise_upload = False
+        viewer._linked._slice_error = None
         readiness._upload_error = None
-        viewer._upload_slice_payload(latest, object())
+        viewer._linked._upload_slice_payload(latest, object())
         result = readiness.check()
         assert result.status == 'ready'
         assert result.accepted_requests['ap']['revision'] == latest.revision
-    assert viewer._upload_slice_payload == original_upload
+    assert viewer._linked._upload_slice_payload == original_upload
 
 
 def test_old_worker_completion_cannot_satisfy_newer_revision():
     viewer = FakeLinkedViewer()
     with LinkedReadiness(viewer) as readiness:
-        viewer.set_cursor(AtlasCursor(2, 2, 3))
-        old = viewer._displayed_slice_requests['ap']
-        viewer._upload_slice_payload(old, object())
+        viewer._linked.set_cursor(AtlasCursor(2, 2, 3))
+        old = viewer._linked._displayed_slice_requests['ap']
+        viewer._linked._upload_slice_payload(old, object())
         assert readiness.check().pending_axes == ('ap',)
-        current = viewer._slice_request('ap')
-        viewer._upload_slice_payload(current, object())
+        current = viewer._linked._slice_request('ap')
+        viewer._linked._upload_slice_payload(current, object())
         assert readiness.check().status == 'ready'
 
 
 def test_wait_reports_timeout_cancellation_and_upload_errors():
     viewer = FakeLinkedViewer()
     with LinkedReadiness(viewer) as readiness:
-        viewer.set_cursor(AtlasCursor(2, 2, 3))
+        viewer._linked.set_cursor(AtlasCursor(2, 2, 3))
         assert readiness.wait(timeout=0, pump=lambda: None).status == 'timeout'
-        viewer._slice_error = ValueError('worker failed')
+        viewer._linked._slice_error = ValueError('worker failed')
         assert readiness.wait(timeout=1, pump=lambda: None).status == 'error'
-        viewer._slice_error = None
+        viewer._linked._slice_error = None
         cancelled = readiness.wait(timeout=1, pump=lambda: None, cancelled=lambda: True)
         assert cancelled.status == 'cancelled'
         assert readiness.check().status == 'cancelled'
-    assert viewer._upload_slice_payload.__func__ is FakeLinkedViewer._upload_slice_payload
+    assert viewer._linked._upload_slice_payload.__func__ is FakeLinkedSlices._upload_slice_payload
 
 
 def test_readiness_waits_for_navigation_then_its_new_slice_uploads():
     viewer = FakeLinkedViewer()
-    viewer._auto_slice = SimpleNamespace(pending=True, error=None, enabled=True)
+    viewer._linked._auto_slice = SimpleNamespace(pending=True, error=None, enabled=True)
     with LinkedReadiness(viewer) as readiness:
         result = readiness.check()
         assert result.status == 'pending'
         assert result.pending_axes == () and result.pending_navigation
         timed_out = readiness.wait(timeout=0, pump=lambda: None)
         assert timed_out.status == 'timeout' and timed_out.pending_navigation
-        viewer._auto_slice.pending = False
-        viewer.set_cursor(AtlasCursor(2, 2, 3))
+        viewer._linked._auto_slice.pending = False
+        viewer._linked.set_cursor(AtlasCursor(2, 2, 3))
         assert readiness.check().status == 'pending'
-        viewer._upload_slice_payload(viewer._slice_request('ap'), object())
+        viewer._linked._upload_slice_payload(viewer._linked._slice_request('ap'), object())
         assert readiness.check().status == 'ready'
-        viewer._auto_slice.error = RuntimeError('region anchor failed')
+        viewer._linked._auto_slice.error = RuntimeError('region anchor failed')
         assert readiness.check().status == 'error'
 
 
 def test_fixture_restores_auto_slice_policy_through_public_controller():
     viewer = FakeLinkedViewer()
-    viewer._auto_slice = SimpleNamespace(pending=False, error=None, enabled=True)
-    viewer.slices = SimpleNamespace(
-        set_auto_slice=lambda enabled: setattr(viewer._auto_slice, 'enabled', enabled)
+    viewer._linked._auto_slice = SimpleNamespace(pending=False, error=None, enabled=True)
+    viewer.slices.set_auto_slice = lambda enabled: setattr(
+        viewer._linked._auto_slice, 'enabled', enabled
     )
     original = fixture(viewer)
-    viewer._auto_slice.enabled = False
+    viewer._linked._auto_slice.enabled = False
     assert original.reset(viewer)['auto_slice_enabled'] is True
 
 
@@ -345,7 +391,7 @@ def test_checkpoint_reports_identity_change_during_capture():
     with LinkedReadiness(viewer) as readiness:
 
         def capture(_state):
-            viewer.set_cursor(AtlasCursor(2, 2, 3))
+            viewer._linked.set_cursor(AtlasCursor(2, 2, 3))
             return {
                 'source_generation': 12,
                 'capture_id': 'capture-12',
@@ -362,8 +408,8 @@ def test_wrapper_cleanup_preserves_replacement_and_closed_readiness_cancels():
     def replacement(_request, _payload):
         return None
 
-    viewer._upload_slice_payload = replacement
+    viewer._linked._upload_slice_payload = replacement
     readiness.close()
-    assert viewer._upload_slice_payload is replacement
+    assert viewer._linked._upload_slice_payload is replacement
     assert readiness.check().status == 'cancelled'
     readiness.close()

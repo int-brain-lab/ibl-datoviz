@@ -128,3 +128,70 @@ def test_gui_font_size_is_configured_before_app_creation(viewer, monkeypatch):
     with pytest.raises(RuntimeError, match='dvz_app'):
         viewer._create_view(offscreen=False, title='test')
     assert configured == [18.0]
+
+
+@pytest.mark.parametrize('layout', ['3d', 'linked'])
+def test_right_click_uses_shared_pointer_conversion_without_constructing_slice_adapter(
+    viewer, monkeypatch, layout
+):
+    """Observation picking works in both layouts, independent of linked ownership."""
+    requests, conversions, frames = [], [], []
+    native = viewer.dvz
+
+    class Resize(ctypes.Structure):
+        _fields_ = [('unused', ctypes.c_int)]
+
+    def to_layout(figure, x, y, width, height, scale_x, scale_y, out_x, out_y):
+        conversions.append((figure, x, y, width, height, scale_x, scale_y))
+        out_x._obj.value, out_y._obj.value = 52.0, 61.0
+        return True
+
+    def to_panel(panel, _source_space, _target_space, source, target):
+        assert panel is viewer.panel
+        assert tuple(source) == (52.0, 61.0)
+        target[:] = (12.0, 21.0)
+        return True
+
+    with monkeypatch.context() as patch:
+        patch.setattr(native, 'DVZ_POINTER_EVENT_CLICK', 3, raising=False)
+        patch.setattr(native, 'DVZ_POINTER_BUTTON_RIGHT', 1, raising=False)
+        patch.setattr(native, 'DVZ_PANEL_COORD_FIGURE_PX', 1, raising=False)
+        patch.setattr(native, 'DVZ_PANEL_COORD_PANEL_PX', 2, raising=False)
+        patch.setattr(native, 'DvzInputResizeEvent', Resize, raising=False)
+        patch.setattr(native, 'dvz_input_router_last_resize', lambda *_: False, raising=False)
+        patch.setattr(native, 'dvz_figure_window_to_layout', to_layout, raising=False)
+        patch.setattr(native, 'dvz_panel_transform_point', to_panel, raising=False)
+        patch.setattr(native, 'dvz_view_request_frame', frames.append, raising=False)
+        patch.setattr(
+            viewer, 'picking', SimpleNamespace(request=lambda *pos: requests.append(pos))
+        )
+        if layout == 'linked':
+            patch.setattr(viewer, '_linked', SimpleNamespace(_cancel_auto_slice=lambda: None))
+        pointer = SimpleNamespace(
+            type=3, button=1, pos=(80.0, 90.0), window_size=(640, 480), content_scale=2.0
+        )
+        event = SimpleNamespace(
+            type=native.DVZ_INPUT_EVENT_POINTER, content=SimpleNamespace(pointer=pointer)
+        )
+        viewer._viewport_input.on_input(None, SimpleNamespace(contents=event), None)
+        assert viewer._gui_callback_error is None
+        assert requests == [(12.0, 21.0)]
+        assert frames == [viewer.view]
+        assert conversions == [(viewer.figure, 80.0, 90.0, 640.0, 480.0, 2.0, 2.0)]
+
+
+@pytest.mark.parametrize('event_type', [1, 3, 4])
+def test_manual_viewport_input_cancels_pending_linked_navigation(event_type):
+    """Manual press, click and wheel supersede an outstanding region-list jump."""
+    cancelled = []
+    native = FakeViewportDatoviz()
+    native.DVZ_POINTER_EVENT_CLICK, native.DVZ_POINTER_EVENT_WHEEL = 3, 4
+    owner = SimpleNamespace(
+        dvz=native,
+        _linked=SimpleNamespace(_cancel_auto_slice=lambda: cancelled.append(True)),
+        _invalidate_picking=lambda: None,
+        _clear_surface_hover=lambda: None,
+    )
+    adapter = ViewportInputAdapter(owner, object())
+    emit(adapter, event_type)
+    assert cancelled == [True]

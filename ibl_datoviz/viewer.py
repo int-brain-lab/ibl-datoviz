@@ -15,11 +15,17 @@ from ibl_anatomy import (
     AtlasAssetSet,
     AtlasRegionCatalog,
     MaterializedAtlasAssets,
+    MaterializedRegisteredAssets,
     bundled_asset_set,
+    open_anatomy_pack,
+    open_intensity_block_pack,
+    open_registered_projection,
+    open_volume_pack,
     verify_materialized_asset_set,
 )
 
 from .atlas import AtlasMesh
+from .atlas_slice_source import AtlasSliceSource
 from .context import AnatomicalContext, AtlasContextSurface
 from .controllers import AnatomyController, CameraController, SelectionController
 from .envelope import AtlasEnvelope
@@ -29,7 +35,8 @@ from .layers import LayerRegistry
 from .observation_tables import ObservationTables
 from .ontology import AtlasTreeModel
 from .payloads import WorldFrame
-from .presentation import region_presentation, scalar_colors
+from .presentation import region_presentation
+from .probe_presentation import ProbePresentation
 from .region_browser import RegionBrowserSidebar
 from .region_selector_gui import RegionSelectorGui, selector_from_tree, signed_selection
 from .regional_quantities import RegionQuantityRegistry
@@ -43,9 +50,10 @@ from .selection import (
     tree_selection_keys,
 )
 from .surface_geometry import SurfaceGeometry
+from .surface_presentation import SurfacePresentation
 from .surface_state import SurfaceState
 from .surface_style import SurfaceStyle
-from .viewport_input import ViewportInputAdapter
+from .viewer_layout import ViewerLayout
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -54,7 +62,6 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
-    from .probe import ProbeSites
     from .regions import AtlasRegionValues
 
 
@@ -68,29 +75,8 @@ class RegionalView(NamedTuple):
     colors: NDArray[np.uint8]
 
 
-class ProbeUpload(NamedTuple):
-    """One owned upload snapshot for recovery after a native setter failure."""
-
-    positions: NDArray[np.float32]
-    colors: NDArray[np.uint8]
-    radii: NDArray[np.float32]
-    keys: NDArray[np.uint64]
-
-    def attributes(self):
-        """Return the native sphere attributes without copying the snapshot."""
-        return {'position': self.positions, 'color': self.colors, 'radius': self.radii}
-
-
 class AtlasViewer:
     """Own one Datoviz scene displaying an immutable atlas mesh pack."""
-
-    def __new__(cls, *args, layout='3d', **kwargs):
-        """Allocate one viewer using the requested existing layout implementation."""
-        if cls is AtlasViewer and layout == 'linked':
-            from .linked_atlas import LinkedAtlasNavigator  # noqa: PLC0415
-
-            return object.__new__(LinkedAtlasNavigator)
-        return object.__new__(cls)
 
     @staticmethod
     def _resolve_atlas(mesh, atlas, catalog):
@@ -112,15 +98,25 @@ class AtlasViewer:
     def __init__(  # noqa: PLR0912, PLR0915
         self,
         mesh: AtlasMesh | None = None,
+        volumes=None,
         *,
         atlas=None,
         anatomy: str | None = None,
         layout: str = '3d',
+        slice_source=None,
+        slice_renderer: str = 'raster',
+        render_volume: bool = True,
+        annotation_opacity: float = 1.0,
+        volume_opacity: float = 0.24,
+        boundary_opacity: float = 0.82,
+        boundary_width_px: float = 0.7,
+        boundary_color: tuple[int, int, int] = (238, 242, 247),
+        slice_background: tuple[int, int, int] = (29, 33, 39),
         mapping: str = 'allen',
         palette: Mapping[int, Sequence[int]] | None = None,
         catalog: AtlasRegionCatalog | None = None,
-        width: int = 900,
-        height: int = 720,
+        width: int | None = None,
+        height: int | None = None,
         camera_angles: Sequence[float] = (-0.35, 0.25, 0.12),
         explode: float = 0.0,
         selection_dim_factor: float = 0.42,
@@ -141,10 +137,34 @@ class AtlasViewer:
     ) -> None:
         if layout not in ('3d', 'linked'):
             raise ValueError('layout must be 3d or linked')
-        if layout == 'linked' and not hasattr(self, 'slice_source'):
-            raise ValueError('linked layout requires the linked slice implementation')
         mesh, catalog = self._resolve_atlas(mesh, atlas, catalog)
         self.layout = layout
+        self._linked = None
+        if layout == 'linked':
+            from .linked_atlas import LinkedSlices  # noqa: PLC0415
+
+            self._linked = LinkedSlices(
+                self,
+                mesh,
+                volumes,
+                supplied_catalog=catalog,
+                mapping=mapping,
+                palette=palette,
+                slice_source=slice_source,
+                slice_renderer=slice_renderer,
+                render_volume=render_volume,
+                annotation_opacity=annotation_opacity,
+                volume_opacity=volume_opacity,
+                boundary_opacity=boundary_opacity,
+                boundary_width_px=boundary_width_px,
+                boundary_color=boundary_color,
+                slice_background=slice_background,
+            )
+            catalog = self._linked._catalog
+        elif volumes is not None or slice_source is not None:
+            raise ValueError('slice sources require layout="linked"')
+        width = (1280 if layout == 'linked' else 900) if width is None else width
+        height = (900 if layout == 'linked' else 720) if height is None else height
         if anatomy is not None:
             anatomy_presentation = anatomy
             if anatomy == 'major' and not anatomical_context:
@@ -177,13 +197,7 @@ class AtlasViewer:
         self.mesh_data = mesh
         self._surface_geometry = SurfaceGeometry.from_mesh(mesh)
         self._surface_mesh = self._surface_geometry.mesh
-        self._surface_style = SurfaceStyle(self._surface_mesh)
-        self._surface_visible = True
-        self._surface_face_mask = np.ones(
-            len(self._surface_mesh.face_presentation_ids), dtype=bool
-        )
-        self._uploaded_face_mask = self._surface_face_mask.copy()
-        self._uploaded_face_mapping = mapping
+        self._surface_presentation = SurfacePresentation(self, self._surface_mesh, mapping)
         self._anatomical_context = None
         self.anatomy_presentation = anatomy_presentation
         self.context_opacity = float(context_opacity)
@@ -229,12 +243,9 @@ class AtlasViewer:
         self._selector_mapping = None
         self.gui = None
         self.probe_sites = None
-        self._probe_sites_pending = None
-        self._probe_pending = None
-        self._probe_upload: ProbeUpload | None = None
-        self.probe_data: ProbeSites | None = None
+        self._probe_presentation = ProbePresentation(self)
+        self._window = ViewerLayout(self)
         self.region_data: AtlasRegionValues | None = None
-        self._probe_colors: NDArray[np.uint8] | None = None
         self._region_value_range: tuple[float, float] | None = None
         self._region_color_scheme: Literal['diverging', 'sequential'] = 'sequential'
         self._region_opacity: float | None = None
@@ -249,10 +260,6 @@ class AtlasViewer:
         self._selected_region_ids: tuple[int, ...] = ()
         self._hovered_region_ids: tuple[int, ...] = ()
         self._highlight_region_ids: tuple[int, ...] = ()
-        self._last_surface_emphasis: tuple[tuple[int, ...], tuple[int, ...], str] | None = None
-        self._surface_base_colors_cache: NDArray[np.uint8] | None = None
-        self._surface_base_is_translucent = False
-        self._surface_alpha_mode: int | None = None
         self._last_mesh_region_ids: tuple[int, ...] = ()
         self.frame = WorldFrame(
             mesh.reference_space,
@@ -309,10 +316,49 @@ class AtlasViewer:
                 )
                 if not self.interaction:
                     raise RuntimeError('dvz_item_interaction() failed')
+            if self._linked is not None:
+                self._linked.initialize()
         except Exception:
-            # Avoid virtual dispatch into a partially initialized subclass.
+            # Application subclasses may not have completed their own initialization.
             AtlasViewer.close(self)
             raise
+
+    def _on_cursor_committed(self):
+        """Allow application clients to react after a successful cursor transaction."""
+
+    def _on_volume_opacity_committed(self, opacity):
+        """Allow application clients to coordinate their optional volume context."""
+
+    def set_mapping(self, mapping, palette=None):
+        """Commit anatomy and optional linked slices as one mapping transaction."""
+        if self._linked is not None:
+            return self._linked.set_mapping(mapping, palette)
+        return self._set_surface_mapping(mapping, palette)
+
+    def _apply_selected_region_ids(self, region_ids, **kwargs):
+        if self._linked is not None:
+            return self._linked._apply_selected_region_ids(region_ids, **kwargs)
+        return self._apply_surface_selected_region_ids(region_ids, **kwargs)
+
+    def _set_hovered_region_ids(self, region_ids):
+        if self._linked is not None:
+            return self._linked._set_hovered_region_ids(region_ids)
+        return self._set_surface_hovered_region_ids(region_ids)
+
+    def _update_surface_alpha_mode(self):
+        if self._linked is not None:
+            return self._linked._update_surface_alpha_mode()
+        return self._update_surface_alpha_mode_base()
+
+    def _restore_selection_feedback(self):
+        if self._linked is not None:
+            return self._linked._restore_selection_feedback()
+        return self._restore_surface_selection_feedback()
+
+    def _sync_viewport_hover(self, hovered):
+        if self._linked is not None:
+            return self._linked._sync_viewport_hover(hovered)
+        return self._sync_surface_viewport_hover(hovered)
 
     def _invalidate_picking(self):
         picking = getattr(self, 'picking', None)
@@ -332,9 +378,13 @@ class AtlasViewer:
             item.visible for item in self._insertions._insertions.values()
         ):
             reasons.append('legacy insertion paths cannot compose frontmost queries')
-        if getattr(self, 'volume', None) is not None and self.volume_opacity > 0:
+        if (
+            self._linked is not None
+            and self._linked.volume is not None
+            and self._linked.volume_opacity > 0
+        ):
             reasons.append('volume coverage cannot compose exact observation queries')
-        planes = getattr(self, '_slice_planes', None)
+        planes = getattr(self._linked, '_slice_planes', None)
         if planes is not None and planes.visible_axes:
             reasons.append('physical slice planes cannot compose exact observation queries')
         return tuple(reasons)
@@ -382,8 +432,130 @@ class AtlasViewer:
         """Remove a recording and its owned layers before selection notification."""
         self._layer_registry.remove_recording(recording)
 
+    @classmethod
+    def from_packs(cls, mesh_pack: str | Path, volume_pack: str | Path, **kwargs) -> AtlasViewer:
+        """Create a navigator from verified mesh and volume packs."""
+        volumes = open_volume_pack(volume_pack).load_volumes()
+        return cls(AtlasMesh.from_pack(mesh_pack), volumes, layout='linked', **kwargs)
+
+    @classmethod
+    def from_slice_source(cls, mesh: AtlasMesh, slice_source, **kwargs) -> AtlasViewer:
+        """Use compatible explicit atlas slices without constructing a 3-D volume."""
+        if kwargs.pop('render_volume', False):
+            raise ValueError('from_slice_source() requires render_volume=False')
+        return cls(mesh, layout='linked', slice_source=slice_source, render_volume=False, **kwargs)
+
+    @classmethod
+    def from_registered_slices(
+        cls,
+        mesh_pack: str | Path,
+        intensity_pack: str | Path,
+        assets: MaterializedRegisteredAssets,
+        *,
+        catalog,
+        **kwargs,
+    ) -> AtlasViewer:
+        """Use verified registered slices and an explicit catalog without a volume pack.
+
+        Materialized registered assets provide projection readers, not a region
+        catalog. Supply the independently verified catalog used by those assets.
+        Existing reader errors for absent sections remain explicit.
+        """
+        if not isinstance(assets, MaterializedRegisteredAssets):
+            raise TypeError('assets must be verified MaterializedRegisteredAssets')
+        projections = {
+            projection.world_slice_axis: projection for projection in assets.projections.values()
+        }
+        if len(assets.projections) != 3 or set(projections) != {'ap', 'ml', 'dv'}:
+            raise ValueError('registered assets must contain one ap/ml/dv projection')
+        intensity = open_intensity_block_pack(intensity_pack)
+        slices = AtlasSliceSource(intensity, projections, catalog)
+        return cls.from_slice_source(AtlasMesh.from_pack(mesh_pack), slices, **kwargs)
+
+    @classmethod
+    def from_multiresolution_packs(
+        cls,
+        mesh_pack: str | Path,
+        volume_pack: str | Path,
+        intensity_pack: str | Path,
+        registered_projections: dict[str, str | Path],
+        **kwargs,
+    ) -> AtlasViewer:
+        """Use registered high-resolution slices with an independent dense 3-D volume."""
+        volumes = open_volume_pack(volume_pack).load_volumes()
+        intensity = open_intensity_block_pack(intensity_pack)
+        projections = {
+            axis: open_registered_projection(path) for axis, path in registered_projections.items()
+        }
+        slices = AtlasSliceSource(intensity, projections, volumes.regions)
+        return cls(
+            AtlasMesh.from_pack(mesh_pack), volumes, layout='linked', slice_source=slices, **kwargs
+        )
+
+    @classmethod
+    def from_registered_assets(
+        cls,
+        mesh_pack: str | Path,
+        volume_pack: str | Path,
+        intensity_pack: str | Path,
+        assets: MaterializedRegisteredAssets,
+        **kwargs,
+    ) -> AtlasViewer:
+        """Use an ``ibl-anatomy`` verified registered-asset result.
+
+        The caller materializes or verifies the immutable root graph through
+        ``ibl-anatomy``. Datoviz consumes the resulting projection readers without
+        inferring files from an Ephys Atlas URL layout.
+        """
+        if not isinstance(assets, MaterializedRegisteredAssets):
+            raise TypeError('assets must be verified MaterializedRegisteredAssets')
+        volumes = open_volume_pack(volume_pack).load_volumes()
+        intensity = open_intensity_block_pack(intensity_pack)
+        projections = {
+            projection.world_slice_axis: projection for projection in assets.projections.values()
+        }
+        if set(projections) != {'ap', 'ml', 'dv'}:
+            raise ValueError('registered assets must contain one ap/ml/dv projection')
+        slices = AtlasSliceSource(intensity, projections, volumes.regions)
+        return cls(
+            AtlasMesh.from_pack(mesh_pack), volumes, layout='linked', slice_source=slices, **kwargs
+        )
+
+    @classmethod
+    def from_anatomy_packs(
+        cls,
+        mesh_pack: str | Path,
+        volume_pack: str | Path,
+        intensity_pack: str | Path,
+        anatomy_pack: str | Path,
+        **kwargs,
+    ) -> AtlasViewer:
+        """Use a complete registered anatomy pack for high-resolution slices.
+
+        The bounded dense ``volume_pack`` remains the 3-D ray-casting source. The
+        projection-native ``intensity_pack`` and ``anatomy_pack`` provide lazy slices on
+        their shared grid, so no complete high-resolution volume is uploaded to the GPU.
+        """
+        volumes = open_volume_pack(volume_pack).load_volumes()
+        intensity = open_intensity_block_pack(intensity_pack)
+        anatomy = open_anatomy_pack(
+            anatomy_pack,
+            reference_space_id=intensity.reference_space_id,
+            grid_id=intensity.grid_id,
+        )
+        projections = {
+            projection.world_slice_axis: projection for projection in anatomy.projections.values()
+        }
+        slices = AtlasSliceSource(intensity, projections, volumes.regions)
+        return cls(
+            AtlasMesh.from_pack(mesh_pack), volumes, layout='linked', slice_source=slices, **kwargs
+        )
+
     def _create_layout(self) -> None:
         """Create the figure and primary 3-D panel."""
+        if self._linked is not None:
+            self._linked._create_layout()
+            return
         self.figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
         if not self.figure:
             raise RuntimeError('dvz_figure() failed')
@@ -458,7 +630,7 @@ class AtlasViewer:
         palette: Mapping[int, Sequence[int]] | None,
     ) -> NDArray[np.uint8]:
         colors = self._surface_mesh.colors(mapping, palette)
-        colors = self._surface_style.apply(mapping, colors)
+        colors = self._surface_presentation.style.apply(mapping, colors)
         if self.surface_opacity == 1:
             return colors
         colors = colors.copy()
@@ -539,13 +711,13 @@ class AtlasViewer:
         mask = self._visible_surface_faces(self.mapping)
         if not np.all(mask):
             self._upload_surface_faces(mask, self.mapping)
-        self._surface_face_mask = mask
+        self._surface_presentation.face_mask = mask
 
     def _authored_presentation_alpha(self, mapping=None, palette=None):
         active = self.mapping if mapping is None else mapping
         palette = self.palette if palette is None else palette
         if self.region_data is None:
-            colors = self._surface_style.apply_presentations(
+            colors = self._surface_presentation.style.apply_presentations(
                 active, self._surface_mesh._presentation_colors(active, palette)
             )
         else:
@@ -568,7 +740,7 @@ class AtlasViewer:
         # Authored alpha/visibility are properties of presentation identities,
         # not vertices. Resolve them at that cardinality and expand only the
         # final face mask; selection never needs full vertex RGBA arrays.
-        mask = self._surface_style.visible_presentations(mapping)
+        mask = self._surface_presentation.style.visible_presentations(mapping)
         mask &= self._authored_presentation_alpha(mapping, palette) > 0
         ids = self._surface_mesh._presentation_mapping_ids(mapping)
         if self.anatomy_presentation == 'major':
@@ -580,9 +752,11 @@ class AtlasViewer:
 
     def _upload_surface_faces(self, mask, mapping):
         """Filter render triangle indices and matching signed face keys together."""
-        previous = self._uploaded_face_mask
-        old_mapping = self._uploaded_face_mapping
-        was_visible = self._surface_visible and bool(np.any(self._surface_face_mask))
+        previous = self._surface_presentation.uploaded_face_mask
+        old_mapping = self._surface_presentation.uploaded_face_mapping
+        was_visible = self._surface_presentation.visible and bool(
+            np.any(self._surface_presentation.face_mask)
+        )
         try:
             if np.any(mask):
                 if not np.array_equal(mask, previous):
@@ -603,7 +777,7 @@ class AtlasViewer:
                 )
             self._check(
                 self.dvz.dvz_visual_set_visible(
-                    self.mesh, self._surface_visible and bool(np.any(mask))
+                    self.mesh, self._surface_presentation.visible and bool(np.any(mask))
                 ),
                 'surface visibility',
             )
@@ -634,136 +808,19 @@ class AtlasViewer:
                 raise RuntimeError('surface rollback failed; viewer closed') from error
             raise
         if np.any(mask):
-            self._uploaded_face_mask = mask.copy()
-            self._uploaded_face_mapping = mapping
+            self._surface_presentation.uploaded_face_mask = mask.copy()
+            self._surface_presentation.uploaded_face_mapping = mapping
 
     def _surface_transaction_snapshot(self):
-        """Retain public state, caches and owned native payloads before mutations."""
-        names = (
-            'mapping',
-            'selection_presentation',
-            'anatomy_presentation',
-            'context_opacity',
-            '_selection_face_state',
-            'palette',
-            'tree_model',
-            '_selector_model',
-            '_selector_mapping',
-            'region_data',
-            '_region_value_range',
-            '_region_color_scheme',
-            '_region_opacity',
-            '_surface_style',
-            '_surface_visible',
-            'surface_opacity',
-            '_surface_face_mask',
-            '_uploaded_face_mask',
-            '_uploaded_face_mapping',
-            '_surface_base_colors_cache',
-            '_surface_base_is_translucent',
-            '_last_surface_emphasis',
-            '_surface_alpha_mode',
-            '_selected_region_ids',
-            '_hovered_region_ids',
-            '_highlight_region_ids',
-            '_last_mesh_region_ids',
-            '_probe_upload',
-            '_probe_colors',
-        )
-        state = {name: getattr(self, name) for name in names}
-        colors = self._surface_base_colors_cache
-        if colors is None:
-            colors = self._display_surface_colors()
-        state['colors'] = np.array(colors, order='C', copy=True)
-        state['mapping_control'] = self._mapping_control.value
-        return state
+        """Capture the scientific and applied anatomical presentation transaction."""
+        return self._surface_presentation.snapshot()
 
     def _restore_surface_transaction(self, snapshot, widgets=()):
-        """Restore geometry, identity, colors and mode; close on any rollback failure."""
-        try:
-            for name, value in snapshot.items():
-                if name not in ('colors', 'mapping_control'):
-                    setattr(self, name, value)
-            self._mapping_control.value = snapshot['mapping_control']
-            mask = self._uploaded_face_mask
-            self._check(
-                self.dvz.dvz_visual_set_index_data(
-                    self.mesh, self._surface_mesh.indices.reshape(-1, 3)[mask].reshape(-1).copy()
-                ),
-                'surface transaction index rollback',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_target_link_keys(
-                    self.mesh,
-                    self.dvz.DVZ_SCENE_TARGET_FACE,
-                    self.link_channel,
-                    self._surface_mesh.face_mapping_ids(self._uploaded_face_mapping)[mask]
-                    .view(np.uint64)
-                    .copy(),
-                ),
-                'surface transaction key rollback',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_data(self.mesh, 'color', snapshot['colors']),
-                'surface transaction color rollback',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_alpha_mode(self.mesh, self._surface_alpha_mode),
-                'surface transaction alpha rollback',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_visible(
-                    self.mesh, self._surface_visible and bool(np.any(self._surface_face_mask))
-                ),
-                'surface transaction visibility rollback',
-            )
-            if self.probe_data is not None and self._probe_upload is not None:
-                self._check(
-                    self.dvz.dvz_visual_set_link_keys(
-                        self.probe_sites, self.link_channel, self._probe_upload.keys
-                    ),
-                    'surface transaction probe key rollback',
-                )
-            self._selection_envelope_visible = None
-            self._update_selection_envelope_visibility()
-            self._surface_state.invalidate()
-            self._last_surface_emphasis = None
-            self._update_surface_emphasis()
-            for widget in widgets:
-                getattr(self, f'_replace_{widget}')()
-            if self._selector_gui is not None and self.region_tree is not None:
-                self._selector_gui.model = self._selector_model
-                self._selector_gui.value_name = (
-                    self.region_data.value_name if self.region_data is not None else 'Value'
-                )
-                self._selector_gui.upload(self._selector_model)
-        except Exception as rollback_error:
-            self.close()
-            raise RuntimeError(
-                'surface transaction rollback failed; viewer closed'
-            ) from rollback_error
+        """Restore dependent native and GUI presentation in a fixed order."""
+        self._surface_presentation.restore(snapshot, widgets)
 
     def _commit_surface_style(self, candidate, *, opacity=None):
-        self._invalidate_picking()
-        snapshot = self._surface_transaction_snapshot()
-        self._surface_style = candidate
-        if opacity is not None:
-            self.surface_opacity = opacity
-        try:
-            mask = self._visible_surface_faces(self.mapping)
-            colors = self._display_surface_colors()
-            self._upload_surface_faces(mask, self.mapping)
-            self._check(
-                self.dvz.dvz_visual_set_data(self.mesh, 'color', colors), 'region style colors'
-            )
-            self._surface_face_mask = mask
-            self._invalidate_surface_emphasis_cache(colors)
-            self._clear_surface_hover()
-            self._update_surface_emphasis()
-        except Exception:
-            if not self._closed:
-                self._restore_surface_transaction(snapshot)
-            raise
+        self._surface_presentation.commit_style(candidate, opacity=opacity)
 
     def set_anatomical_context(self, surfaces):
         """Replace independently prepared major surfaces without changing selection.
@@ -829,7 +886,7 @@ class AtlasViewer:
         snapshot = self._surface_transaction_snapshot()
         self.anatomy_presentation = presentation
         try:
-            self._commit_surface_style(self._surface_style.copy())
+            self._commit_surface_style(self._surface_presentation.style.copy())
         except Exception:
             if not self._closed:
                 self._restore_surface_transaction(snapshot)
@@ -884,7 +941,7 @@ class AtlasViewer:
         try:
             self.selection_presentation = mode
             self._surface_state.invalidate()
-            self._last_surface_emphasis = None
+            self._surface_presentation.last_emphasis = None
             self._update_surface_emphasis()
             self._clear_surface_hover()
         except Exception:
@@ -975,11 +1032,11 @@ class AtlasViewer:
         # A whole reference envelope has no signed presentations. Hide it for
         # side filtering or explosion rather than show misleading context.
         visible = (
-            self._surface_visible
+            self._surface_presentation.visible
             and self.selection_presentation == 'focus'
             and bool(self._selected_region_ids)
             and self.explode == 0
-            and all(self._surface_style.hemispheres.values())
+            and all(self._surface_presentation.style.hemispheres.values())
         )
         if (
             self._selection_envelope_visual is not None
@@ -997,7 +1054,7 @@ class AtlasViewer:
         """Show/hide signed mapped faces; optional hemisphere expands an absolute ID."""
         self._require_open()
         self._invalidate_picking()
-        candidate = self._surface_style.copy()
+        candidate = self._surface_presentation.style.copy()
         candidate.set_region(self.mapping, region_id, hemisphere=hemisphere, visible=visible)
         self._commit_surface_style(candidate)
 
@@ -1011,11 +1068,11 @@ class AtlasViewer:
         try:
             self._check(
                 self.dvz.dvz_visual_set_visible(
-                    self.mesh, bool(visible) and bool(np.any(self._surface_face_mask))
+                    self.mesh, bool(visible) and bool(np.any(self._surface_presentation.face_mask))
                 ),
                 'surface visibility',
             )
-            self._surface_visible = bool(visible)
+            self._surface_presentation.visible = bool(visible)
             self._update_selection_envelope_visibility()
             self._update_anatomical_context()
             if not visible:
@@ -1030,7 +1087,7 @@ class AtlasViewer:
         self._invalidate_picking()
         if not np.isfinite(opacity) or not 0 <= opacity <= 1:
             raise ValueError('surface opacity must be finite and between zero and one')
-        self._commit_surface_style(self._surface_style.copy(), opacity=float(opacity))
+        self._commit_surface_style(self._surface_presentation.style.copy(), opacity=float(opacity))
 
     def reset_surface_style(self):
         """Reset all region overrides and show both hemispheres, retaining the camera."""
@@ -1050,7 +1107,7 @@ class AtlasViewer:
         """Override 3-D region RGB(A); scientific values and table colors stay intact."""
         self._require_open()
         self._invalidate_picking()
-        candidate = self._surface_style.copy()
+        candidate = self._surface_presentation.style.copy()
         candidate.set_region(self.mapping, region_id, hemisphere=hemisphere, color=color)
         self._commit_surface_style(candidate)
 
@@ -1058,7 +1115,7 @@ class AtlasViewer:
         """Multiply authored region alpha, preserving it through hover/selection."""
         self._require_open()
         self._invalidate_picking()
-        candidate = self._surface_style.copy()
+        candidate = self._surface_presentation.style.copy()
         candidate.set_region(self.mapping, region_id, hemisphere=hemisphere, opacity=opacity)
         self._commit_surface_style(candidate)
 
@@ -1066,7 +1123,7 @@ class AtlasViewer:
         """Reset region overrides in the current mapping, preserving hemisphere controls."""
         self._require_open()
         self._invalidate_picking()
-        candidate = self._surface_style.copy()
+        candidate = self._surface_presentation.style.copy()
         candidate.reset_region(self.mapping, region_id, hemisphere=hemisphere)
         self._commit_surface_style(candidate)
 
@@ -1074,7 +1131,7 @@ class AtlasViewer:
         """Filter source-bound left/right presentations without changing the atlas mesh."""
         self._require_open()
         self._invalidate_picking()
-        candidate = self._surface_style.copy()
+        candidate = self._surface_presentation.style.copy()
         candidate.set_hemisphere_visible(hemisphere, visible)
         self._commit_surface_style(candidate)
 
@@ -1084,14 +1141,16 @@ class AtlasViewer:
         self._invalidate_picking()
         if hemisphere not in ('left', 'right', 'both'):
             raise ValueError('hemisphere must be left, right or both')
-        candidate = self._surface_style.copy()
+        candidate = self._surface_presentation.style.copy()
         for side in ('left', 'right'):
             candidate.set_hemisphere_visible(side, hemisphere in ('both', side))
         self._commit_surface_style(candidate)
 
     def visible_region_ids(self):
         """Return signed IDs with visible faces in the current mapping."""
-        ids = self._surface_mesh.face_mapping_ids(self.mapping)[self._surface_face_mask]
+        ids = self._surface_mesh.face_mapping_ids(self.mapping)[
+            self._surface_presentation.face_mask
+        ]
         return tuple(int(value) for value in np.unique(ids) if value)
 
     def set_explode(self, amount: float) -> None:
@@ -1130,7 +1189,7 @@ class AtlasViewer:
                 raise RuntimeError('explode rollback failed; viewer closed') from error
             raise
 
-    def set_mapping(
+    def _set_surface_mapping(
         self, mapping: str, palette: Mapping[int, Sequence[int]] | None = None
     ) -> None:
         """Change presentation colors and link identity transactionally."""
@@ -1151,7 +1210,7 @@ class AtlasViewer:
                 'mapping color update',
             )
             self.mapping, self.palette, self.tree_model = mapping, effective_palette, model
-            self._surface_face_mask = mask
+            self._surface_presentation.face_mask = mask
             self._selected_region_ids = self._hovered_region_ids = self._highlight_region_ids = ()
             self._invalidate_surface_emphasis_cache(surface_colors)
             self._update_surface_alpha_mode()
@@ -1159,18 +1218,8 @@ class AtlasViewer:
             if self.region_tree is not None:
                 widgets.append('region_tree')
                 self._replace_region_tree()
-            if self.probe_data is not None:
-                mapped_ids = self._mapped_probe_region_ids()
-                self._check(
-                    self.dvz.dvz_visual_set_link_keys(
-                        self.probe_sites, self.link_channel, mapped_ids.view(np.uint64)
-                    ),
-                    'probe site mapping link keys',
-                )
-                if self._probe_upload is not None:
-                    keys = np.array(mapped_ids.view(np.uint64), copy=True)
-                    keys.setflags(write=False)
-                    self._probe_upload = self._probe_upload._replace(keys=keys)
+            if self._probe_presentation.data is not None:
+                self._probe_presentation.update_mapping()
                 if self.probe_table is not None:
                     widgets.append('probe_table')
                     self._replace_probe_table()
@@ -1246,35 +1295,14 @@ class AtlasViewer:
             color = by_region.get(mapped_id)
             if color is not None:
                 lookup[presentation['presentation_id']] = color
-        return self._surface_style.apply_presentations(
+        return self._surface_presentation.style.apply_presentations(
             mapping,
             lookup,
             alpha_scale=opacity,
         )
 
-    def set_region_data(
-        self,
-        data: AtlasRegionValues,
-        *,
-        value_range: tuple[float, float] | None = None,
-        color_scheme: Literal['diverging', 'sequential'] = 'sequential',
-        opacity: float | None = None,
-        mapping_reduction: Literal['weighted_mean'],
-    ) -> None:
-        """Color surfaces, explicitly reducing mapping collisions by weighted mean."""
-        registry = getattr(self, '_regional_quantities', None)
-        if registry is not None and registry.handle is not None:
-            raise ValueError('an owned regional quantity is attached; remove it first')
-        self._set_owned_region_data(
-            data,
-            value_range=value_range,
-            color_scheme=color_scheme,
-            opacity=opacity,
-            mapping_reduction=mapping_reduction,
-        )
-
     def _set_owned_region_data(
-        self, data, *, value_range, color_scheme, opacity, mapping_reduction
+        self, data, *, value_range=None, color_scheme='sequential', opacity=None, mapping_reduction
     ):
         """Reuse one scalar transaction, including restoring canonical anatomy."""
         self._require_open()
@@ -1307,7 +1335,7 @@ class AtlasViewer:
                 self.dvz.dvz_visual_set_data(self.mesh, 'color', surface_colors),
                 'region scalar color update',
             )
-            self._surface_face_mask = mask
+            self._surface_presentation.face_mask = mask
             self._highlight_region_ids = ()
             self._invalidate_surface_emphasis_cache(surface_colors)
             self._update_surface_alpha_mode()
@@ -1346,7 +1374,7 @@ class AtlasViewer:
                 'canonical anatomy color restore',
             )
             self._invalidate_surface_emphasis_cache(colors)
-            self._last_surface_emphasis = None
+            self._surface_presentation.last_emphasis = None
             self._update_surface_emphasis()
             if self.gui is not None:
                 widgets.append('region_table')
@@ -1423,259 +1451,6 @@ class AtlasViewer:
             )
         return self._insertions
 
-    def set_insertion(self, insertion_id, points_um, *, color=(255, 205, 72, 255), width_px=4.0):
-        """Add/replace an independently identified opaque trajectory in world micrometres."""
-        self._insertion_collection().set_insertion(
-            insertion_id, points_um, color=color, width_px=width_px
-        )
-
-    def set_insertion_color(self, insertion_id, color):
-        """Change one trajectory's opaque RGB(A) color."""
-        self._insertion_collection().set_color(insertion_id, color)
-
-    def set_insertion_width(self, insertion_id, width_px):
-        """Change one trajectory's stroke width in pixels."""
-        self._insertion_collection().set_width(insertion_id, width_px)
-
-    def set_insertion_visible(self, insertion_id, visible):
-        """Show/hide one insertion, independently of atlas visibility and selection."""
-        self._insertion_collection().set_visible(insertion_id, visible)
-
-    def remove_insertion(self, insertion_id):
-        """Remove one insertion and its native path, preserving unrelated trajectories."""
-        self._insertion_collection().remove(insertion_id)
-
-    @property
-    def insertion_ids(self):
-        """Return independent insertion identities in insertion order."""
-        self._require_open()
-        return () if self._insertions is None else self._insertions.ids
-
-    def set_probe(
-        self,
-        points_um: Sequence[Sequence[float]],
-        *,
-        color: Sequence[int] = (255, 205, 72, 255),
-        width_px: float = 4.0,
-    ) -> None:
-        """Add or replace a probe trajectory in atlas world micrometres."""
-        self._require_open()
-        self._invalidate_picking()
-        positions = self.mesh_data.normalize_points(points_um)
-        if len(positions) < 2:
-            raise ValueError('a probe path needs at least two points')
-        if not np.isfinite(width_px) or width_px <= 0:
-            raise ValueError('probe width must be finite and positive')
-        raw_color = np.asarray(color)
-        if (
-            raw_color.shape not in ((3,), (4,))
-            or not np.issubdtype(raw_color.dtype, np.integer)
-            or np.any(raw_color < 0)
-            or np.any(raw_color > 255)
-        ):
-            raise ValueError('probe color must contain three or four 8-bit integer channels')
-        rgba = tuple(int(channel) for channel in raw_color)
-        if len(rgba) == 3:
-            rgba += (255,)
-        colors = np.tile(np.asarray(rgba, dtype=np.uint8), (len(positions), 1))
-        widths = np.full(len(positions), width_px, dtype=np.float32)
-        probe = self.probe
-        if probe is None:
-            probe = self._probe_pending
-            if probe is None:
-                probe = self.dvz.dvz_path(self.scene, 0)
-                if not probe:
-                    raise RuntimeError('dvz_path() failed')
-                self._probe_pending = probe
-            self._check(
-                self.dvz.dvz_path_set_caps(
-                    probe, self.dvz.DVZ_SEGMENT_CAP_ROUND, self.dvz.DVZ_SEGMENT_CAP_ROUND
-                ),
-                'probe caps',
-            )
-            self._check(
-                self.dvz.dvz_path_set_join(probe, self.dvz.DVZ_PATH_JOIN_ROUND, 4.0),
-                'probe join',
-            )
-        self._check(
-            self.dvz.dvz_visual_set_data_many(
-                probe,
-                {'position': positions, 'color': colors, 'stroke_width_px': widths},
-            ),
-            'probe upload',
-        )
-        if self.probe is None:
-            self._check(self.dvz.dvz_panel_add_visual(self.panel, probe, None), 'probe attach')
-        self.probe = probe
-        self._probe_pending = None
-
-    def set_probe_sites(
-        self,
-        points_um: Sequence[Sequence[float]],
-        *,
-        values: Sequence[float] | None = None,
-        colors: Sequence[Sequence[int]] | None = None,
-        value_range: tuple[float, float] | None = None,
-        radius_um: float = 45.0,
-        color_scheme: Literal['diverging', 'sequential'] = 'diverging',
-    ) -> None:
-        """Replace sites and clear any typed payload and its linked table on success."""
-        self._upload_probe_sites(
-            points_um,
-            values=values,
-            colors=colors,
-            value_range=value_range,
-            radius_um=radius_um,
-            color_scheme=color_scheme,
-        )
-        self.probe_data = None
-        self._probe_colors = None
-        self._replace_probe_table()
-
-    def _upload_probe_sites(
-        self,
-        points_um,
-        *,
-        values=None,
-        colors=None,
-        value_range=None,
-        radius_um=45.0,
-        color_scheme='diverging',
-        mapped_ids=None,
-    ) -> None:
-        """Validate and upload geometry and link identity before committing typed state."""
-        self._require_open()
-        positions = self.mesh_data.normalize_points(points_um)
-        count = len(positions)
-        if not np.isfinite(radius_um) or radius_um <= 0:
-            raise ValueError('probe site radius must be finite and positive')
-        if values is not None and colors is not None:
-            raise ValueError('provide probe values or colors, not both')
-
-        if colors is not None:
-            raw_colors = np.asarray(colors)
-            if (
-                raw_colors.ndim != 2
-                or raw_colors.shape[0] != count
-                or raw_colors.shape[1] not in (3, 4)
-                or not np.issubdtype(raw_colors.dtype, np.integer)
-                or np.any(raw_colors < 0)
-                or np.any(raw_colors > 255)
-            ):
-                raise ValueError('probe colors must have shape (n, 3) or (n, 4)')
-            rgba = np.asarray(raw_colors, dtype=np.uint8)
-            if rgba.shape[1] == 3:
-                rgba = np.column_stack((rgba, np.full(count, 255, dtype=np.uint8)))
-            rgba = np.ascontiguousarray(rgba, dtype=np.uint8)
-        elif values is not None:
-            scalar = np.asarray(values, dtype=np.float64)
-            if scalar.shape != (count,) or np.isinf(scalar).any():
-                raise ValueError('probe values must have shape (n,) and contain no infinities')
-            rgba = self._probe_value_colors(scalar, value_range, color_scheme)
-        else:
-            rgba = np.tile(np.asarray((255, 205, 72, 255), dtype=np.uint8), (count, 1))
-
-        radii = np.full(count, radius_um * self.mesh_data.display_scale, dtype=np.float32)
-        keys = (
-            np.zeros(count, dtype=np.uint64) if mapped_ids is None else mapped_ids.view(np.uint64)
-        )
-        snapshot = ProbeUpload(
-            *(np.array(array, order='C', copy=True) for array in (positions, rgba, radii, keys))
-        )
-        for array in snapshot:
-            array.setflags(write=False)
-        self._commit_probe_upload(snapshot)
-
-    def _commit_probe_upload(self, snapshot: ProbeUpload) -> None:
-        """Commit geometry and identities, restoring the prior snapshot on failure."""
-        previous = self._probe_upload
-        visual = self.probe_sites
-        if visual is None:
-            visual = self._probe_sites_pending
-            if visual is None:
-                visual = self.dvz.dvz_sphere(self.scene, 0)
-                if not visual:
-                    raise RuntimeError('dvz_sphere() failed')
-                # Scene owns the candidate even if a setter or attachment fails.
-                self._probe_sites_pending = visual
-        try:
-            self._check(
-                self.dvz.dvz_visual_set_data_many(visual, snapshot.attributes()),
-                'probe sites upload',
-            )
-            self._check(
-                self.dvz.dvz_visual_set_link_keys(visual, self.link_channel, snapshot.keys),
-                'probe site link keys',
-            )
-            if self.probe_sites is None:
-                self._check(
-                    self.dvz.dvz_panel_add_visual(self.panel, visual, None),
-                    'probe sites attach',
-                )
-        except Exception as error:
-            if previous is not None:
-                try:
-                    self._check(
-                        self.dvz.dvz_visual_set_data_many(visual, previous.attributes()),
-                        'probe sites geometry rollback',
-                    )
-                    self._check(
-                        self.dvz.dvz_visual_set_link_keys(
-                            visual, self.link_channel, previous.keys
-                        ),
-                        'probe sites identity rollback',
-                    )
-                except Exception:
-                    self.close()
-                    raise RuntimeError('probe sites rollback failed; viewer closed') from error
-            raise
-        self.probe_sites = visual
-        self._probe_sites_pending = None
-        self._probe_upload = snapshot
-
-    def set_probe_data(
-        self,
-        data: ProbeSites,
-        *,
-        value_range: tuple[float, float] | None = None,
-        radius_um: float = 45.0,
-        color_scheme: Literal['diverging', 'sequential'] = 'diverging',
-    ) -> None:
-        """Display a typed probe payload and link its Allen labels to atlas presentation."""
-        self._require_open()
-        self._invalidate_picking()
-        if self.catalog is None:
-            raise ValueError('linked probe data requires an atlas region catalog')
-        mapped_ids = self._mapped_probe_region_ids(data)
-        colors = self._probe_value_colors(data.values, value_range, color_scheme)
-        self._upload_probe_sites(
-            data.positions_um, colors=colors, radius_um=radius_um, mapped_ids=mapped_ids
-        )
-        self.probe_data = data
-        self._probe_colors = colors
-        if self.gui is not None:
-            self._replace_probe_table()
-
-    def _mapped_probe_region_ids(self, data: ProbeSites | None = None) -> NDArray[np.int64]:
-        payload = self.probe_data if data is None else data
-        if payload is None or self.catalog is None:
-            return np.empty(0, dtype=np.int64)
-        try:
-            mapped = self.catalog.map_allen_ids(payload.allen_region_ids, self.mapping)
-        except KeyError as error:
-            raise ValueError(str(error)) from error
-        return np.ascontiguousarray(
-            [0 if region_id is None else region_id for region_id in mapped], dtype=np.int64
-        )
-
-    @staticmethod
-    def _probe_value_colors(
-        values: NDArray[np.float64],
-        value_range: tuple[float, float] | None,
-        color_scheme: Literal['diverging', 'sequential'] = 'diverging',
-    ) -> NDArray[np.uint8]:
-        return scalar_colors(values, value_range, color_scheme)
-
     def selected_region_ids(self) -> tuple[int, ...]:
         """Return the authoritative signed region selection."""
         return self._selected_region_ids
@@ -1708,9 +1483,10 @@ class AtlasViewer:
             if hover and self.dvz.dvz_hover_copy(hover, ctypes.byref(item)):
                 self._check(self.dvz.dvz_hover_clear(hover), 'surface hover clear')
         self._set_hovered_region_ids(())
-        self._hovered_region_label = None
+        if self._linked is not None:
+            self._linked._hovered_region_label = None
 
-    def _set_hovered_region_ids(self, region_ids: Sequence[int]) -> bool:
+    def _set_surface_hovered_region_ids(self, region_ids: Sequence[int]) -> bool:
         """Set transient hover emphasis without changing committed selection."""
         if not self.enable_hover:
             region_ids = ()
@@ -1721,7 +1497,7 @@ class AtlasViewer:
         self._update_surface_emphasis()
         return True
 
-    def _sync_viewport_hover(self, hovered: bool) -> None:
+    def _sync_surface_viewport_hover(self, hovered: bool) -> None:
         """Synchronize transient hover from a plain 3-D viewport."""
         if hovered:
             self._set_hovered_region_ids(self._mesh_hovered_region_ids())
@@ -1784,28 +1560,30 @@ class AtlasViewer:
 
     def _replace_probe_table(self) -> None:
         self._close_gui_widget('probe_table', 'table')
-        data = self.probe_data
+        data = self._probe_presentation.data
         if data is None:
             return
-        mapped_ids = self._mapped_probe_region_ids()
+        mapped_ids = self._probe_presentation.mapped_region_ids()
         labels = tuple(
             self.tree_model.describe(region_id) if self.tree_model else str(region_id)
             for region_id in mapped_ids
         )
         self._retain_gui_widget(
             'probe_table',
-            create_probe_table(self.dvz, data, mapped_ids, labels, self._probe_colors),
+            create_probe_table(
+                self.dvz, data, mapped_ids, labels, self._probe_presentation.colors
+            ),
         )
         self._set_probe_table_selection(self._selected_region_ids)
 
     def _probe_table_selected_region_ids(self) -> tuple[int, ...]:
-        if self.probe_table is None or self.probe_data is None:
+        if self.probe_table is None or self._probe_presentation.data is None:
             return ()
         widget = self._gui_widgets['probe_table']
         return probe_selected_ids(widget.rows.keys, widget.rows.region_ids, widget.selected_keys())
 
     def _set_probe_table_selection(self, region_ids: Sequence[int]) -> None:
-        if self.probe_table is None or self.probe_data is None:
+        if self.probe_table is None or self._probe_presentation.data is None:
             return
         logical_ids = (
             self.tree_model.expanded_logical_ids(tuple(region_ids))
@@ -1920,69 +1698,10 @@ class AtlasViewer:
                 self.close()
 
     def _draw_gui_frame(self, gui) -> None:
-        """Draw one GUI frame with balanced native window and child scopes."""
-        self._process_gui_frame()
-        self._dock_gui_windows(gui)
-        # Dear ImGui NoScrollbar | NoScrollWithMouse: child panes own scrolling.
-        visible = self.dvz.dvz_gui_begin(gui, b'Regions', None, (1 << 3) | (1 << 4))
-        try:
-            if visible:
-                self._draw_sidebar_gui(gui)
-        finally:
-            self.dvz.dvz_gui_end(gui)
-        if self.viewport is not None:
-            # Reopening the same ImGui window appends the image below this toolbar.
-            visible = self.dvz.dvz_gui_begin(gui, b'3D atlas', None, 0)
-            try:
-                if visible:
-                    self._draw_viewport_toolbar_gui(gui)
-            finally:
-                self.dvz.dvz_gui_end(gui)
-            self.dvz.dvz_gui_viewport_window(self.viewport, b'3D atlas', None, 0)
-            hovered = ctypes.c_bool()
-            mouse_pos = (ctypes.c_float * 2)()
-            viewport_size = (ctypes.c_float * 2)()
-            if self.dvz.dvz_gui_viewport_mouse(
-                self.viewport, mouse_pos, viewport_size, ctypes.byref(hovered)
-            ):
-                self._sync_viewport_hover(bool(hovered.value))
-            if hovered.value and getattr(self, '_hovered_region_label', None):
-                self.dvz.dvz_gui_tooltip(gui, self._hovered_region_label.encode())
-
-        self._draw_auxiliary_gui(gui)
-        self._draw_scientific_layers_gui(gui)
-        if getattr(self, 'tables', None) is not None:
-            self.tables.draw(gui)
+        self._window.draw_frame(gui)
 
     def _dock_gui_windows(self, gui) -> None:
-        """Split sidebars before the central observation dock, preserving user moves."""
-        self.dvz.dvz_gui_dock_window_once(
-            gui,
-            b'Regions',
-            self.dvz.DVZ_GUI_DOCK_SLOT_LEFT,
-            self.sidebar_width * self.ui_scale,
-        )
-        registry = getattr(self, '_regional_quantities', None)
-        quantity = registry.handle if registry is not None else None
-        if self.layers or quantity is not None:
-            self.dvz.dvz_gui_dock_window_once(
-                gui,
-                b'Layers',
-                self.dvz.DVZ_GUI_DOCK_SLOT_RIGHT,
-                340 * self.ui_scale,
-            )
-        tables = getattr(self, 'tables', None)
-        if tables is not None and tables.visible:
-            self.dvz.dvz_gui_dock_window_once(
-                gui,
-                b'Observations',
-                self.dvz.DVZ_GUI_DOCK_SLOT_BOTTOM,
-                280 * self.ui_scale,
-            )
-        if self.viewport is not None:
-            self.dvz.dvz_gui_dock_window_once(
-                gui, b'3D atlas', self.dvz.DVZ_GUI_DOCK_SLOT_CENTER, 0.0
-            )
+        self._window.dock_windows(gui)
 
     def _draw_sidebar_gui(self, gui) -> None:
         """Keep the browser permanent; scene controls live in an ordinary window."""
@@ -2035,6 +1754,8 @@ class AtlasViewer:
 
     def _region_list_intent(self, effect, candidate):
         """Handle optional navigation only after a successful selection commit."""
+        if self._linked is not None:
+            self._linked._region_list_intent(effect, candidate)
 
     def _restore_sidebar_feedback(self):
         """Restore retained widgets after a partially failing frame update."""
@@ -2078,6 +1799,9 @@ class AtlasViewer:
             ):
                 self.set_selection_presentation(modes[current.value])
 
+        if self._linked is not None:
+            self._linked._draw_viewport_toolbar_gui(gui)
+
     def _draw_scientific_layers_gui(self, gui):
         from .layer_gui import draw_layers_gui  # noqa: PLC0415 - independent GUI adapter.
 
@@ -2092,9 +1816,13 @@ class AtlasViewer:
             self.dvz, 'dvz_scene_poll_query'
         ):
             self.native_query_results = self.picking.poll()
+        if self._linked is not None:
+            self._linked._process_gui_frame()
 
     def _draw_extra_gui(self, _gui) -> None:
-        """Draw optional controls supplied by specialized viewers."""
+        """Draw optional linked slice controls."""
+        if self._linked is not None:
+            self._linked._draw_extra_gui(_gui)
 
     def _draw_data_tables_gui(self, gui):
         """Draw retained tables in a separate window without consuming browser space."""
@@ -2145,7 +1873,7 @@ class AtlasViewer:
         keys = tree_selection_keys(region_ids, self._gui_widgets['region_tree'].rows.region_ids)
         self._gui_widgets['region_tree'].set_selection(keys, 'atlas ontology selection sync')
 
-    def _apply_selected_region_ids(
+    def _apply_surface_selected_region_ids(
         self,
         region_ids: tuple[int, ...],
         *,
@@ -2199,9 +1927,9 @@ class AtlasViewer:
             or self._selection_face_state is not None
         ) and face_state != self._selection_face_state:
             mask = self._visible_surface_faces(self.mapping)
-            if not np.array_equal(mask, self._surface_face_mask):
+            if not np.array_equal(mask, self._surface_presentation.face_mask):
                 self._upload_surface_faces(mask, self.mapping)
-                self._surface_face_mask = mask
+                self._surface_presentation.face_mask = mask
             self._selection_face_state = face_state
         self._update_selection_envelope_visibility()
         selected_ids = (
@@ -2222,12 +1950,12 @@ class AtlasViewer:
             selected_ids = self._signed_focus_ids()
             hovered_ids = self._signed_focus_ids(self._hovered_region_ids)
         state = (selected_ids, hovered_ids, self.selection_presentation)
-        if state == self._last_surface_emphasis:
+        if state == self._surface_presentation.last_emphasis:
             return
         if (
-            self._last_surface_emphasis is None
-            or self._last_surface_emphasis[0] != selected_ids
-            or self._last_surface_emphasis[2] != self.selection_presentation
+            self._surface_presentation.last_emphasis is None
+            or self._surface_presentation.last_emphasis[0] != selected_ids
+            or self._surface_presentation.last_emphasis[2] != self.selection_presentation
         ):
             self._update_surface_alpha_mode()
         self._surface_state.update(
@@ -2240,46 +1968,46 @@ class AtlasViewer:
             ),
         )
         self._highlight_region_ids = selected_ids
-        self._last_surface_emphasis = state
+        self._surface_presentation.last_emphasis = state
 
-    def _update_surface_alpha_mode(self) -> None:
+    def _update_surface_alpha_mode_base(self) -> None:
         """Honor effective palette, regional and selection alpha in native mode."""
         mode = (
             self.dvz.DVZ_ALPHA_WBOIT
             if self._surface_is_translucent()
             else self.dvz.DVZ_ALPHA_OPAQUE
         )
-        if mode == self._surface_alpha_mode:
+        if mode == self._surface_presentation.alpha_mode:
             return
         self._check(
             self.dvz.dvz_visual_set_alpha_mode(self.mesh, mode),
             'surface transparency mode',
         )
-        self._surface_alpha_mode = mode
+        self._surface_presentation.alpha_mode = mode
 
     def _surface_is_translucent(self):
-        if self._surface_base_colors_cache is None:
+        if self._surface_presentation.base_colors is None:
             self._invalidate_surface_emphasis_cache(self._display_surface_colors())
         if self.anatomy_presentation == 'major' or self.selection_presentation != 'legacy':
             vertices = np.unique(
-                self._surface_mesh.indices.reshape(-1, 3)[self._surface_face_mask]
+                self._surface_mesh.indices.reshape(-1, 3)[self._surface_presentation.face_mask]
             )
-            return bool(np.any(self._surface_base_colors_cache[vertices, 3] < 255))
+            return bool(np.any(self._surface_presentation.base_colors[vertices, 3] < 255))
         return (
             self.surface_opacity < 1
             or bool(self._selected_region_ids)
-            or self._surface_base_is_translucent
+            or self._surface_presentation.base_is_translucent
         )
 
     def _invalidate_surface_emphasis_cache(
         self, base_colors: NDArray[np.uint8] | None = None
     ) -> None:
         """Invalidate derived surface styling after canonical color or mapping changes."""
-        self._surface_base_colors_cache = base_colors
-        self._surface_base_is_translucent = (
+        self._surface_presentation.base_colors = base_colors
+        self._surface_presentation.base_is_translucent = (
             bool(np.any(base_colors[:, 3] < 255)) if base_colors is not None else False
         )
-        self._last_surface_emphasis = None
+        self._surface_presentation.last_emphasis = None
 
     def _sync_selection_highlight(
         self,
@@ -2389,136 +2117,20 @@ class AtlasViewer:
         if hasattr(self, 'selection'):
             self.selection._publish('regions')
 
-    def _restore_selection_feedback(self):
+    def _restore_surface_selection_feedback(self):
         """Force restored physical selection and hover back into presentation."""
         # A failed setter can mutate native pixels before reporting failure.
-        self._last_surface_emphasis = None
+        self._surface_presentation.last_emphasis = None
         self._surface_state.invalidate()
         self._update_surface_emphasis()
 
     def _create_window_view(self, figure, title):
-        if not self.fit_workarea:
-            return self.dvz.dvz_view_window(
-                self.app, figure, self.width, self.height, title.encode()
-            )
-        descriptor = self.dvz.dvz_view_desc(self.dvz.DVZ_VIEW_WINDOW)
-        descriptor.size_policy = self.dvz.DVZ_VIEW_SIZE_HOST_LOGICAL_PX
-        descriptor.size_width = self.width
-        descriptor.size_height = self.height
-        descriptor.title = title.encode()
-        descriptor.fit_workarea = True
-        return self.dvz.dvz_view(self.app, figure, ctypes.byref(descriptor))
+        return self._window.create_window(figure, title)
 
     def _create_view(self, *, offscreen: bool, title: str) -> None:  # noqa: PLR0912, PLR0915
-        if self.app is not None:
-            raise RuntimeError('viewer already has an active app')
-        if not offscreen and self.catalog is not None:
-            app_config = self.dvz.dvz_app_config()
-            app_config.font_ui_size_px = 18.0
-            self.app = self.dvz.dvz_app_with_config(self.scene, ctypes.byref(app_config))
-        else:
-            self.app = self.dvz.dvz_app(self.scene)
-        if not self.app:
-            raise RuntimeError('dvz_app() failed')
-        # Image-plane pan keeps overlapping translucent anatomy under the cursor at every depth.
-        # The pinned baseline predates this optional native policy.
-        arcball_descriptor = None
-        if hasattr(self.dvz, 'DVZ_ARCBALL_FLAGS_SCREEN_PAN'):
-            arcball_descriptor = self.dvz.dvz_arcball_desc()
-            arcball_descriptor.controller_flags |= self.dvz.DVZ_ARCBALL_FLAGS_SCREEN_PAN
-            if hasattr(self.dvz, 'DVZ_ARCBALL_FLAGS_PROJECTION_ZOOM'):
-                arcball_descriptor.controller_flags |= self.dvz.DVZ_ARCBALL_FLAGS_PROJECTION_ZOOM
-            if hasattr(self.dvz, 'DVZ_ARCBALL_FLAGS_ADAPTIVE_ORBIT'):
-                arcball_descriptor.controller_flags |= self.dvz.DVZ_ARCBALL_FLAGS_ADAPTIVE_ORBIT
-        arcball_config = (
-            ctypes.byref(arcball_descriptor) if arcball_descriptor is not None else None
-        )
-        if offscreen:
-            self.view = self.dvz.dvz_view_offscreen(self.app, self.figure, self.width, self.height)
-            if not self.view:
-                raise RuntimeError('Datoviz view creation failed')
-            self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, arcball_config)
-        elif self.catalog is None:
-            self.view = self._create_window_view(self.figure, title)
-            if not self.view:
-                raise RuntimeError('Datoviz view creation failed')
-            self.arcball = self.dvz.dvz_view_arcball(self.view, self.panel, arcball_config)
-        else:
-            self.host_figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
-            if not self.host_figure:
-                raise RuntimeError('Datoviz host figure creation failed')
-            host_panel = self.dvz.dvz_panel_full(self.host_figure)
-            if not host_panel:
-                raise RuntimeError('Datoviz host panel creation failed')
-            self.dvz.dvz_panel_set_background_color(host_panel, self.dvz.DvzColor(24, 27, 32, 255))
-            self.view = self._create_window_view(self.host_figure, title)
-        if not self.view:
-            raise RuntimeError('Datoviz view creation failed')
-        self._check(
-            self.dvz.dvz_view_set_user_scale(self.view, self.ui_scale),
-            'view user scale',
-        )
-        if not offscreen and self.catalog is not None:
-            if not hasattr(self.dvz, 'dvz_hover_copy'):
-                raise RuntimeError(
-                    'interactive atlas hover requires current Datoviz v0.4 Python bindings; '
-                    'put the Datoviz source checkout on PYTHONPATH when using a development '
-                    'libdatoviz build'
-                )
-            self._replace_region_tree()
-            if self.probe_data is not None:
-                self._replace_probe_table()
-            if self.region_data is not None:
-                self._replace_region_table()
-            config = self.dvz.dvz_gui_config()
-            config.gui_flags = (
-                self.dvz.DVZ_GUI_FLAGS_DOCKING
-                | self.dvz.DVZ_GUI_FLAGS_DOCKSPACE
-                | self.dvz.DVZ_GUI_FLAGS_NAV_KEYBOARD
-            )
-            config.default_window_width = 430
-            self.gui = self.dvz.dvz_view_gui(self.view, ctypes.byref(config))
-            if not self.gui:
-                raise RuntimeError('dvz_view_gui() failed')
-            viewport_config = self.dvz.dvz_gui_viewport_config()
-            viewport_config.viewport_flags = self.dvz.DVZ_GUI_VIEWPORT_FLAGS_FORWARD_INPUT
-            self.viewport = self.dvz.dvz_gui_viewport(
-                self.gui, self.figure, ctypes.byref(viewport_config)
-            )
-            if not self.viewport:
-                raise RuntimeError('dvz_gui_viewport() failed')
-            if self.interaction is not None:
-                router = self.dvz.dvz_gui_viewport_input(self.viewport)
-                if not router:
-                    raise RuntimeError('dvz_gui_viewport_input() failed')
-                self._viewport_input = ViewportInputAdapter(self, router)
-                self._viewport_input.subscribe()
-            self.arcball_controller = self.dvz.dvz_arcball(self.scene, arcball_config)
-            if not self.arcball_controller:
-                raise RuntimeError('dvz_arcball() failed')
-            self.arcball = self.dvz.dvz_controller_arcball(self.arcball_controller)
-            if not self.arcball:
-                raise RuntimeError('dvz_controller_arcball() failed')
-            self._check(
-                self.dvz.dvz_panel_bind_controller(
-                    self.panel, self.arcball_controller, self.dvz.DVZ_DIM_MASK_XYZ
-                ),
-                'arcball panel binding',
-            )
-            self._check(
-                self.dvz.dvz_panel_connect_input(
-                    self.panel, self.dvz.dvz_gui_viewport_input(self.viewport)
-                ),
-                'embedded viewport input connection',
-            )
-            self._check(
-                self.dvz.dvz_view_set_gui_callback(self.view, self._gui_callback, None),
-                'atlas GUI callback',
-            )
-        if not self.arcball:
-            raise RuntimeError('dvz arcball creation failed')
-        angles = (ctypes.c_float * 3)(*self.camera_angles)
-        self._check(self.dvz.dvz_arcball_initial(self.arcball, angles), 'arcball setup')
+        self._window.create_view(offscreen=offscreen, title=title)
+        if self._linked is not None:
+            self._linked.attach_input(offscreen=offscreen)
 
     def render_offscreen(self, output: str | Path | None = None) -> NDArray[np.uint8]:
         """Render exactly one frame and return a copied RGBA image."""
@@ -2575,7 +2187,7 @@ class AtlasViewer:
         if getattr(getattr(self, 'slices', None), '_notifying', False):
             raise RuntimeError('cursor callbacks cannot mutate the viewer reentrantly')
 
-    def close(self) -> None:  # noqa: PLR0912 - explicit native teardown order.
+    def close(self) -> None:  # noqa: PLR0912, PLR0915 - explicit native teardown order.
         """Release scientific layers, then destroy app and scene."""
         if not hasattr(self, '_closed'):
             return  # Base validation has not created native state.
@@ -2588,6 +2200,8 @@ class AtlasViewer:
                 self.dvz.dvz_app_stop(self.app)
             return
         datoviz = getattr(self, 'dvz', None)
+        if self._linked is not None:
+            self._linked.close()
         if getattr(self, 'slices', None) is not None:
             self.slices._close()
         if getattr(self, 'tables', None) is not None:

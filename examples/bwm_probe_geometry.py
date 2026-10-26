@@ -30,8 +30,10 @@ def main() -> int:
         surface_opacity=0.16,
         camera_angles=BWM_CAMERA_ANGLES,
     ) as viewer:
-        viewer.set_probe((sites.positions_um[0], sites.positions_um[-1]), width_px=2)
-        viewer.set_probe_sites(sites.positions_um, radius_um=85)
+        viewer._probe_presentation.set_path(
+            (sites.positions_um[0], sites.positions_um[-1]), width_px=2
+        )
+        viewer._probe_presentation.set_sites(sites.positions_um, radius_um=85)
         if args.offscreen:
             rgba = viewer.render_offscreen(args.offscreen)
             print(f'wrote {args.offscreen} ({rgba.shape[1]}x{rgba.shape[0]})')

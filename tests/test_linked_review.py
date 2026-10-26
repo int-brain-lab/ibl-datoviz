@@ -13,7 +13,9 @@ import pytest
 
 from examples import linked_atlas_review as review
 from ibl_anatomy import open_volume_pack
-from ibl_datoviz import AtlasCursor, AtlasMesh, LinkedAtlasNavigator
+from ibl_datoviz import AtlasMesh, AtlasViewer
+from ibl_datoviz.components import AtlasCursor
+from ibl_datoviz.linked_atlas import LinkedSlices
 from tests import FIXTURES
 from tests.test_atlas import FakeDatoviz
 
@@ -54,26 +56,34 @@ class ReviewDatoviz(FakeDatoviz):
 
 
 class CpuReview(review.LinkedAtlasReview):
-    """Use actual controller/layout code and replace only native layer uploads."""
+    """Exercise the real viewer and fixed-layout review composition."""
 
-    def _create_slices(self):
-        self.prepared_slices = {}
-        self._refresh_slices()
 
-    def _refresh_slices(self, axes=None):
+@pytest.fixture(autouse=True)
+def cpu_slices(monkeypatch):
+    """Replace only native slice uploads on the owned linked component."""
+
+    def marker(component):
+        component.marker_world_um = component.cursor.world_um(component.slice_source)
+
+    def refresh(component, axes=None):
         for axis in review.AXES if axes is None else axes:
-            self.prepared_slices[axis] = self._slice_layers(axis)
-        self._update_cursor_marker()
+            component.prepared_slices[axis] = component._slice_layers(axis)
+        marker(component)
 
-    def _create_anatomical_volume(self):
-        self.volume = self.dvz._handle('volume')
-        self._update_surface_alpha_mode()
+    def create(component):
+        component.prepared_slices = {}
+        refresh(component)
 
-    def _create_cursor_marker(self):
-        self._update_cursor_marker()
+    def volume(component):
+        component.volume = component.viewer.dvz._handle('volume')
+        component.viewer._update_surface_alpha_mode()
 
-    def _update_cursor_marker(self):
-        self.marker_world_um = self.cursor.world_um(self.slice_source)
+    monkeypatch.setattr(LinkedSlices, '_create_slices', create)
+    monkeypatch.setattr(LinkedSlices, '_refresh_slices', refresh)
+    monkeypatch.setattr(LinkedSlices, '_create_anatomical_volume', volume)
+    monkeypatch.setattr(LinkedSlices, '_create_cursor_marker', marker)
+    monkeypatch.setattr(LinkedSlices, '_update_cursor_marker', marker)
 
 
 class PlaneAdapter:
@@ -121,8 +131,8 @@ def handles(viewer):
         viewer.panel,
         viewer.view,
         viewer.arcball,
-        *(viewer.slice_panels[axis] for axis in review.AXES),
-        viewer.volume,
+        *(viewer._linked.slice_panels[axis] for axis in review.AXES),
+        viewer._linked.volume,
     )
 
 
@@ -131,9 +141,13 @@ def test_presets_keep_four_panels_view_camera_and_region_overrides(viewer):
     original = handles(viewer)
     camera_calls = [call for call in viewer.dvz.calls if call[0] == 'camera']
     assert viewer.width == 1400 and viewer.height == 1000
-    assert viewer.volume is not None and viewer.volume_opacity == 0
+    assert viewer._linked.volume is not None and viewer._linked.volume_opacity == 0
     assert viewer.physical_plane is None and not viewer.plane_visible
-    assert (viewer.anatomy_visible, viewer.annotation_visible, viewer.boundaries_visible) == (
+    assert (
+        viewer._linked.anatomy_visible,
+        viewer._linked.annotation_visible,
+        viewer._linked.boundaries_visible,
+    ) == (
         True,
         True,
         True,
@@ -151,10 +165,10 @@ def test_presets_keep_four_panels_view_camera_and_region_overrides(viewer):
     for preset, settings in expected.items():
         viewer.apply_preset(preset)
         assert (
-            viewer.anatomy_visible,
-            viewer.annotation_visible,
-            viewer.boundaries_visible,
-            viewer.volume_opacity,
+            viewer._linked.anatomy_visible,
+            viewer._linked.annotation_visible,
+            viewer._linked.boundaries_visible,
+            viewer._linked.volume_opacity,
             viewer.plane_visible,
         ) == settings
         assert all(
@@ -168,27 +182,27 @@ def test_presets_keep_four_panels_view_camera_and_region_overrides(viewer):
 @pytest.mark.parametrize('mapping', ['allen', 'beryl', 'cosmos'])
 def test_slice_region_selection_keeps_crosshair_and_zoom_fixed(viewer, mapping):
     viewer.set_mapping(mapping)
-    cursor = viewer.cursor
-    viewer._slice_zoom = dict.fromkeys(review.AXES, 2.0)
+    cursor = viewer._linked.cursor
+    viewer._linked._slice_zoom = dict.fromkeys(review.AXES, 2.0)
     selected = set()
     for axis in review.AXES:
-        quad, _ = viewer._slice_quad(axis)
+        quad, _ = viewer._linked._slice_quad(axis)
         for fraction in ((0.1, 0.1), (0.5, 0.5), (0.9, 0.9)):
             point = quad[0, :2] + np.asarray(fraction) * (quad[3, :2] - quad[0, :2])
-            location = viewer._cursor_at_slice_data(axis, *point)
-            row = location.region(viewer.slice_source, mapping)
+            location = viewer._linked._cursor_at_slice_data(axis, *point)
+            row = location.region(viewer._linked.slice_source, mapping)
             expected = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
-            assert viewer._select_region_at_slice_data(axis, *point)
+            assert viewer._linked._select_region_at_slice_data(axis, *point)
             assert viewer.selected_region_ids() == expected
-            assert viewer.cursor == cursor
-            assert viewer._slice_zoom == dict.fromkeys(review.AXES, 2.0)
+            assert viewer._linked.cursor == cursor
+            assert viewer._linked._slice_zoom == dict.fromkeys(review.AXES, 2.0)
             selected.update(expected)
     if mapping == 'allen':
         assert selected
     before = viewer.selected_region_ids()
-    assert not viewer._select_region_at_slice_data('ap', 100, 100)
+    assert not viewer._linked._select_region_at_slice_data('ap', 100, 100)
     assert viewer.selected_region_ids() == before
-    assert viewer.cursor == cursor
+    assert viewer._linked.cursor == cursor
 
 
 def test_physical_plane_follows_cursor_mapping_and_axis_with_retained_adapter(viewer):
@@ -196,7 +210,9 @@ def test_physical_plane_follows_cursor_mapping_and_axis_with_retained_adapter(vi
     adapter = viewer.physical_plane
     assert adapter.scene is viewer.scene and adapter.panel is viewer.panel
     first_corners = adapter.data.corners_um.copy()
-    viewer.set_cursor(viewer.cursor.replace('ap', 0, viewer.slice_source.grid.shape))
+    viewer.slices.set_position(
+        ap=0, ml=viewer._linked.cursor.ml, dv=viewer._linked.cursor.dv, units='voxel'
+    )
     assert viewer.physical_plane is adapter
     assert not np.array_equal(adapter.data.corners_um, first_corners)
     np.testing.assert_array_equal(
@@ -204,9 +220,13 @@ def test_physical_plane_follows_cursor_mapping_and_axis_with_retained_adapter(vi
         adapter.transform(adapter.data.corners_um),
     )
     uploads = adapter.replacements
-    viewer.set_cursor(viewer.cursor.replace('ml', 0, viewer.slice_source.grid.shape))
+    viewer.slices.set_position(
+        ap=viewer._linked.cursor.ap, ml=0, dv=viewer._linked.cursor.dv, units='voxel'
+    )
     assert adapter.replacements == uploads  # the AP plane did not move
-    viewer.set_cursor(viewer.cursor.replace('ap', 1, viewer.slice_source.grid.shape))
+    viewer.slices.set_position(
+        ap=1, ml=viewer._linked.cursor.ml, dv=viewer._linked.cursor.dv, units='voxel'
+    )
     viewer.configure_physical_plane(layer='annotation')
     allen_pixels = adapter.data.rgba.copy()
     viewer.set_mapping('beryl')
@@ -228,9 +248,9 @@ def test_mode_replacement_and_volume_toggles_keep_native_layout(viewer):
     assert viewer.physical_plane.alpha_cutoff == 0.4
     viewer.set_volume_opacity(0.2)
     assert not viewer.plane_visible and not viewer.physical_plane.visible
-    assert viewer.volume_opacity == 0.2
+    assert viewer._linked.volume_opacity == 0.2
     viewer.set_physical_plane(True)
-    assert viewer.plane_visible and viewer.volume_opacity == 0
+    assert viewer.plane_visible and viewer._linked.volume_opacity == 0
     assert all(before is after for before, after in zip(original, handles(viewer), strict=True))
 
 
@@ -245,7 +265,7 @@ def test_volume_visibility_tracks_opacity_and_rolls_back_partial_failure(
 
     def fail_once(visual, visible):
         nonlocal visibility, failed
-        if visual is viewer.volume:
+        if visual is viewer._linked.volume:
             visibility = bool(visible)
             if not failed:
                 failed = True
@@ -256,11 +276,11 @@ def test_volume_visibility_tracks_opacity_and_rolls_back_partial_failure(
     with pytest.raises(RuntimeError, match='volume visibility'):
         viewer.set_volume_opacity(requested)
     assert visibility is (previous > 0)
-    assert viewer.volume_opacity == previous
-    assert viewer._volume_opacity_control.value == pytest.approx(previous)
+    assert viewer._linked.volume_opacity == previous
+    assert viewer._linked._volume_opacity_control.value == pytest.approx(previous)
     viewer.set_volume_opacity(requested)
     assert visibility is (requested > 0)
-    assert viewer.volume_opacity == requested
+    assert viewer._linked.volume_opacity == requested
 
 
 def test_plane_preparation_failure_restores_configuration_and_existing_payload(
@@ -288,10 +308,10 @@ def test_navigation_failure_hides_stale_physical_plane(viewer, monkeypatch):
         raise RuntimeError('source unavailable')
 
     monkeypatch.setattr(review, 'load_review_slice', unavailable)
-    moved = viewer.cursor.replace('ap', 0, viewer.slice_source.grid.shape)
+    moved = viewer._linked.cursor.replace('ap', 0, viewer._linked.slice_source.grid.shape)
     with pytest.raises(RuntimeError, match='source unavailable'):
-        viewer.set_cursor(moved)
-    assert viewer.cursor == moved
+        viewer.slices.set_position(ap=moved.ap, ml=moved.ml, dv=moved.dv, units='voxel')
+    assert viewer._linked.cursor == moved
     assert not viewer.plane_visible and not adapter.visible
     assert not viewer._plane_visible_control.value
     assert viewer._review_error == 'Physical plane hidden after update failure: source unavailable'
@@ -300,7 +320,9 @@ def test_navigation_failure_hides_stale_physical_plane(viewer, monkeypatch):
 def test_physical_updates_reuse_the_navigator_contrast_cache(viewer, monkeypatch):
     monkeypatch.setattr(np, 'percentile', lambda *a, **k: pytest.fail('contrast was rescanned'))
     viewer.set_physical_plane(True)
-    viewer.set_cursor(viewer.cursor.replace('ap', 0, viewer.slice_source.grid.shape))
+    viewer.slices.set_position(
+        ap=0, ml=viewer._linked.cursor.ml, dv=viewer._linked.cursor.dv, units='voxel'
+    )
     viewer.configure_physical_plane(axis='dv', layer='annotation')
     viewer.set_mapping('beryl')
 
@@ -325,7 +347,7 @@ def test_invalid_plane_configuration_does_not_allocate_native_resources(viewer, 
 def test_cleanup_releases_plane_before_scene_and_is_idempotent(viewer):
     viewer.set_physical_plane(True)
     adapter = viewer.physical_plane
-    viewer._slice_loader = SimpleNamespace(
+    viewer._linked._slice_loader = SimpleNamespace(
         close=lambda: viewer.dvz.calls.append(('worker_close',))
     )
     viewer.close()
@@ -340,12 +362,12 @@ def test_cleanup_releases_plane_before_scene_and_is_idempotent(viewer):
 def test_explicit_reset_restores_controls_without_reallocating_layout(viewer):
     viewer.apply_preset('physical-slice')
     viewer.configure_physical_plane(axis='dv', mode='mask', opacity=0.4, cutoff=0.2)
-    viewer.set_cursor(AtlasCursor(0, 0, 0))
+    viewer.slices.set_position(ap=0, ml=0, dv=0, units='voxel')
     viewer.set_region_opacity(315, 0.3)
     original = handles(viewer)
     viewer.reset_review()
-    assert viewer.cursor == AtlasCursor.centre(viewer.slice_source)
-    assert not viewer.plane_visible and viewer.volume_opacity == 0
+    assert viewer._linked.cursor == AtlasCursor.centre(viewer._linked.slice_source)
+    assert not viewer.plane_visible and viewer._linked.volume_opacity == 0
     assert viewer.plane_axis == 'ap' and viewer.plane_mode == 'wboit'
     assert viewer.plane_opacity == 0.72 and viewer.plane_cutoff == 0.5
     assert all(before is after for before, after in zip(original, handles(viewer), strict=True))
@@ -353,9 +375,7 @@ def test_explicit_reset_restores_controls_without_reallocating_layout(viewer):
 
 def test_extra_gui_keeps_linked_controls_and_reports_update_errors(viewer, monkeypatch):
     events = []
-    monkeypatch.setattr(
-        LinkedAtlasNavigator, '_draw_extra_gui', lambda *a: events.append('linked')
-    )
+    monkeypatch.setattr(AtlasViewer, '_draw_extra_gui', lambda *a: events.append('linked'))
     monkeypatch.setattr(viewer, '_draw_review_gui', lambda *a: events.append('review'))
     viewer._draw_extra_gui(object())
     assert events == ['linked', 'review']
@@ -570,16 +590,16 @@ def test_failed_plane_visibility_restores_native_visibility_and_volume(viewer, m
     with pytest.raises(RuntimeError, match='injected'):
         viewer.set_physical_plane(True)
     assert not viewer.plane_visible and not adapter.visible
-    assert viewer.volume_opacity == 0.12
+    assert viewer._linked.volume_opacity == 0.12
 
 
 def test_failed_physical_preset_restores_previous_slice_and_volume_state(viewer, monkeypatch):
     viewer.apply_preset('volume-context')
     previous = (
-        viewer.anatomy_visible,
-        viewer.annotation_visible,
-        viewer.boundaries_visible,
-        viewer.volume_opacity,
+        viewer._linked.anatomy_visible,
+        viewer._linked.annotation_visible,
+        viewer._linked.boundaries_visible,
+        viewer._linked.volume_opacity,
         viewer._preset_control.value,
     )
 
@@ -590,10 +610,66 @@ def test_failed_physical_preset_restores_previous_slice_and_volume_state(viewer,
     with pytest.raises(RuntimeError, match='injected'):
         viewer.apply_preset('physical-slice')
     assert (
-        viewer.anatomy_visible,
-        viewer.annotation_visible,
-        viewer.boundaries_visible,
-        viewer.volume_opacity,
+        viewer._linked.anatomy_visible,
+        viewer._linked.annotation_visible,
+        viewer._linked.boundaries_visible,
+        viewer._linked.volume_opacity,
         viewer._preset_control.value,
     ) == previous
     assert not viewer.plane_visible
+
+
+def test_failed_volume_context_hide_restores_visible_physical_plane(viewer, monkeypatch):
+    viewer.set_physical_plane(True)
+    adapter = viewer.physical_plane
+    original = adapter.set_visible
+    failed = False
+
+    def fail_once(visible):
+        nonlocal failed
+        adapter.visible = visible
+        if not failed:
+            failed = True
+            raise RuntimeError('injected plane hide failure')
+        original(visible)
+
+    monkeypatch.setattr(adapter, 'set_visible', fail_once)
+    with pytest.raises(RuntimeError, match='plane hide failure'):
+        viewer.slices.set_volume_opacity(0.2)
+    assert not viewer._closed
+    assert viewer._linked.volume_opacity == 0
+    assert viewer.plane_visible and adapter.visible
+    assert viewer._plane_visible_control.value
+    viewer.slices.set_volume_opacity(0.2)
+    assert viewer._linked.volume_opacity == 0.2
+    assert not viewer.plane_visible and not adapter.visible
+
+
+@pytest.mark.parametrize('guard', ['owner_thread', 'selection_callback'])
+def test_close_guards_preserve_plane_and_scene(viewer, monkeypatch, guard):
+    viewer.set_physical_plane(True)
+    adapter = viewer.physical_plane
+    with monkeypatch.context() as patch:
+        if guard == 'owner_thread':
+            patch.setattr(viewer, '_owner_thread', -1)
+        else:
+            patch.setattr(viewer.selection, '_notifying', True)
+        with pytest.raises(RuntimeError):
+            viewer.close()
+    assert viewer.physical_plane is adapter and not adapter.closed
+    assert not viewer._closed
+    assert ('destroy_scene',) not in viewer.dvz.calls
+
+
+def test_close_during_gui_callback_defers_plane_until_scene_can_close(viewer):
+    viewer.set_physical_plane(True)
+    adapter = viewer.physical_plane
+    viewer._gui_callback_depth = 1
+    viewer.close()
+    assert viewer._close_pending and not viewer._closed
+    assert viewer.physical_plane is adapter and not adapter.closed
+    assert ('destroy_scene',) not in viewer.dvz.calls
+    viewer._gui_callback_depth = 0
+    viewer.close()
+    assert adapter.closed and viewer._closed
+    assert viewer.dvz.calls.index(('plane_close',)) < viewer.dvz.calls.index(('destroy_scene',))

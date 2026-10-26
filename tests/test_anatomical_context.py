@@ -101,7 +101,7 @@ def test_major_context_stable_with_selected_translucent_fine_faces_and_mapping()
         viewer.set_selected_region_ids((-315,))
         assert viewer.visible_region_ids() == (-315,)
         assert viewer.mesh.visible
-        assert np.max(viewer._surface_base_colors_cache[:, 3]) <= round(255 * 0.18)
+        assert np.max(viewer._surface_presentation.base_colors[:, 3]) <= round(255 * 0.18)
         assert not viewer._surface_state.handle.active
         np.testing.assert_array_equal(context.indices, indices)
         np.testing.assert_array_equal(context.attributes['color'], colors)

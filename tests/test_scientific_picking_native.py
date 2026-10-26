@@ -6,7 +6,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from ibl_datoviz import InsertionCollectionVisual, PointCollection, PointCollectionVisual
+from ibl_datoviz.components import (
+    InsertionCollectionVisual,
+    PointCollection,
+    PointCollectionVisual,
+)
 from ibl_datoviz.layers import LayerObservationRef
 from ibl_datoviz.scientific_picking import ScientificPicking
 from tests import test_component_native

@@ -8,6 +8,7 @@ reader is created here.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from numbers import Real
 from threading import get_ident
 from typing import TYPE_CHECKING
 
@@ -146,6 +147,7 @@ class RegionalQuantityHandle:
         self._closed = False
         self._visible = False
         self._cmap, self._limits = 'sequential', None
+        self._opacity: float | None = None
 
     @property
     def payload(self):
@@ -171,6 +173,31 @@ class RegionalQuantityHandle:
     def limits(self):
         """Explicit scalar limits, or None for automatic finite-value limits."""
         return self._limits
+
+    @property
+    def opacity(self) -> float | None:
+        """Regional scalar alpha override, or None for the default palette alpha."""
+        return self._opacity
+
+    def set_opacity(self, opacity: float | None) -> None:
+        """Set scalar alpha in [0, 1]; None restores the default palette alpha.
+
+        Hidden quantities retain the setting without changing anatomy. A native
+        update must succeed before the handle commits the new opacity.
+        """
+        self._check()
+        if opacity is not None:
+            if (
+                isinstance(opacity, (bool, np.bool_))
+                or not isinstance(opacity, Real)
+                or not np.isfinite(opacity)
+                or not 0 <= opacity <= 1
+            ):
+                raise ValueError('regional opacity must be None or a finite number in [0, 1]')
+            opacity = float(opacity)
+        if self._visible:
+            self._registry._apply(self, cmap=self._cmap, limits=self._limits, opacity=opacity)
+        self._opacity = opacity
 
     def _check(self, *, read_only=False):
         if self._closed:
@@ -201,7 +228,7 @@ class RegionalQuantityHandle:
         scalar_colors(self.payload.values, limits, cmap)
         canonical_limits = None if limits is None else tuple(float(x) for x in limits)
         if self._visible:
-            self._registry._apply(self, cmap=cmap, limits=canonical_limits)
+            self._registry._apply(self, cmap=cmap, limits=canonical_limits, opacity=self._opacity)
         self._cmap, self._limits = cmap, canonical_limits
 
     def set_visible(self, visible):
@@ -213,7 +240,9 @@ class RegionalQuantityHandle:
         if visible == self._visible:
             return
         if visible:
-            self._registry._apply(self, cmap=self._cmap, limits=self._limits)
+            self._registry._apply(
+                self, cmap=self._cmap, limits=self._limits, opacity=self._opacity
+            )
         else:
             self._registry._restore_previous()
         self._visible = visible
@@ -269,18 +298,18 @@ class RegionQuantityRegistry:
             viewer._region_opacity,
         )
         handle = RegionalQuantityHandle(self, payload, display_name)
-        self._apply(handle, cmap=handle.cmap, limits=handle.limits)
+        self._apply(handle, cmap=handle.cmap, limits=handle.limits, opacity=handle.opacity)
         self._previous = previous
         self._handle = handle
         handle._visible = True
         return handle
 
-    def _apply(self, handle, *, cmap, limits):
+    def _apply(self, handle, *, cmap, limits, opacity):
         self.viewer._set_owned_region_data(
             handle.payload._atlas_values(),
             value_range=limits,
             color_scheme=cmap,
-            opacity=None,
+            opacity=opacity,
             mapping_reduction='weighted_mean',
         )
 

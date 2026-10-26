@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from ibl_datoviz.viewer import AtlasViewer
+from ibl_datoviz.viewer_layout import ViewerLayout
 
 
 @pytest.mark.parametrize('layers,quantity', [(('layer',), None), ((), object())])
@@ -27,7 +28,7 @@ def test_default_dock_order_splits_sidebars_before_observations(layers, quantity
         _regional_quantities=SimpleNamespace(handle=quantity),
         tables=SimpleNamespace(visible=True),
     )
-    AtlasViewer._dock_gui_windows(viewer, None)
+    ViewerLayout(viewer).dock_windows(None)
     assert calls == [
         (b'Regions', 1, 600),
         (b'Layers', 2, 510),
@@ -50,15 +51,20 @@ def test_no_observation_split_for_closed_or_empty_window():
         layers=(),
         tables=SimpleNamespace(visible=False),
     )
-    AtlasViewer._dock_gui_windows(viewer, None)
+    ViewerLayout(viewer).dock_windows(None)
     assert [call[0] for call in calls] == [b'Regions', b'3D atlas']
 
 
 @pytest.mark.parametrize('layout,explode_shown', [('3d', True), ('linked', False)])
 def test_explode_toolbar_is_exclusive_to_3d_layout(layout, explode_shown):
-    sliders, buttons = [], []
+    sliders, buttons, linked_controls = [], [], []
     viewer = SimpleNamespace(
         layout=layout,
+        _linked=(
+            SimpleNamespace(_draw_viewport_toolbar_gui=lambda _: linked_controls.append('slices'))
+            if layout == 'linked'
+            else None
+        ),
         anatomy_presentation='detailed',
         selection_presentation='legacy',
         arcball=None,
@@ -73,3 +79,4 @@ def test_explode_toolbar_is_exclusive_to_3d_layout(layout, explode_shown):
     AtlasViewer._draw_viewport_toolbar_gui(viewer, None)
     assert (b'Explode' in sliders) is explode_shown
     assert buttons == [b'Reset view']
+    assert linked_controls == (['slices'] if layout == 'linked' else [])

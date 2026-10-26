@@ -26,7 +26,8 @@ from examples.review_common import (
     review_context_surfaces,
 )
 from ibl_anatomy import bundled_asset_set, open_volume_pack, verify_materialized_asset_set
-from ibl_datoviz import AtlasCursor, AtlasMesh, LinkedAtlasNavigator, SampledPlaneVisual
+from ibl_datoviz import AtlasMesh, AtlasViewer
+from ibl_datoviz.components import AtlasCursor, SampledPlaneVisual
 from ibl_datoviz.context import DEFAULT_CONTEXT_LANDMARKS
 
 PRESETS = ('anatomy', 'labels', 'volume-context', 'physical-slice', 'overlay')
@@ -147,7 +148,7 @@ PLANE_MODES = ('wboit', 'mask')
 PLANE_LAYERS = ('anatomy', 'annotation')
 
 
-class LinkedAtlasReview(LinkedAtlasNavigator):
+class LinkedAtlasReview(AtlasViewer):
     """Keep the linked navigator's panels and camera while reviewing its layers."""
 
     def __init__(self, *args, preset='overlay', **kwargs):
@@ -175,6 +176,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
         kwargs.setdefault('height', 1000)
         kwargs.setdefault('surface_opacity', 0.18)
         kwargs.setdefault('annotation_opacity', 0.45)
+        kwargs['layout'] = 'linked'
         kwargs['render_volume'] = True
         kwargs['volume_opacity'] = 0.0
         kwargs.setdefault('enable_hover', False)
@@ -188,9 +190,9 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
 
     def _plane_data(self):
         return load_review_slice(
-            self.slice_composer,
+            self._linked.slice_composer,
             self.plane_axis,
-            self.cursor.as_index()[AXES.index(self.plane_axis)],
+            self._linked.cursor.as_index()[AXES.index(self.plane_axis)],
             self.mapping,
             layer=self.plane_layer,
             opacity=self.plane_opacity,
@@ -201,7 +203,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
             return
         revision = (
             self.plane_axis,
-            self.cursor.as_index()[AXES.index(self.plane_axis)],
+            self._linked.cursor.as_index()[AXES.index(self.plane_axis)],
             self.mapping,
             self.plane_layer,
             self.plane_opacity,
@@ -238,11 +240,11 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
         """Show an affine-positioned plane, keeping the native volume allocated."""
         self._require_open()
         previous = self.plane_visible
-        previous_volume_opacity = self.volume_opacity
+        previous_volume_opacity = self._linked.volume_opacity
         self.plane_visible = bool(visible)
         try:
             if visible:
-                super().set_volume_opacity(0.0)
+                self.slices.set_volume_opacity(0.0)
                 self._sync_physical_plane()
             if self.physical_plane is not None:
                 self.physical_plane.set_visible(visible)
@@ -252,7 +254,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
             try:
                 if self.physical_plane is not None:
                     self.physical_plane.set_visible(previous)
-                super().set_volume_opacity(previous_volume_opacity)
+                self._linked.set_volume_opacity(previous_volume_opacity)
             except Exception:
                 self.close()
                 raise RuntimeError('plane visibility rollback failed; review closed') from error
@@ -298,24 +300,16 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
             self._plane_cutoff_control.value = self.plane_cutoff
 
     def set_volume_opacity(self, opacity):
-        """Use native volume context independently of the physical-plane route."""
-        previous = self.volume_opacity
-        try:
-            super().set_volume_opacity(opacity)
-            if opacity > 0 and self.plane_visible:
-                self.set_physical_plane(False)
-        except Exception as error:
-            if not self._closed:
-                try:
-                    super().set_volume_opacity(previous)
-                except Exception:
-                    self.close()
-                    raise RuntimeError('volume context rollback failed; review closed') from error
-            raise
+        """Use the shared slice controller for diagnostic volume controls."""
+        self.slices.set_volume_opacity(opacity)
 
-    def set_cursor(self, cursor, *, select_region=False):
-        """Move all linked slices and the optional physical plane together."""
-        super().set_cursor(cursor, select_region=select_region)
+    def _on_volume_opacity_committed(self, opacity):
+        """Hide the diagnostic plane when volume context becomes visible."""
+        if opacity > 0 and self.plane_visible:
+            self.set_physical_plane(False)
+
+    def _on_cursor_committed(self):
+        """Keep the diagnostic plane aligned after a committed cursor movement."""
         self._sync_navigation_plane()
 
     def set_mapping(self, mapping, palette=None):
@@ -340,17 +334,17 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
         if preset not in PRESETS:
             raise ValueError(f'unknown review preset: {preset}')
         previous = (
-            self.anatomy_visible,
-            self.annotation_visible,
-            self.boundaries_visible,
-            self.volume_opacity,
+            self._linked.anatomy_visible,
+            self._linked.annotation_visible,
+            self._linked.boundaries_visible,
+            self._linked.volume_opacity,
             self.plane_visible,
             self._preset_control.value,
         )
         try:
             self.set_physical_plane(False)
             self.set_volume_opacity(0.12 if preset == 'volume-context' else 0.0)
-            self.set_slice_layers(
+            self.slices.set_layers(
                 anatomy=preset != 'labels',
                 annotations=preset != 'anatomy',
                 boundaries=preset != 'anatomy',
@@ -362,7 +356,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
                 try:
                     self.set_physical_plane(False)
                     self.set_volume_opacity(previous[3])
-                    self.set_slice_layers(
+                    self.slices.set_layers(
                         anatomy=previous[0], annotations=previous[1], boundaries=previous[2]
                     )
                     self.set_physical_plane(previous[4])
@@ -387,13 +381,18 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
             control.value = 0
         self._plane_opacity_control.value = self.plane_opacity
         self._plane_cutoff_control.value = self.plane_cutoff
-        self.set_cursor(AtlasCursor.centre(self.slice_source))
+        cursor = AtlasCursor.centre(self._linked.slice_source)
+        self.slices.set_position(ap=cursor.ap, ml=cursor.ml, dv=cursor.dv, units='voxel')
         self.apply_preset('overlay')
 
     def _draw_viewport_toolbar_gui(self, gui):
         """Expose slice presentation and distinguish position from region selection."""
         super()._draw_viewport_toolbar_gui(gui)
-        layers = (self.anatomy_visible, self.annotation_visible, self.boundaries_visible)
+        layers = (
+            self._linked.anatomy_visible,
+            self._linked.annotation_visible,
+            self._linked.boundaries_visible,
+        )
         current = next(
             (i for i, (_, settings) in enumerate(SLICE_REPRESENTATIONS) if settings == layers),
             len(SLICE_REPRESENTATIONS),
@@ -406,7 +405,7 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
             SLICE_REPRESENTATIONS
         ):
             anatomy, annotations, boundaries = SLICE_REPRESENTATIONS[control.value][1]
-            self.set_slice_layers(anatomy=anatomy, annotations=annotations, boundaries=boundaries)
+            self.slices.set_layers(anatomy=anatomy, annotations=annotations, boundaries=boundaries)
         self.dvz.dvz_gui_text(
             gui, b'Slices: left-click moves crosshair; right-click selects region.'
         )
@@ -464,6 +463,13 @@ class LinkedAtlasReview(LinkedAtlasNavigator):
 
     def close(self):
         """Release the borrowed-scene plane before workers and the native scene."""
+        if getattr(self, '_closed', False):
+            return
+        if hasattr(self, '_closed'):
+            self._require_open()
+            if getattr(self, '_gui_callback_depth', 0):
+                super().close()
+                return
         if getattr(self, 'physical_plane', None) is not None:
             self.physical_plane.close()
             self.physical_plane = None

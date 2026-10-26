@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_region_catalog
-from ibl_datoviz import AtlasMesh, AtlasRegionValues, AtlasViewer, Points
+from ibl_datoviz import AtlasMesh, AtlasViewer, Points
+from ibl_datoviz.components import AtlasRegionValues
 from ibl_datoviz.regional_quantities import RegionValues
 from tests import FIXTURES
 from tests.test_atlas import FIXTURE
@@ -40,7 +41,7 @@ def quantity(app):
 
 def test_restore_previous_legacy_scalar_data_in_current_mapping(app):
     previous = AtlasRegionValues.from_arrays([-997, -8], [4.0, 8.0], weights=[1.0, 2.0])
-    app.set_region_data(
+    app._set_owned_region_data(
         previous,
         value_range=(0, 10),
         color_scheme='diverging',
@@ -54,14 +55,14 @@ def test_restore_previous_legacy_scalar_data_in_current_mapping(app):
     handle.set_visible(False)
     assert app.mapping == 'beryl' and app.region_data is previous
     expected = app._display_surface_colors().copy()
-    np.testing.assert_array_equal(app._surface_base_colors_cache, expected)
+    np.testing.assert_array_equal(app._surface_presentation.base_colors, expected)
     assert app._region_value_range == (0, 10)
     assert app._region_color_scheme == 'diverging' and app._region_opacity == 0.4
     handle.set_visible(True)
     handle.color_by('value', cmap='diverging', limits=(0, 4))
     handle.remove()
     assert app.region_data is previous and app.mapping == 'beryl'
-    np.testing.assert_array_equal(app._surface_base_colors_cache, expected)
+    np.testing.assert_array_equal(app._surface_presentation.base_colors, expected)
 
 
 def test_clear_to_anatomy_colors_preserves_exact_observation_and_region_selection(app):
@@ -74,26 +75,23 @@ def test_clear_to_anatomy_colors_preserves_exact_observation_and_region_selectio
     handle = app.add_region_values(quantity(app), mapping_reduction='weighted_mean')
     handle.set_visible(False)
     assert app.region_data is None and app.region_table is None
-    np.testing.assert_array_equal(app._surface_base_colors_cache, expected)
+    np.testing.assert_array_equal(app._surface_presentation.base_colors, expected)
     handle.set_visible(True)
     handle.remove()
     assert app.region_data is None and app.region_table is None
     assert app.selection.snapshot() == selection and app.selection.revision == revision
-    np.testing.assert_array_equal(app._surface_base_colors_cache, expected)
+    np.testing.assert_array_equal(app._surface_presentation.base_colors, expected)
 
 
-def test_exclusive_ownership_blocks_second_quantity_and_legacy_setter(app):
+def test_exclusive_ownership_blocks_second_quantity(app):
     handle = app.add_region_values(quantity(app), mapping_reduction='weighted_mean')
     for visible in (True, False):
         handle.set_visible(visible)
         with pytest.raises(ValueError, match='already attached'):
             app.add_region_values(quantity(app), mapping_reduction='weighted_mean')
-        with pytest.raises((ValueError, RuntimeError), match='regional|quantity|attached'):
-            app.set_region_data(
-                AtlasRegionValues.from_arrays([-8], [42.0]), mapping_reduction='weighted_mean'
-            )
+        assert not hasattr(app, 'set_region_data')
     handle.remove()
-    app.set_region_data(
+    app._set_owned_region_data(
         AtlasRegionValues.from_arrays([-8], [42.0]), mapping_reduction='weighted_mean'
     )
 
@@ -104,7 +102,7 @@ def test_failed_native_color_upload_preserves_handle_and_anatomy_state(
 ):
     handle = app.add_region_values(quantity(app), mapping_reduction='weighted_mean')
     before_data = app.region_data
-    before_colors = app._surface_base_colors_cache.copy()
+    before_colors = app._surface_presentation.base_colors.copy()
     before_selection = app.selection.snapshot()
     original = app.dvz.dvz_visual_set_data
     fail_once = True
@@ -129,7 +127,7 @@ def test_failed_native_color_upload_preserves_handle_and_anatomy_state(
     assert handle.cmap == 'sequential' and handle.limits is None
     assert app.region_data is before_data
     assert app.selection.snapshot() == before_selection
-    np.testing.assert_array_equal(app._surface_base_colors_cache, before_colors)
+    np.testing.assert_array_equal(app._surface_presentation.base_colors, before_colors)
 
 
 def test_coverage_read_is_allowed_in_committed_callbacks_and_rejects_foreign_threads(app):

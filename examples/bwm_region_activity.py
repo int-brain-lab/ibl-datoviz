@@ -9,7 +9,8 @@ from pathlib import Path
 import numpy as np
 from bwm_probe import BWM_CAMERA_ANGLES, FIXTURE, _load_fixture
 
-from ibl_datoviz import AtlasRegionValues, AtlasViewer, ProbeSites
+from ibl_datoviz import AtlasViewer, RegionValues
+from ibl_datoviz.components import AtlasRegionValues, ProbeSites
 
 
 def _aggregate_regions(data: ProbeSites) -> AtlasRegionValues:
@@ -52,20 +53,34 @@ def main() -> int:
         surface_opacity=0.08,
         camera_angles=BWM_CAMERA_ANGLES,
     ) as viewer:
-        viewer.set_probe((sites.positions_um[0], sites.positions_um[-1]), width_px=2)
-        viewer.set_probe_data(
+        viewer._probe_presentation.set_path(
+            (sites.positions_um[0], sites.positions_um[-1]), width_px=2
+        )
+        viewer._probe_presentation.set_data(
             sites,
             value_range=value_range,
             radius_um=70,
             color_scheme='sequential',
         )
-        viewer.set_region_data(
-            regions,
-            value_range=value_range,
-            color_scheme='sequential',
-            opacity=0.78,
+        quantity = viewer.add_region_values(
+            RegionValues(
+                allen_region_ids=regions.allen_region_ids,
+                values=regions.values,
+                weights=regions.weights,
+                name='Mean site firing rate',
+                units='Hz',
+                weight_name='Finite sites',
+                frame=viewer.frame,
+                provenance={
+                    'source': provenance,
+                    'aggregation': 'mean of finite site values per signed Allen region',
+                    'mapping_reduction': 'weighted_mean using finite site counts',
+                },
+            ),
             mapping_reduction='weighted_mean',
         )
+        quantity.color_by('value', cmap='sequential', limits=value_range)
+        quantity.set_opacity(0.78)
         if args.offscreen:
             rgba = viewer.render_offscreen(args.offscreen)
             print(f'wrote {args.offscreen} ({rgba.shape[1]}x{rgba.shape[0]})')

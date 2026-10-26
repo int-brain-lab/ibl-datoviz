@@ -1,42 +1,52 @@
 # API overview
 
-The public API is intentionally small and split at data ownership boundaries.
-
-The [scientific viewer API proposal](../SCIENTIFIC_VIEWER_API_PROPOSAL.md) describes
-the approved direction following acceptance of the recording-context demo.
-Generic payloads, owned layer/recording handles, exact programmatic selection and
-package-level Layers controls are now implemented. Exact native picking for filled points/spheres and the
-unified linked-layout facade are implemented and retain interactive acceptance gates.
+Use one `AtlasViewer` with a fixed `layout="3d"` or `layout="linked"`, prepared
+scientific payloads, and viewer-owned layer handles. Python calls and GUI controls
+operate on the same retained state. Region selection, observation selection,
+cursor position, and camera navigation remain independent.
 
 | Object | Responsibility |
 | --- | --- |
-| [`Points`, `Paths`](components.md#viewer-owned-scientific-layers) | Generic immutable geometry, original IDs, frames and provenance |
+| [`AtlasViewer`](viewer.md) | Application lifetime, layout, owned native resources and controllers |
+| [`Points`, `Paths`](components.md#viewer-owned-scientific-layers) | Immutable geometry, original IDs, frames and provenance |
 | `Recording`, `Channels`, `Clusters`, `Sites`, `Trajectory` | Prepared insertion-scoped scientific populations |
 | `WorldFrame`, `SourceKey`, `SourceObservationKey` | Explicit coordinate evidence and immutable scientific identity |
-| [`AtlasViewer`](viewer.md) | Datoviz scene, native resources, mapping, overlays, GUI, and selection |
-| [`AtlasMesh`](data-models.md#ibl_datoviz.atlas.AtlasMesh) | Display-ready mesh arrays and presentation identity |
-| [`AtlasTreeModel`](data-models.md#ibl_datoviz.ontology.AtlasTreeModel) | Packed retained-tree rows derived from the shared catalog |
-| [`ProbeSites`](data-models.md#ibl_datoviz.probe.ProbeSites) | Immutable positions, site identities, values, and signed Allen IDs |
-| [`AtlasRegionValues`](data-models.md#ibl_datoviz.regions.AtlasRegionValues) | Immutable regional scalar values and explicit aggregation weights |
+| `LayerHandle`, `RecordingHandle` | Viewer-owned mutable presentation of prepared populations |
+| `RegionValues`, `RegionalQuantityHandle`, `MappedRegionValues` | Prepared regional quantities, presentation and mapped coverage |
+| `SelectionState`, `SelectionEvent`, `SelectionSubscription` | Committed state, change events and explicit callback lifetime |
+| [`AtlasMesh`, `AtlasEnvelope`, `AtlasSliceSource`](data-models.md) | Prepared anatomy and registered slice inputs |
 
-## Supported top-level API
+The package's explicit `ibl_datoviz.__all__` defines the supported top-level
+names. `app.anatomy`, `app.camera`, `app.selection`, `app.slices`, and `app.tables`
+provide the relevant controls; layers and recordings return owned handles.
+Use viewers as context managers, or call `close()` explicitly.
 
-The compatibility surface is the package's explicit `ibl_datoviz.__all__`: `AtlasViewer`,
-`LinkedAtlasNavigator`, `AtlasMesh`, `ProbeSites`, `AtlasRegionValues`, `RegionValues`, `AtlasTreeModel`,
-`AtlasSliceSource`, `AtlasCursor`, `AtlasSliceComposer`, and `compose_atlas_slice`. Examples import
-these names from `ibl_datoviz`. The scientific API also exports `Points`, `Paths`,
-`Channels`, `Clusters`, `Sites`, `Trajectory`, `Recording`, `WorldFrame`, `SourceKey`,
-`SourceObservationKey`, `LayerObservationRef`, `LayerCapabilities` and
-`UnavailableLayerError`. The optional `ibl_datoviz.ibl` module documents `BwmSource`
-and `prepare_bwm_recording`; importing generic viewer APIs does not require the
-shared IBL reader or an AI runtime.
+## Lower-level components
 
-Other module members are implementation details. In particular, SVG parsing, signed-link-key
-encoding, cursor-fraction helpers, and the concrete source-slice record may change without a
-top-level compatibility promise.
+`ibl_datoviz.components` exposes caller-owned rendering primitives and diagnostic
+adapters: `PointCollection`, `PointCollectionVisual`, `SampledPlane`,
+`SampledPlaneVisual`, `InsertionTrajectory`, `InsertionCollectionVisual`,
+`AtlasTreeModel`, `AtlasCursor`, `AtlasSliceComposer`, and `compose_atlas_slice`.
+Visuals borrow an existing scene and panel and must close before scene destruction.
+`ProbeSites` and `AtlasRegionValues` remain here as legacy preparation helpers;
+new scientific application code uses the richer payloads and owned handles.
 
-`ibl-anatomy` validates and decodes packaged anatomy. `ibl-datoviz` converts those arrays into
-native presentation and interaction. Scientific coordinate-to-label operations remain in
-`iblatlas` or in an explicitly provenance-bearing data preparation step.
+## Migration from the previous API
 
-All viewer instances own native resources and should be used as context managers.
+This development refactor deliberately breaks compatibility. Import lower-level
+objects from `ibl_datoviz.components` instead of the package root. Replace the
+separate `LinkedAtlasNavigator` facade with `AtlasViewer(layout="linked", ...)`
+or the linked-source factories documented in [volume-free navigation](volume-free.md).
+
+Replace viewer probe and insertion setters with `add_points`, `add_paths`, or
+`add_recording`, then edit the returned handles. Use `RegionValues` and
+`add_region_values` for regional scalars. These migrations preserve source IDs,
+frames, and declared units; they must not infer scientific provenance or replace
+regional selection with observation selection implicitly. Low-level diagnostic
+clients may continue composing visuals explicitly through `components`.
+
+The optional `ibl_datoviz.ibl` module supplies `BwmSource` and
+`prepare_bwm_recording`. Importing the core API does not require the shared IBL
+reader or an AI runtime. `ibl-anatomy` validates and decodes packaged anatomy;
+`ibl-datoviz` owns presentation and interaction. Coordinate-to-label computation
+belongs in data preparation or an explicit compatible anatomy reader.

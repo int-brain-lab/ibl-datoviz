@@ -22,8 +22,8 @@ from examples.review_common import (
     load_review_slice,
     review_context_surfaces,
 )
-from ibl_datoviz import (
-    AtlasViewer,
+from ibl_datoviz import AtlasViewer
+from ibl_datoviz.components import (
     PointCollection,
     PointCollectionVisual,
     SampledPlane,
@@ -160,7 +160,7 @@ class ScientificSceneReview(AtlasViewer):
         self._plane_mode_control = ctypes.c_int(0)
         self._plane_opacity_control = ctypes.c_float(self.plane_opacity)
         self._plane_cutoff_control = ctypes.c_float(self.plane_cutoff)
-        self.set_probe_data(
+        self._probe_presentation.set_data(
             sites,
             value_range=self.value_range,
             radius_um=self.site_radius_um,
@@ -184,7 +184,9 @@ class ScientificSceneReview(AtlasViewer):
         self.review_plane = self._new_plane(self.plane_mode, self.plane_cutoff)
         for insertion_id, points in self._paths.items():
             color, width = self._initial_styles[insertion_id]
-            self.set_insertion(insertion_id, points, color=color, width_px=width)
+            self._insertion_collection().set_insertion(
+                insertion_id, points, color=color, width_px=width
+            )
         self.review_controls = ReviewControls(self)
         self.apply_preset('single-probe')
 
@@ -210,7 +212,7 @@ class ScientificSceneReview(AtlasViewer):
 
     def _sync_insertions(self):
         for insertion_id, style in self._insertion_styles.items():
-            self.set_insertion_visible(
+            self._insertion_collection().set_visible(
                 insertion_id,
                 bool(
                     self.review_layers['insertions']
@@ -345,17 +347,18 @@ class ScientificSceneReview(AtlasViewer):
         """Style one stable path identity independently of the other paths."""
         style = self._insertion_styles[insertion_id]
         if color is not None:
-            self.set_insertion_color(insertion_id, color)
+            self._insertion_collection().set_color(insertion_id, color)
             style['color'] = tuple(color)
         if width is not None:
-            self.set_insertion_width(insertion_id, width)
+            self._insertion_collection().set_width(insertion_id, width)
             style['width'] = float(width)
         if visible is not None:
             effective = bool(
-                visible and self.review_layers['insertions']
+                visible
+                and self.review_layers['insertions']
                 and insertion_id in self._active_insertions
             )
-            self.set_insertion_visible(insertion_id, effective)
+            self._insertion_collection().set_visible(insertion_id, effective)
             style['visible'] = bool(visible)
 
     def reset_review(self):
@@ -542,13 +545,13 @@ class ScientificSceneReview(AtlasViewer):
                 (len(self.review_sites.values), 1),
             )
         )
-        self._upload_probe_sites(
+        self._probe_presentation.upload_sites(
             self.review_sites.positions_um,
             colors=colors,
             radius_um=radius_um,
-            mapped_ids=self._mapped_probe_region_ids(self.review_sites),
+            mapped_ids=self._probe_presentation.mapped_region_ids(self.review_sites),
         )
-        self._probe_colors = colors
+        self._probe_presentation.colors = colors
         self.site_mode = mode
         self.site_radius_um = radius_um
         self._site_radius_control.value = radius_um
@@ -720,6 +723,13 @@ class ScientificSceneReview(AtlasViewer):
 
     def close(self):
         """Close owned components before destroying the borrowed viewer scene."""
+        if getattr(self, '_closed', False):
+            return
+        if hasattr(self, '_closed'):
+            self._require_open()
+            if getattr(self, '_gui_callback_depth', 0):
+                super().close()
+                return
         for name in ('review_points', 'review_plane'):
             component = getattr(self, name, None)
             if component is not None:
@@ -792,9 +802,14 @@ def main():
         enable_interaction=True,
         fit_workarea=args.offscreen is None,
     ) as viewer:
-        viewer.set_anatomical_context(review_context_surfaces(
-            viewer.mesh_data, context_catalog, context_geometry, detail=args.context_detail,
-        ))
+        viewer.set_anatomical_context(
+            review_context_surfaces(
+                viewer.mesh_data,
+                context_catalog,
+                context_geometry,
+                detail=args.context_detail,
+            )
+        )
         viewer.configure_review(sites, plane, paths, unavailable_note=note, provenance=provenance)
         viewer.apply_preset(args.preset)
         finish_review(viewer, args, 'Where did we record?')

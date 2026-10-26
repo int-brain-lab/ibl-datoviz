@@ -53,15 +53,38 @@ def pointer_layout_inputs(window_size, content_scale: float, resize=None) -> Poi
     return PointerLayoutInputs(width, height, scale_x, scale_y)
 
 
+def pointer_figure_position(viewer, router, pointer) -> tuple[float, float] | None:
+    """Convert a host pointer through its retained viewport layout, for any layout."""
+    dvz = viewer.dvz
+    resize = dvz.DvzInputResizeEvent()
+    has_resize = dvz.dvz_input_router_last_resize(router, ctypes.byref(resize))
+    latest = resize if has_resize else None
+    values = pointer_layout_inputs(pointer.window_size, float(pointer.content_scale), latest)
+    figure_x, figure_y = ctypes.c_float(), ctypes.c_float()
+    converted = dvz.dvz_figure_window_to_layout(
+        viewer.figure,
+        float(pointer.pos[0]),
+        float(pointer.pos[1]),
+        values.width,
+        values.height,
+        values.scale_x,
+        values.scale_y,
+        ctypes.byref(figure_x),
+        ctypes.byref(figure_y),
+    )
+    return (figure_x.value, figure_y.value) if converted else None
+
+
 class SliceInputAdapter:
     """Route native slice events while the viewer owns authoritative scene state.
 
     The callback reference and router are retained through unsubscription.
-    ``LinkedAtlasNavigator`` wires the adapter and closes it before scene cleanup.
+    The linked slice component wires and closes it before scene cleanup.
     """
 
     def __init__(self, owner, router) -> None:
-        self.owner = owner
+        self.owner = owner.viewer
+        self.slices = owner
         self.router = router
         self.subscription = 0
         self.callback = self.on_input
@@ -85,32 +108,15 @@ class SliceInputAdapter:
 
     def pointer_figure_position(self, pointer) -> tuple[float, float] | None:
         """Convert raw pointer coordinates through native viewport layout."""
-        owner, dvz = self.owner, self.owner.dvz
-        resize = dvz.DvzInputResizeEvent()
-        has_resize = dvz.dvz_input_router_last_resize(self.router, ctypes.byref(resize))
-        latest = resize if has_resize else None
-        values = pointer_layout_inputs(pointer.window_size, float(pointer.content_scale), latest)
-        figure_x, figure_y = ctypes.c_float(), ctypes.c_float()
-        converted = dvz.dvz_figure_window_to_layout(
-            owner.figure,
-            float(pointer.pos[0]),
-            float(pointer.pos[1]),
-            values.width,
-            values.height,
-            values.scale_x,
-            values.scale_y,
-            ctypes.byref(figure_x),
-            ctypes.byref(figure_y),
-        )
-        return (figure_x.value, figure_y.value) if converted else None
+        return pointer_figure_position(self.owner, self.router, pointer)
 
     def slice_data_at_pointer(self, pointer):
         """Translate a pointer into the first containing slice panel's data space."""
         figure_position = self.pointer_figure_position(pointer)
         if figure_position is None:
             return None
-        owner, dvz = self.owner, self.owner.dvz
-        for axis, panel in owner.slice_panels.items():
+        dvz = self.owner.dvz
+        for axis, panel in self.slices.slice_panels.items():
             figure_pos = (ctypes.c_double * 2)(*figure_position)
             panel_pos = (ctypes.c_double * 2)()
             inside = dvz.dvz_panel_transform_point(
@@ -157,7 +163,7 @@ class SliceInputAdapter:
 
     def _dispatch_input(self, event_ptr) -> None:  # noqa: PLR0911, PLR0912
         """Dispatch keyboard and pointer interactions without changing selection policy."""
-        owner, dvz = self.owner, self.owner.dvz
+        owner, dvz = self.slices, self.owner.dvz
         event = event_ptr.contents
         if event.type == dvz.DVZ_INPUT_EVENT_KEYBOARD:
             keyboard = event.content.keyboard
@@ -174,7 +180,7 @@ class SliceInputAdapter:
                 return
             step = key_step(direction, shift=bool(keyboard.mods & dvz.DVZ_KEY_MODIFIER_SHIFT))
             if owner.step_slice(owner._hovered_slice_axis, step):
-                dvz.dvz_view_request_frame(owner.view)
+                dvz.dvz_view_request_frame(self.owner.view)
             return
         if event.type != dvz.DVZ_INPUT_EVENT_POINTER:
             return
@@ -182,12 +188,12 @@ class SliceInputAdapter:
         hit = self.slice_data_at_pointer(pointer)
         if hit is None:
             if pointer.type == dvz.DVZ_POINTER_EVENT_MOVE and owner._set_slice_hover(None):
-                dvz.dvz_view_request_frame(owner.view)
+                dvz.dvz_view_request_frame(self.owner.view)
             return
         axis, x, y = hit
         if pointer.type == dvz.DVZ_POINTER_EVENT_MOVE:
             if owner._set_slice_hover(axis, x, y):
-                dvz.dvz_view_request_frame(owner.view)
+                dvz.dvz_view_request_frame(self.owner.view)
             return
         if pointer.type == dvz.DVZ_POINTER_EVENT_WHEEL:
             amount = float(pointer.content.w.dir[1])
@@ -195,7 +201,7 @@ class SliceInputAdapter:
                 if amount:
                     owner._slice_zoom[axis] = wheel_zoom(owner._slice_zoom[axis], amount)
                     owner._update_slice_geometry(axis)
-                    dvz.dvz_view_request_frame(owner.view)
+                    dvz.dvz_view_request_frame(self.owner.view)
                 return
             if amount:
                 step, remainder = wheel_step(
@@ -205,7 +211,7 @@ class SliceInputAdapter:
                 )
                 owner._slice_wheel_accumulator[axis] = remainder
                 if step and owner.step_slice(axis, step):
-                    dvz.dvz_view_request_frame(owner.view)
+                    dvz.dvz_view_request_frame(self.owner.view)
             return
         if (
             pointer.type == dvz.DVZ_POINTER_EVENT_DOUBLE_CLICK
@@ -213,7 +219,7 @@ class SliceInputAdapter:
         ):
             owner._slice_zoom[axis] = 1.0
             owner._update_slice_geometry(axis)
-            dvz.dvz_view_request_frame(owner.view)
+            dvz.dvz_view_request_frame(self.owner.view)
             return
         if pointer.type == dvz.DVZ_POINTER_EVENT_CLICK:
             changed = False
@@ -222,4 +228,4 @@ class SliceInputAdapter:
             elif pointer.button == dvz.DVZ_POINTER_BUTTON_RIGHT:
                 changed = owner._select_region_at_slice_data(axis, x, y)
             if changed:
-                dvz.dvz_view_request_frame(owner.view)
+                dvz.dvz_view_request_frame(self.owner.view)

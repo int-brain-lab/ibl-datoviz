@@ -28,14 +28,18 @@ def test_native_major_context_parent_keys_and_visible_coverage_across_mapping():
     context = AtlasContextSurface.from_geometry(source, mesh, color=(140, 180, 210))
     try:
         with AtlasViewer(
-            mesh, width=256, height=192, anatomical_context=[context],
-            anatomy_presentation='major', context_opacity=0.04,
+            mesh,
+            width=256,
+            height=192,
+            anatomical_context=[context],
+            anatomy_presentation='major',
+            context_opacity=0.04,
             catalog=open_region_catalog(
                 FIXTURES / 'linked-atlas-v1' / 'volume-pack' / 'regions.json'
             ),
         ) as viewer:
             pixels = viewer.render_offscreen()
-            assert not np.any(viewer._surface_face_mask)
+            assert not np.any(viewer._surface_presentation.face_mask)
             assert query_at(viewer, 90, 96, 1) == (True, -8)
             viewer.set_mapping('beryl')
             # This fixture has no fine Beryl surface; context must retain the
@@ -54,8 +58,8 @@ def test_native_major_context_parent_keys_and_visible_coverage_across_mapping():
             np.testing.assert_array_equal(restored, pixels)
             viewer.set_selected_region_ids((-315,))
             assert viewer.visible_region_ids() == (-315,)
-            assert viewer._surface_alpha_mode == viewer.dvz.DVZ_ALPHA_WBOIT
-            assert np.max(viewer._surface_base_colors_cache[:, 3]) <= 46
+            assert viewer._surface_presentation.alpha_mode == viewer.dvz.DVZ_ALPHA_WBOIT
+            assert np.max(viewer._surface_presentation.base_colors[:, 3]) <= 46
             viewer.set_surface_visible(False)
             assert not query_at(viewer, 90, 96, 5)[0]
     except RuntimeError as error:

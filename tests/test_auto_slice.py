@@ -199,25 +199,25 @@ def test_request_submission_failure_sets_error_without_leaving_pending(source):
 
 
 def test_region_list_only_and_deselection_preserves_cursor(navigator):
-    before = navigator.cursor
+    before = navigator._linked.cursor
     navigator.selection.set_regions((-315,), mapping='allen')
-    assert navigator.cursor == before
+    assert navigator._linked.cursor == before
     candidate = SimpleNamespace(by_id={'315': SimpleNamespace(atlas_id=315)}, selected=['315'])
     ready = Event()
-    navigator._auto_slice._worker._notify = lambda _: ready.set()
+    navigator._linked._auto_slice._worker._notify = lambda _: ready.set()
     navigator._region_list_intent({'kind': 'select', 'id': '315'}, candidate)
     assert ready.wait(1)
-    navigator._drain_auto_slice()
-    anchor = navigator._auto_slice.navigation.anchor('allen', -315)
-    assert navigator.cursor.as_index() == anchor
+    navigator._linked._drain_auto_slice()
+    anchor = navigator._linked._auto_slice.navigation.anchor('allen', -315)
+    assert navigator._linked.cursor.as_index() == anchor
     assert navigator.selection.regions == (('allen', -315),)
     candidate.selected = []
     navigator._region_list_intent({'kind': 'select', 'id': '315'}, candidate)
-    assert navigator._auto_slice.drain() is None
+    assert navigator._linked._auto_slice.drain() is None
 
 
 def test_checkpoint_waits_for_real_region_anchor_before_slice_readiness(navigator):
-    owner = navigator._auto_slice
+    owner = navigator._linked._auto_slice
     entered, release, ready = Event(), Event(), Event()
     original_anchor = owner.navigation.anchor
     owner._worker._notify = lambda _: ready.set()
@@ -228,19 +228,19 @@ def test_checkpoint_waits_for_real_region_anchor_before_slice_readiness(navigato
         return original_anchor(mapping, region_id)
 
     owner.navigation.anchor = delayed_anchor
-    before = navigator.cursor
+    before = navigator._linked.cursor
     try:
         with LinkedReadiness(navigator) as readiness:
             owner.request('allen', -315)
             assert entered.wait(1)
-            assert navigator.cursor == before
+            assert navigator._linked.cursor == before
             assert readiness.check().pending_navigation
             release.set()
             assert ready.wait(1)
             # Completed worker output is still not accepted scientific navigation.
             assert readiness.check().status == 'pending'
-            navigator._drain_auto_slice()
-            assert navigator.cursor.as_index() == original_anchor('allen', -315)
+            navigator._linked._drain_auto_slice()
+            assert navigator._linked.cursor.as_index() == original_anchor('allen', -315)
             accepted = readiness.check()
             assert not accepted.pending_navigation
             # This CPU navigator prepares slices without uploading native textures.
@@ -252,11 +252,11 @@ def test_checkpoint_waits_for_real_region_anchor_before_slice_readiness(navigato
 @pytest.mark.parametrize('cancel', ['manual', 'mapping', 'disabled', 'selection', 'direct'])
 def test_new_navigation_intent_discards_ready_anchor(navigator, cancel):
     ready = Event()
-    navigator._auto_slice._worker._notify = lambda _: ready.set()
-    navigator._auto_slice.request('allen', -315)
+    navigator._linked._auto_slice._worker._notify = lambda _: ready.set()
+    navigator._linked._auto_slice.request('allen', -315)
     assert ready.wait(1)
     if cancel == 'manual':
-        navigator.set_cursor(navigator.cursor)
+        navigator._linked.set_cursor(navigator._linked.cursor)
     elif cancel == 'mapping':
         navigator.set_mapping('beryl')
     elif cancel == 'disabled':
@@ -264,16 +264,16 @@ def test_new_navigation_intent_discards_ready_anchor(navigator, cancel):
     elif cancel == 'selection':
         navigator.selection.set_regions((315,), mapping='allen')
     else:
-        navigator._cancel_auto_slice()
-    before = navigator.cursor
-    navigator._drain_auto_slice()
-    assert navigator.cursor == before
+        navigator._linked._cancel_auto_slice()
+    before = navigator._linked.cursor
+    navigator._linked._drain_auto_slice()
+    assert navigator._linked.cursor == before
 
 
 def test_closed_viewer_joins_auto_slice_worker(navigator):
-    owner = navigator._auto_slice
+    owner = navigator._linked._auto_slice
     navigator.close()
-    assert navigator._auto_slice is None
+    assert navigator._linked._auto_slice is None
     with pytest.raises(RuntimeError, match='auto-slice navigation is closed'):
         owner.request('allen', -315)
     with pytest.raises(RuntimeError, match='closed'):
@@ -281,13 +281,13 @@ def test_closed_viewer_joins_auto_slice_worker(navigator):
 
 
 def test_native_post_auto_slice_upload_failure_is_contained(navigator, monkeypatch):
-    monkeypatch.setattr(navigator._auto_slice, 'drain', lambda: (0, 1, 0))
+    monkeypatch.setattr(navigator._linked._auto_slice, 'drain', lambda: (0, 1, 0))
 
     def fail(*args, **kwargs):
         raise RuntimeError('auto-slice upload rejected')
 
-    monkeypatch.setattr(navigator, 'set_cursor', fail)
-    navigator._drain_prepared_slices(None, None)
+    monkeypatch.setattr(navigator._linked, 'set_cursor', fail)
+    navigator._linked._drain_prepared_slices(None, None)
     assert str(navigator._gui_callback_error) == 'auto-slice upload rejected'
     assert navigator._close_pending
     # The normal application frame finally releases the retained resources.
@@ -312,8 +312,8 @@ def test_persistent_projection_sliders_commit_one_cursor_update(navigator, monke
         return True
 
     monkeypatch.setattr(dvz, 'dvz_gui_slider_int', slider, raising=False)
-    monkeypatch.setattr(navigator, 'set_cursor', requested.append)
-    navigator._draw_viewport_toolbar_gui(None)
+    monkeypatch.setattr(navigator._linked, 'set_cursor', requested.append)
+    navigator._linked._draw_viewport_toolbar_gui(None)
     assert [s[0] for s in sliders] == [b'Coronal (AP)', b'Sagittal (ML)', b'Horizontal (DV)']
-    assert [s[2] for s in sliders] == [n - 1 for n in navigator.slice_source.grid.shape]
+    assert [s[2] for s in sliders] == [n - 1 for n in navigator._linked.slice_source.grid.shape]
     assert len(requested) == 1 and requested[0].as_index() == (0, 0, 0)

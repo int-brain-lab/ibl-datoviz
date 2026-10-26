@@ -27,7 +27,7 @@ def test_native_focus_matches_opaque_signed_isolation_and_nonpickable_context():
             assert np.any(original != opaque_left)
             viewer.set_hemisphere('both')
             viewer.set_selected_region_ids((-315,))
-            assert viewer._surface_alpha_mode == viewer.dvz.DVZ_ALPHA_OPAQUE
+            assert viewer._surface_presentation.alpha_mode == viewer.dvz.DVZ_ALPHA_OPAQUE
             np.testing.assert_array_equal(capture(), opaque_left)
             assert query_at(viewer, 90, 96, 1) == (True, -315)
 

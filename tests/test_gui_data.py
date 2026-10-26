@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_region_catalog
-from ibl_datoviz import AtlasMesh, AtlasRegionValues, AtlasTreeModel, AtlasViewer, ProbeSites
+from ibl_datoviz import AtlasMesh, AtlasViewer
+from ibl_datoviz.components import AtlasRegionValues, AtlasTreeModel, ProbeSites
 from ibl_datoviz.gui_data import create_probe_table, create_region_table, create_region_tree
 from tests.test_atlas import FIXTURE, REGIONS, FakeDatoviz
 

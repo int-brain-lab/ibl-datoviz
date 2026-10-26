@@ -51,7 +51,11 @@ supply a complete compatible source for unrestricted navigation.
         - cache_info
         - clear_cache
 
-## Ontology tree
+## Lower-level ontology tree
+
+Import `AtlasTreeModel` from `ibl_datoviz.components` for explicit GUI composition.
+Ordinary applications use the viewer-owned region browser.
+
 
 `AtlasTreeModel` is an advanced presentation model derived from a verified region catalog. Signed
 atlas IDs remain identities; labels are never used as keys.
@@ -65,7 +69,11 @@ atlas IDs remain identities; labels are never used as keys.
         - expanded_logical_ids
         - describe
 
-## Probe sites
+## Legacy probe preparation
+
+`ProbeSites` is available from `ibl_datoviz.components` for diagnostic clients.
+New applications use `Channels`, `Clusters`, or `Sites` and viewer-owned handles.
+
 
 `ProbeSites` copies caller arrays into immutable storage. Positions are atlas-world micrometres;
 values may contain `NaN` for missing observations but never infinities. IDs must be unique positive
@@ -77,6 +85,15 @@ integers and Allen region IDs remain signed.
         - from_arrays
 
 ## Regional values
+
+Use `RegionValues` and `app.add_region_values()` for scientific regional data with
+units, explicit weights, frame evidence and provenance. The lower-level
+`AtlasRegionValues` record is available from `ibl_datoviz.components`.
+
+::: ibl_datoviz.regional_quantities.RegionValues
+
+::: ibl_datoviz.regional_quantities.MappedRegionValues
+
 
 `AtlasRegionValues` copies immutable signed-Allen scalar rows and optional aggregation weights.
 Missing scalar values use `NaN`; cross-mapping reduction remains an explicit caller choice.

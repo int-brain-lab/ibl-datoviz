@@ -3,21 +3,10 @@
 from __future__ import annotations
 
 import ctypes
-from contextlib import suppress
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ibl_anatomy import (
-    MaterializedRegisteredAssets,
-    open_anatomy_pack,
-    open_intensity_block_pack,
-    open_registered_projection,
-    open_volume_pack,
-)
-
-from .atlas import AtlasMesh
-from .atlas_slice_source import AtlasSliceSource
 from .auto_slice import AutoSliceNavigation
 from .contour_visual import ContourVisual
 from .navigator import (
@@ -33,15 +22,13 @@ from .slice_input import SliceInputAdapter
 from .slice_planes import SlicePlanes
 from .slice_preparation import PreparedSliceLayers, SlicePreparation
 from .slice_scheduler import SliceRequest, SliceScheduler
-from .viewer import AtlasViewer
 
 if TYPE_CHECKING:
-    from pathlib import Path
-    from types import ModuleType
-
     from numpy.typing import NDArray
 
     from ibl_anatomy import AtlasVolumes
+
+    from .atlas import AtlasMesh
 
 
 def volume_render_geometry(
@@ -95,36 +82,29 @@ def _resolution_label(grid) -> str:
     return ' x '.join(f'{value:g}' for value in spacing) + ' um'
 
 
-class LinkedAtlasNavigator(AtlasViewer):
-    """Link orthogonal atlas slices, the ontology, and native 3-D anatomy."""
+class LinkedSlices:
+    """Own linked slice state, workers and visuals within one AtlasViewer."""
 
-    def __init__(  # noqa: PLR0912, PLR0915
+    def __init__(  # noqa: PLR0912, PLR0915 - explicit source validation and owned state.
         self,
-        mesh: AtlasMesh | None = None,
-        volumes: AtlasVolumes | None = None,
+        viewer,
+        mesh,
+        volumes,
         *,
-        atlas=None,
-        layout='linked',
-        slice_source=None,
-        slice_renderer='raster',
-        render_volume: bool = True,
-        mapping: str = 'allen',
-        width: int = 1280,
-        height: int = 900,
-        annotation_opacity: float = 1.0,
-        volume_opacity: float = 0.24,
-        boundary_opacity: float = 0.82,
-        boundary_width_px: float = 0.7,
-        boundary_color: tuple[int, int, int] = (238, 242, 247),
-        slice_background: tuple[int, int, int] = (29, 33, 39),
-        surface_opacity: float = 1.0,
-        palette=None,
-        datoviz: ModuleType | None = None,
-        **kwargs,
-    ) -> None:
-        if layout != 'linked':
-            raise ValueError('LinkedAtlasNavigator requires layout="linked"')
-        mesh, supplied_catalog = self._resolve_atlas(mesh, atlas, kwargs.pop('catalog', None))
+        supplied_catalog,
+        mapping,
+        palette,
+        slice_source,
+        slice_renderer,
+        render_volume,
+        annotation_opacity,
+        volume_opacity,
+        boundary_opacity,
+        boundary_width_px,
+        boundary_color,
+        slice_background,
+    ):
+        self.viewer = viewer
         if palette is not None:
             raise ValueError('linked atlas slices require the verified catalog palette')
         if render_volume and volumes is None:
@@ -248,223 +228,70 @@ class LinkedAtlasNavigator(AtlasViewer):
         )
         self._slice_zoom = {axis: 1.0 for axis in ('ap', 'ml', 'dv')}
         self._slice_wheel_accumulator = {axis: 0.0 for axis in ('ap', 'ml', 'dv')}
-        try:
-            super().__init__(
-                mesh,
-                layout='linked',
-                mapping=mapping,
-                catalog=catalog,
-                width=width,
-                height=height,
-                surface_opacity=surface_opacity,
-                datoviz=datoviz,
-                **kwargs,
+        self._catalog = catalog
+
+    def initialize(self):
+        """Create owned slice resources after the viewer scene and anatomy exist."""
+        if self.slice_source is not self.volumes:
+            self._slice_loader = SliceScheduler(
+                self._slice_preparation,
+                prepare_cancellable=self._slice_preparation.prepare_cancellable,
+                notify=self._notify_slice_ready,
+                max_workers=3,
             )
-            if slice_source is not volumes:
-                self._slice_loader = SliceScheduler(
-                    self._slice_preparation,
-                    prepare_cancellable=self._slice_preparation.prepare_cancellable,
-                    notify=self._notify_slice_ready,
-                    max_workers=3,
-                )
-            self._auto_slice = AutoSliceNavigation(slice_source, notify=self._notify_slice_ready)
-            self._slice_planes = SlicePlanes(self, slice_source, source_id=self._slice_source_id)
-            self._create_slices()
-            if self.render_volume:
-                self._create_anatomical_volume()
-            self._create_cursor_marker()
-        except Exception:
-            self.close()
-            raise
-
-    @classmethod
-    def from_pack(cls, path: str | Path, **kwargs) -> NoReturn:
-        """Reject the surface-only factory, which cannot supply atlas volumes."""
-        raise TypeError(
-            'LinkedAtlasNavigator.from_pack() requires atlas volumes; '
-            'use from_packs(), from_multiresolution_packs(), or from_anatomy_packs()'
+        self._auto_slice = AutoSliceNavigation(self.slice_source, notify=self._notify_slice_ready)
+        self._slice_planes = SlicePlanes(
+            self.viewer, self.slice_source, source_id=self._slice_source_id
         )
-
-    @classmethod
-    def from_assets(cls, assets: object, **kwargs) -> NoReturn:
-        """Reject the surface-only factory, which cannot supply atlas volumes."""
-        raise TypeError(
-            'LinkedAtlasNavigator.from_assets() requires atlas volumes; '
-            'use from_packs(), from_registered_assets(), from_multiresolution_packs(), '
-            'or from_anatomy_packs()'
-        )
-
-    @classmethod
-    def from_asset_set(
-        cls,
-        root: str | Path,
-        *,
-        asset_set: object | None = None,
-        **kwargs,
-    ) -> NoReturn:
-        """Reject the surface-only factory, which cannot supply atlas volumes."""
-        raise TypeError(
-            'LinkedAtlasNavigator.from_asset_set() requires atlas volumes; '
-            'use from_packs(), from_registered_assets(), from_multiresolution_packs(), '
-            'or from_anatomy_packs()'
-        )
-
-    @classmethod
-    def from_packs(
-        cls, mesh_pack: str | Path, volume_pack: str | Path, **kwargs
-    ) -> LinkedAtlasNavigator:
-        """Create a navigator from verified mesh and volume packs."""
-        volumes = open_volume_pack(volume_pack).load_volumes()
-        return cls(AtlasMesh.from_pack(mesh_pack), volumes, **kwargs)
-
-    @classmethod
-    def from_slice_source(cls, mesh: AtlasMesh, slice_source, **kwargs) -> LinkedAtlasNavigator:
-        """Use compatible explicit atlas slices without constructing a 3-D volume."""
-        if kwargs.pop('render_volume', False):
-            raise ValueError('from_slice_source() requires render_volume=False')
-        return cls(mesh, slice_source=slice_source, render_volume=False, **kwargs)
-
-    @classmethod
-    def from_registered_slices(
-        cls,
-        mesh_pack: str | Path,
-        intensity_pack: str | Path,
-        assets: MaterializedRegisteredAssets,
-        *,
-        catalog,
-        **kwargs,
-    ) -> LinkedAtlasNavigator:
-        """Use verified registered slices and an explicit catalog without a volume pack.
-
-        Materialized registered assets provide projection readers, not a region
-        catalog. Supply the independently verified catalog used by those assets.
-        Existing reader errors for absent sections remain explicit.
-        """
-        if not isinstance(assets, MaterializedRegisteredAssets):
-            raise TypeError('assets must be verified MaterializedRegisteredAssets')
-        projections = {
-            projection.world_slice_axis: projection for projection in assets.projections.values()
-        }
-        if len(assets.projections) != 3 or set(projections) != {'ap', 'ml', 'dv'}:
-            raise ValueError('registered assets must contain one ap/ml/dv projection')
-        intensity = open_intensity_block_pack(intensity_pack)
-        slices = AtlasSliceSource(intensity, projections, catalog)
-        return cls.from_slice_source(AtlasMesh.from_pack(mesh_pack), slices, **kwargs)
-
-    @classmethod
-    def from_multiresolution_packs(
-        cls,
-        mesh_pack: str | Path,
-        volume_pack: str | Path,
-        intensity_pack: str | Path,
-        registered_projections: dict[str, str | Path],
-        **kwargs,
-    ) -> LinkedAtlasNavigator:
-        """Use registered high-resolution slices with an independent dense 3-D volume."""
-        volumes = open_volume_pack(volume_pack).load_volumes()
-        intensity = open_intensity_block_pack(intensity_pack)
-        projections = {
-            axis: open_registered_projection(path) for axis, path in registered_projections.items()
-        }
-        slices = AtlasSliceSource(intensity, projections, volumes.regions)
-        return cls(AtlasMesh.from_pack(mesh_pack), volumes, slice_source=slices, **kwargs)
-
-    @classmethod
-    def from_registered_assets(
-        cls,
-        mesh_pack: str | Path,
-        volume_pack: str | Path,
-        intensity_pack: str | Path,
-        assets: MaterializedRegisteredAssets,
-        **kwargs,
-    ) -> LinkedAtlasNavigator:
-        """Use an ``ibl-anatomy`` verified registered-asset result.
-
-        The caller materializes or verifies the immutable root graph through
-        ``ibl-anatomy``. Datoviz consumes the resulting projection readers without
-        inferring files from an Ephys Atlas URL layout.
-        """
-        if not isinstance(assets, MaterializedRegisteredAssets):
-            raise TypeError('assets must be verified MaterializedRegisteredAssets')
-        volumes = open_volume_pack(volume_pack).load_volumes()
-        intensity = open_intensity_block_pack(intensity_pack)
-        projections = {
-            projection.world_slice_axis: projection for projection in assets.projections.values()
-        }
-        if set(projections) != {'ap', 'ml', 'dv'}:
-            raise ValueError('registered assets must contain one ap/ml/dv projection')
-        slices = AtlasSliceSource(intensity, projections, volumes.regions)
-        return cls(AtlasMesh.from_pack(mesh_pack), volumes, slice_source=slices, **kwargs)
-
-    @classmethod
-    def from_anatomy_packs(
-        cls,
-        mesh_pack: str | Path,
-        volume_pack: str | Path,
-        intensity_pack: str | Path,
-        anatomy_pack: str | Path,
-        **kwargs,
-    ) -> LinkedAtlasNavigator:
-        """Use a complete registered anatomy pack for high-resolution slices.
-
-        The bounded dense ``volume_pack`` remains the 3-D ray-casting source. The
-        projection-native ``intensity_pack`` and ``anatomy_pack`` provide lazy slices on
-        their shared grid, so no complete high-resolution volume is uploaded to the GPU.
-        """
-        volumes = open_volume_pack(volume_pack).load_volumes()
-        intensity = open_intensity_block_pack(intensity_pack)
-        anatomy = open_anatomy_pack(
-            anatomy_pack,
-            reference_space_id=intensity.reference_space_id,
-            grid_id=intensity.grid_id,
-        )
-        projections = {
-            projection.world_slice_axis: projection for projection in anatomy.projections.values()
-        }
-        slices = AtlasSliceSource(intensity, projections, volumes.regions)
-        return cls(AtlasMesh.from_pack(mesh_pack), volumes, slice_source=slices, **kwargs)
+        self._create_slices()
+        if self.render_volume:
+            self._create_anatomical_volume()
+        self._create_cursor_marker()
 
     def _create_layout(self) -> None:
-        self.figure = self.dvz.dvz_figure(self.scene, self.width, self.height, 0)
-        grid = self.dvz.dvz_figure_grid(self.figure, 2, 2)
+        self.viewer.figure = self.viewer.dvz.dvz_figure(
+            self.viewer.scene, self.viewer.width, self.viewer.height, 0
+        )
+        grid = self.viewer.dvz.dvz_figure_grid(self.viewer.figure, 2, 2)
         if not grid:
             raise RuntimeError('dvz_figure_grid() failed')
         self.slice_panels = {
-            'ap': self.dvz.dvz_grid_panel(grid, 0, 0),
-            'ml': self.dvz.dvz_grid_panel(grid, 0, 1),
-            'dv': self.dvz.dvz_grid_panel(grid, 1, 0),
+            'ap': self.viewer.dvz.dvz_grid_panel(grid, 0, 0),
+            'ml': self.viewer.dvz.dvz_grid_panel(grid, 0, 1),
+            'dv': self.viewer.dvz.dvz_grid_panel(grid, 1, 0),
         }
-        self.panel = self.dvz.dvz_grid_panel(grid, 1, 1)
-        panels = (*self.slice_panels.values(), self.panel)
+        self.viewer.panel = self.viewer.dvz.dvz_grid_panel(grid, 1, 1)
+        panels = (*self.slice_panels.values(), self.viewer.panel)
         if any(not panel for panel in panels):
             raise RuntimeError('dvz_grid_panel() failed')
         for panel in panels:
-            self.dvz.dvz_panel_set_background_color(
-                panel, self.dvz.DvzColor(*self.slice_background, 255)
+            self.viewer.dvz.dvz_panel_set_background_color(
+                panel, self.viewer.dvz.DvzColor(*self.slice_background, 255)
             )
-        self._configure_3d_camera()
+        self.viewer._configure_3d_camera()
         if self.slice_renderer == 'contours':
             for panel in self.slice_panels.values():
-                msaa = self.dvz.dvz_msaa_desc()
+                msaa = self.viewer.dvz.dvz_msaa_desc()
                 msaa.enabled, msaa.sample_count = True, 4
-                self._check(
-                    self.dvz.dvz_panel_set_msaa(panel, ctypes.byref(msaa)), 'contour slice MSAA'
+                self.viewer._check(
+                    self.viewer.dvz.dvz_panel_set_msaa(panel, ctypes.byref(msaa)),
+                    'contour slice MSAA',
                 )
         for panel in self.slice_panels.values():
-            self._check(
-                self.dvz.dvz_panel_set_domain(panel, self.dvz.DVZ_DIM_X, -1.0, 1.0),
+            self.viewer._check(
+                self.viewer.dvz.dvz_panel_set_domain(panel, self.viewer.dvz.DVZ_DIM_X, -1.0, 1.0),
                 'slice horizontal domain',
             )
-            self._check(
-                self.dvz.dvz_panel_set_domain(panel, self.dvz.DVZ_DIM_Y, -1.0, 1.0),
+            self.viewer._check(
+                self.viewer.dvz.dvz_panel_set_domain(panel, self.viewer.dvz.DVZ_DIM_Y, -1.0, 1.0),
                 'slice vertical domain',
             )
-            view = self.dvz.dvz_panel_view2d_desc()
-            view.mode = self.dvz.DVZ_PANEL_VIEW2D_CONTAIN
-            view.aspect = self.dvz.DVZ_PANEL_VIEW2D_ASPECT_EQUAL
+            view = self.viewer.dvz.dvz_panel_view2d_desc()
+            view.mode = self.viewer.dvz.DVZ_PANEL_VIEW2D_CONTAIN
+            view.aspect = self.viewer.dvz.DVZ_PANEL_VIEW2D_ASPECT_EQUAL
             view.padding = 0.0
-            self._check(
-                self.dvz.dvz_panel_set_view2d(panel, ctypes.byref(view)),
+            self.viewer._check(
+                self.viewer.dvz.dvz_panel_set_view2d(panel, ctypes.byref(view)),
                 'slice equal-aspect view',
             )
 
@@ -488,134 +315,151 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def _create_slices(self) -> None:  # noqa: PLR0915
         for axis, panel in self.slice_panels.items():
-            attach = self.dvz.dvz_visual_attach_desc()
-            attach.controller_mode = self.dvz.DVZ_CONTROLLER_APPLY
-            attach.coord_space = self.dvz.DVZ_VISUAL_COORD_DATA
+            attach = self.viewer.dvz.dvz_visual_attach_desc()
+            attach.controller_mode = self.viewer.dvz.DVZ_CONTROLLER_APPLY
+            attach.coord_space = self.viewer.dvz.DVZ_VISUAL_COORD_DATA
             request = self._slice_request(axis)
             payload = self._prepare_slice(request)
             anatomy_data, annotation_data = payload.anatomy, payload.annotation
             self._slice_planes.update(axis, request, payload)
-            field = self.dvz.dvz_sampled_field_from_array(
-                self.scene,
+            field = self.viewer.dvz.dvz_sampled_field_from_array(
+                self.viewer.scene,
                 anatomy_data,
-                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                dim=self.dvz.DVZ_FIELD_DIM_2D,
+                format=self.viewer.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                semantic=self.viewer.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                dim=self.viewer.dvz.DVZ_FIELD_DIM_2D,
             )
-            image = self.dvz.dvz_image(self.scene, 0)
+            image = self.viewer.dvz.dvz_image(self.viewer.scene, 0)
             if not image:
                 raise RuntimeError('dvz_image() failed')
             positions, texcoords = self._slice_quad(axis)
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_data_many(
                     image, {'position': positions, 'texcoords': texcoords}
                 ),
                 f'{axis} slice geometry upload',
             )
-            self._check(self.dvz.dvz_visual_set_field(image, b'field', field), 'slice field bind')
-            self._check(
-                self.dvz.dvz_image_set_sampling(image, self.dvz.DVZ_IMAGE_SAMPLING_LINEAR),
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_field(image, b'field', field), 'slice field bind'
+            )
+            self.viewer._check(
+                self.viewer.dvz.dvz_image_set_sampling(
+                    image, self.viewer.dvz.DVZ_IMAGE_SAMPLING_LINEAR
+                ),
                 'anatomy linear sampling',
             )
-            self._check(self.dvz.dvz_visual_set_depth_test(image, False), 'slice depth disable')
-            self._check(
-                self.dvz.dvz_visual_set_alpha_mode(image, self.dvz.DVZ_ALPHA_BLENDED),
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_depth_test(image, False), 'slice depth disable'
+            )
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_alpha_mode(
+                    image, self.viewer.dvz.DVZ_ALPHA_BLENDED
+                ),
                 'slice alpha mode',
             )
             attach.z_layer = 0
-            self._check(
-                self.dvz.dvz_panel_add_visual(panel, image, ctypes.byref(attach)), 'slice attach'
+            self.viewer._check(
+                self.viewer.dvz.dvz_panel_add_visual(panel, image, ctypes.byref(attach)),
+                'slice attach',
             )
             self._slice_fields[axis] = field
             self._slice_shapes[axis] = anatomy_data.shape
             self._slice_images[axis] = image
 
             if self.slice_renderer == 'raster':
-                annotation_field = self.dvz.dvz_sampled_field_from_array(
-                    self.scene,
+                annotation_field = self.viewer.dvz.dvz_sampled_field_from_array(
+                    self.viewer.scene,
                     annotation_data,
-                    format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                    semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                    dim=self.dvz.DVZ_FIELD_DIM_2D,
+                    format=self.viewer.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                    semantic=self.viewer.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                    dim=self.viewer.dvz.DVZ_FIELD_DIM_2D,
                 )
-                annotation_image = self.dvz.dvz_image(self.scene, 0)
+                annotation_image = self.viewer.dvz.dvz_image(self.viewer.scene, 0)
                 if not annotation_image:
                     raise RuntimeError('dvz annotation image() failed')
-                self._check(
-                    self.dvz.dvz_visual_set_data_many(
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_data_many(
                         annotation_image, {'position': positions, 'texcoords': texcoords}
                     ),
                     f'{axis} annotation geometry upload',
                 )
-                self._check(
-                    self.dvz.dvz_visual_set_field(annotation_image, b'field', annotation_field),
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_field(
+                        annotation_image, b'field', annotation_field
+                    ),
                     'annotation field bind',
                 )
-                self._check(
-                    self.dvz.dvz_image_set_sampling(
-                        annotation_image, self.dvz.DVZ_IMAGE_SAMPLING_NEAREST
+                self.viewer._check(
+                    self.viewer.dvz.dvz_image_set_sampling(
+                        annotation_image, self.viewer.dvz.DVZ_IMAGE_SAMPLING_NEAREST
                     ),
                     'annotation nearest sampling',
                 )
-                self._check(
-                    self.dvz.dvz_visual_set_depth_test(annotation_image, False),
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_depth_test(annotation_image, False),
                     'annotation depth disable',
                 )
-                self._check(
-                    self.dvz.dvz_visual_set_alpha_mode(
-                        annotation_image, self.dvz.DVZ_ALPHA_BLENDED
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_alpha_mode(
+                        annotation_image, self.viewer.dvz.DVZ_ALPHA_BLENDED
                     ),
                     'annotation alpha mode',
                 )
                 attach.z_layer = 1
-                self._check(
-                    self.dvz.dvz_panel_add_visual(panel, annotation_image, ctypes.byref(attach)),
+                self.viewer._check(
+                    self.viewer.dvz.dvz_panel_add_visual(
+                        panel, annotation_image, ctypes.byref(attach)
+                    ),
                     'annotation attach',
                 )
                 self._annotation_fields[axis] = annotation_field
                 self._annotation_images[axis] = annotation_image
 
                 hover_data = np.zeros_like(annotation_data)
-                hover_field = self.dvz.dvz_sampled_field_from_array(
-                    self.scene,
+                hover_field = self.viewer.dvz.dvz_sampled_field_from_array(
+                    self.viewer.scene,
                     hover_data,
-                    format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                    semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                    dim=self.dvz.DVZ_FIELD_DIM_2D,
+                    format=self.viewer.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                    semantic=self.viewer.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                    dim=self.viewer.dvz.DVZ_FIELD_DIM_2D,
                 )
-                hover_image = self.dvz.dvz_image(self.scene, 0)
+                hover_image = self.viewer.dvz.dvz_image(self.viewer.scene, 0)
                 if not hover_image:
                     raise RuntimeError('dvz hover image() failed')
-                self._check(
-                    self.dvz.dvz_visual_set_data_many(
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_data_many(
                         hover_image, {'position': positions, 'texcoords': texcoords}
                     ),
                     f'{axis} hover geometry upload',
                 )
-                self._check(
-                    self.dvz.dvz_visual_set_field(hover_image, b'field', hover_field),
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_field(hover_image, b'field', hover_field),
                     'hover field bind',
                 )
-                self._check(
-                    self.dvz.dvz_image_set_sampling(
-                        hover_image, self.dvz.DVZ_IMAGE_SAMPLING_NEAREST
+                self.viewer._check(
+                    self.viewer.dvz.dvz_image_set_sampling(
+                        hover_image, self.viewer.dvz.DVZ_IMAGE_SAMPLING_NEAREST
                     ),
                     'hover nearest sampling',
                 )
-                self._check(self.dvz.dvz_visual_set_depth_test(hover_image, False), 'hover depth')
-                self._check(
-                    self.dvz.dvz_visual_set_alpha_mode(hover_image, self.dvz.DVZ_ALPHA_BLENDED),
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_depth_test(hover_image, False), 'hover depth'
+                )
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_alpha_mode(
+                        hover_image, self.viewer.dvz.DVZ_ALPHA_BLENDED
+                    ),
                     'hover alpha mode',
                 )
                 attach.z_layer = 2
-                self._check(
-                    self.dvz.dvz_panel_add_visual(panel, hover_image, ctypes.byref(attach)),
+                self.viewer._check(
+                    self.viewer.dvz.dvz_panel_add_visual(panel, hover_image, ctypes.byref(attach)),
                     'hover attach',
                 )
                 self._hover_fields[axis] = hover_field
                 self._hover_images[axis] = hover_image
 
-            boundaries = self.dvz.dvz_segment(self.scene, 0)
+            boundaries = self.viewer.dvz.dvz_segment(self.viewer.scene, 0)
             if not boundaries:
                 raise RuntimeError('slice boundary segment creation failed')
             boundary_starts, boundary_ends = self._map_boundary_segments(
@@ -624,45 +468,52 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._upload_boundaries(
                 boundaries, boundary_starts, boundary_ends, 'slice boundaries upload'
             )
-            self._check(self.dvz.dvz_visual_set_depth_test(boundaries, False), 'boundary depth')
-            self._check(
-                self.dvz.dvz_visual_set_alpha_mode(boundaries, self.dvz.DVZ_ALPHA_BLENDED),
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_depth_test(boundaries, False), 'boundary depth'
+            )
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_alpha_mode(
+                    boundaries, self.viewer.dvz.DVZ_ALPHA_BLENDED
+                ),
                 'boundary alpha mode',
             )
             attach.z_layer = 3
-            self._check(
-                self.dvz.dvz_panel_add_visual(panel, boundaries, ctypes.byref(attach)),
+            self.viewer._check(
+                self.viewer.dvz.dvz_panel_add_visual(panel, boundaries, ctypes.byref(attach)),
                 'slice boundaries attach',
             )
             self._boundary_visuals[axis] = boundaries
 
             outlines = []
             for layer in range(2):
-                outline = self.dvz.dvz_segment(self.scene, 0)
+                outline = self.viewer.dvz.dvz_segment(self.viewer.scene, 0)
                 if not outline:
                     raise RuntimeError('slice selection outline creation failed')
-                self._check(
-                    self.dvz.dvz_visual_set_depth_test(outline, False), 'selection outline depth'
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_depth_test(outline, False),
+                    'selection outline depth',
                 )
-                self._check(
-                    self.dvz.dvz_visual_set_alpha_mode(outline, self.dvz.DVZ_ALPHA_BLENDED),
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_alpha_mode(
+                        outline, self.viewer.dvz.DVZ_ALPHA_BLENDED
+                    ),
                     'selection outline alpha',
                 )
                 attach.z_layer = 4 + layer
-                self._check(
-                    self.dvz.dvz_panel_add_visual(panel, outline, ctypes.byref(attach)),
+                self.viewer._check(
+                    self.viewer.dvz.dvz_panel_add_visual(panel, outline, ctypes.byref(attach)),
                     'selection outline attach',
                 )
                 outlines.append(outline)
             self._selection_visuals[axis] = tuple(outlines)
             self._upload_selection_outline(axis, payload)
 
-            crosshair = self.dvz.dvz_segment(self.scene, 0)
+            crosshair = self.viewer.dvz.dvz_segment(self.viewer.scene, 0)
             if not crosshair:
                 raise RuntimeError('dvz_segment() failed')
             starts, ends = self._crosshair_positions(axis)
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_data_many(
                     crosshair,
                     {
                         'position_start': starts,
@@ -673,19 +524,25 @@ class LinkedAtlasNavigator(AtlasViewer):
                 ),
                 'slice crosshair upload',
             )
-            self._check(self.dvz.dvz_visual_set_depth_test(crosshair, False), 'crosshair depth')
-            self._check(
-                self.dvz.dvz_visual_set_alpha_mode(crosshair, self.dvz.DVZ_ALPHA_BLENDED),
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_depth_test(crosshair, False), 'crosshair depth'
+            )
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_alpha_mode(
+                    crosshair, self.viewer.dvz.DVZ_ALPHA_BLENDED
+                ),
                 'crosshair alpha mode',
             )
             attach.z_layer = 10
-            self._check(
-                self.dvz.dvz_panel_add_visual(panel, crosshair, ctypes.byref(attach)),
+            self.viewer._check(
+                self.viewer.dvz.dvz_panel_add_visual(panel, crosshair, ctypes.byref(attach)),
                 'slice crosshair attach',
             )
             self._crosshairs[axis] = crosshair
             if self.slice_renderer == 'contours':
-                self._contour_visuals[axis] = ContourVisual(self.dvz, self.scene, panel)
+                self._contour_visuals[axis] = ContourVisual(
+                    self.viewer.dvz, self.viewer.scene, panel
+                )
                 self._stage_contours(axis, payload, opacity=request.annotation_opacity)
                 self._contour_visuals[axis].activate(visible=request.annotation_visible)
                 self._accepted_contours[axis] = (request, payload)
@@ -698,7 +555,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             axis,
             index,
             annotation_opacity=self.annotation_opacity,
-            selected_region_ids=self._selected_region_ids,
+            selected_region_ids=self.viewer._selected_region_ids,
             selection_dim_factor=1.0,
         )
 
@@ -707,16 +564,16 @@ class LinkedAtlasNavigator(AtlasViewer):
         if index is None:
             index = self.cursor.as_index()[('ap', 'ml', 'dv').index(axis)]
         selected_ids = (
-            self._signed_focus_ids()
-            if getattr(self, 'tree_model', None) is not None
-            else tuple(self._selected_region_ids)
+            self.viewer._signed_focus_ids()
+            if getattr(self.viewer, 'tree_model', None) is not None
+            else tuple(self.viewer._selected_region_ids)
         )
         return SliceRequest(
             axis=axis,
             index=index,
             revision=self._slice_revisions[axis],
             source_id=self._slice_source_id,
-            mapping=self.mapping,
+            mapping=self.viewer.mapping,
             annotation_opacity=self.annotation_opacity,
             anatomy_visible=self.anatomy_visible,
             annotation_visible=self.annotation_visible,
@@ -738,11 +595,12 @@ class LinkedAtlasNavigator(AtlasViewer):
     def _notify_slice_ready(self, _axis: str) -> None:
         """Wake the owner thread after a worker finishes a current request."""
         if (
-            self.view is not None
-            and not self._closed
-            and self.dvz.dvz_view_post(self.view, self._slice_post_callback, None) != 0
+            self.viewer.view is not None
+            and not self.viewer._closed
+            and self.viewer.dvz.dvz_view_post(self.viewer.view, self._slice_post_callback, None)
+            != 0
         ):
-            self.dvz.dvz_view_wake(self.view)
+            self.viewer.dvz.dvz_view_wake(self.viewer.view)
 
     def _upload_slice_payload(self, request: SliceRequest, payload: PreparedSliceLayers) -> None:
         """Upload one fully prepared slice payload on the view owner thread."""
@@ -750,7 +608,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         if self.slice_renderer == 'contours':
             if (
                 request.source_id != self._slice_source_id
-                or request.mapping != self.mapping
+                or request.mapping != self.viewer.mapping
                 or request.renderer != self.slice_renderer
                 or request.revision != self._slice_revisions[axis]
             ):
@@ -765,20 +623,20 @@ class LinkedAtlasNavigator(AtlasViewer):
                 f'{axis} slice payload extent changed: expected {expected}, '
                 f'got anatomy {anatomy.shape} and annotation {annotation.shape}'
             )
-        self.dvz.dvz_sampled_field_update_from_array(
+        self.viewer.dvz.dvz_sampled_field_update_from_array(
             self._slice_fields[axis],
             anatomy,
-            format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-            semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-            dim=self.dvz.DVZ_FIELD_DIM_2D,
+            format=self.viewer.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+            semantic=self.viewer.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+            dim=self.viewer.dvz.DVZ_FIELD_DIM_2D,
         )
         if self.slice_renderer == 'raster':
-            self.dvz.dvz_sampled_field_update_from_array(
+            self.viewer.dvz.dvz_sampled_field_update_from_array(
                 self._annotation_fields[axis],
                 annotation,
-                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                dim=self.dvz.DVZ_FIELD_DIM_2D,
+                format=self.viewer.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                semantic=self.viewer.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                dim=self.viewer.dvz.DVZ_FIELD_DIM_2D,
             )
         starts, ends = self._map_boundary_segments(
             axis, payload.boundary_starts, payload.boundary_ends
@@ -798,7 +656,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             raise ValueError('exact contour geometry is missing')
         colors = {
             row.atlas_id: tuple(bytes.fromhex(row.color_hex.removeprefix('#')))
-            for row in self.catalog.physical(payload.contours.mapping)
+            for row in self.viewer.catalog.physical(payload.contours.mapping)
         }
         corners, _ = self._slice_quad(axis)
         self._contour_visuals[axis].stage(
@@ -819,15 +677,17 @@ class LinkedAtlasNavigator(AtlasViewer):
         refresh_axes = tuple(self._hover_fields) if axes is None else tuple(axes)
         indices = dict(zip(('ap', 'ml', 'dv'), self.cursor.as_index(), strict=True))
         for axis in refresh_axes:
-            mask = self.slice_composer.region_mask(axis, indices[axis], self._hovered_region_ids)
+            mask = self.slice_composer.region_mask(
+                axis, indices[axis], self.viewer._hovered_region_ids
+            )
             overlay = np.zeros((*mask.shape, 4), dtype=np.uint8)
             overlay[mask] = (255, 222, 92, 104)
-            self.dvz.dvz_sampled_field_update_from_array(
+            self.viewer.dvz.dvz_sampled_field_update_from_array(
                 self._hover_fields[axis],
                 overlay,
-                format=self.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
-                semantic=self.dvz.DVZ_FIELD_SEMANTIC_COLOR,
-                dim=self.dvz.DVZ_FIELD_DIM_2D,
+                format=self.viewer.dvz.DVZ_FIELD_FORMAT_RGBA8_UNORM,
+                semantic=self.viewer.dvz.DVZ_FIELD_SEMANTIC_COLOR,
+                dim=self.viewer.dvz.DVZ_FIELD_DIM_2D,
             )
 
     def _drain_prepared_slices(self, _view, _user_data) -> None:
@@ -837,12 +697,12 @@ class LinkedAtlasNavigator(AtlasViewer):
         except Exception as error:
             # This method is also a native post callback: ctypes cannot forward
             # upload failures to show(), so retain the error and stop the loop.
-            self._slice_error = self._gui_callback_error = error
-            self._close_pending = True
-            if getattr(self, 'app', None) is not None:
-                self.dvz.dvz_app_stop(self.app)
+            self._slice_error = self.viewer._gui_callback_error = error
+            self.viewer._close_pending = True
+            if getattr(self.viewer, 'app', None) is not None:
+                self.viewer.dvz.dvz_app_stop(self.viewer.app)
             return
-        if self._slice_loader is None or self._closed:
+        if self._slice_loader is None or self.viewer._closed:
             return
         try:
             ready = self._slice_loader.drain_ready()
@@ -850,24 +710,24 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._slice_error = error
             # Other axes (and failures) remain queued; retry on the owner thread
             # even if every worker notification arrived in this frame.
-            self.dvz.dvz_view_request_frame(self.view)
+            self.viewer.dvz.dvz_view_request_frame(self.viewer.view)
             return
         for item in ready:
             try:
                 self._upload_slice_payload(item.request, item.payload)
-                if self._hovered_region_ids:
+                if self.viewer._hovered_region_ids:
                     self._refresh_hover_overlays((item.request.axis,))
             except Exception as error:
                 # Native post callbacks cannot propagate exceptions. Stop the
                 # frame loop and let show() release resources after it returns.
-                self._slice_error = self._gui_callback_error = error
-                self._close_pending = True
-                if getattr(self, 'app', None) is not None:
-                    self.dvz.dvz_app_stop(self.app)
+                self._slice_error = self.viewer._gui_callback_error = error
+                self.viewer._close_pending = True
+                if getattr(self.viewer, 'app', None) is not None:
+                    self.viewer.dvz.dvz_app_stop(self.viewer.app)
                 return
         if ready:
             self._slice_error = None
-            self.dvz.dvz_view_request_frame(self.view)
+            self.viewer.dvz.dvz_view_request_frame(self.viewer.view)
 
     def _slice_fraction(self, axis, index):
         if self.slice_renderer == 'raster':
@@ -957,8 +817,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         """Hide empty layers; native attribute setters require nonzero counts."""
         count = len(starts)
         if count:
-            self._check(
-                self.dvz.dvz_visual_set_data_many(
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_data_many(
                     visual,
                     {
                         'position_start': starts,
@@ -977,36 +837,38 @@ class LinkedAtlasNavigator(AtlasViewer):
             )
         # Keeping previous nonempty storage is safe while hidden. A subsequent
         # nonempty upload replaces it before making the layer visible again.
-        self._check(self.dvz.dvz_visual_set_visible(visual, bool(count)), f'{context} visibility')
+        self.viewer._check(
+            self.viewer.dvz.dvz_visual_set_visible(visual, bool(count)), f'{context} visibility'
+        )
 
     def _create_anatomical_volume(self) -> None:
-        self.volume_field = self.dvz.dvz_sampled_field_from_array(
-            self.scene,
+        self.volume_field = self.viewer.dvz.dvz_sampled_field_from_array(
+            self.viewer.scene,
             self.volumes.template,
-            format=self.dvz.DVZ_FIELD_FORMAT_R16_UNORM,
-            semantic=self.dvz.DVZ_FIELD_SEMANTIC_SCALAR,
-            dim=self.dvz.DVZ_FIELD_DIM_3D,
+            format=self.viewer.dvz.DVZ_FIELD_FORMAT_R16_UNORM,
+            semantic=self.viewer.dvz.DVZ_FIELD_SEMANTIC_SCALAR,
+            dim=self.viewer.dvz.DVZ_FIELD_DIM_3D,
         )
-        self.volume = self.dvz.dvz_volume(self.scene, 0)
+        self.volume = self.viewer.dvz.dvz_volume(self.viewer.scene, 0)
         if not self.volume:
             raise RuntimeError('dvz_volume() failed')
-        self._check(
-            self.dvz.dvz_visual_set_field(self.volume, b'field', self.volume_field),
+        self.viewer._check(
+            self.viewer.dvz.dvz_visual_set_field(self.volume, b'field', self.volume_field),
             'anatomical volume field bind',
         )
         bounds_min, bounds_max, axis_order, axis_flip = volume_render_geometry(
-            self.mesh_data, self.volumes
+            self.viewer.mesh_data, self.volumes
         )
-        self._check(
-            self.dvz.dvz_volume_set_bounds(
+        self.viewer._check(
+            self.viewer.dvz.dvz_volume_set_bounds(
                 self.volume,
                 (ctypes.c_double * 3)(*bounds_min),
                 (ctypes.c_double * 3)(*bounds_max),
             ),
             'anatomical volume bounds',
         )
-        self._check(
-            self.dvz.dvz_volume_set_axis_mapping(
+        self.viewer._check(
+            self.viewer.dvz.dvz_volume_set_axis_mapping(
                 self.volume,
                 (ctypes.c_uint32 * 3)(*axis_order),
                 (ctypes.c_bool * 3)(*axis_flip),
@@ -1016,110 +878,124 @@ class LinkedAtlasNavigator(AtlasViewer):
         low, high = np.percentile(self.volumes.template, (2.0, 99.5)) / 65535.0
         if high <= low:
             high = min(1.0, low + 1 / 65535.0)
-        self._check(
-            self.dvz.dvz_volume_set_value_range(self.volume, float(low), float(high)),
+        self.viewer._check(
+            self.viewer.dvz.dvz_volume_set_value_range(self.volume, float(low), float(high)),
             'anatomical volume value range',
         )
-        alpha = (self.dvz.DvzVolumeAlphaStop * 4)()
+        alpha = (self.viewer.dvz.DvzVolumeAlphaStop * 4)()
         for stop, position, opacity in zip(
             alpha, (0.0, 0.12, 0.45, 1.0), (0.0, 0.0, 0.26, 0.82), strict=True
         ):
             stop.position = position
             stop.alpha = opacity
-        self._check(
-            self.dvz.dvz_volume_set_alpha_stops(self.volume, alpha, len(alpha)),
+        self.viewer._check(
+            self.viewer.dvz.dvz_volume_set_alpha_stops(self.volume, alpha, len(alpha)),
             'anatomical volume transfer opacity',
         )
-        self._check(
-            self.dvz.dvz_volume_set_render_mode(self.volume, self.dvz.DVZ_VOLUME_RENDER_COMPOSITE),
+        self.viewer._check(
+            self.viewer.dvz.dvz_volume_set_render_mode(
+                self.volume, self.viewer.dvz.DVZ_VOLUME_RENDER_COMPOSITE
+            ),
             'anatomical volume composite mode',
         )
-        self._check(
-            self.dvz.dvz_volume_set_sampling(self.volume, self.dvz.DVZ_VOLUME_SAMPLING_LINEAR),
+        self.viewer._check(
+            self.viewer.dvz.dvz_volume_set_sampling(
+                self.volume, self.viewer.dvz.DVZ_VOLUME_SAMPLING_LINEAR
+            ),
             'anatomical volume linear sampling',
         )
-        self._check(self.dvz.dvz_volume_set_step_count(self.volume, 160), 'volume step count')
-        self._check(
-            self.dvz.dvz_volume_set_opacity(self.volume, self.volume_opacity), 'volume opacity'
+        self.viewer._check(
+            self.viewer.dvz.dvz_volume_set_step_count(self.volume, 160), 'volume step count'
         )
-        self._check(
-            self.dvz.dvz_visual_set_visible(self.volume, self.volume_opacity > 0),
+        self.viewer._check(
+            self.viewer.dvz.dvz_volume_set_opacity(self.volume, self.volume_opacity),
+            'volume opacity',
+        )
+        self.viewer._check(
+            self.viewer.dvz.dvz_visual_set_visible(self.volume, self.volume_opacity > 0),
             'volume visibility',
         )
-        self._check(
-            self.dvz.dvz_visual_set_alpha_mode(self.volume, self.dvz.DVZ_ALPHA_BLENDED),
+        self.viewer._check(
+            self.viewer.dvz.dvz_visual_set_alpha_mode(
+                self.volume, self.viewer.dvz.DVZ_ALPHA_BLENDED
+            ),
             'volume alpha mode',
         )
-        self._check(self.dvz.dvz_panel_add_visual(self.panel, self.volume, None), 'volume attach')
-        self._update_surface_alpha_mode()
+        self.viewer._check(
+            self.viewer.dvz.dvz_panel_add_visual(self.viewer.panel, self.volume, None),
+            'volume attach',
+        )
+        self.viewer._update_surface_alpha_mode()
 
     def _update_surface_alpha_mode(self) -> None:
         if not self.render_volume or self.volume_opacity <= 0:
-            super()._update_surface_alpha_mode()
+            self.viewer._update_surface_alpha_mode_base()
             return
         # The bounded volume route still composes through source-over blending.
-        mode = self.dvz.DVZ_ALPHA_BLENDED
-        if mode == self._surface_alpha_mode:
+        mode = self.viewer.dvz.DVZ_ALPHA_BLENDED
+        if mode == self.viewer._surface_presentation.alpha_mode:
             return
-        self._check(
-            self.dvz.dvz_visual_set_alpha_mode(self.mesh, mode),
+        self.viewer._check(
+            self.viewer.dvz.dvz_visual_set_alpha_mode(self.viewer.mesh, mode),
             'surface transparency mode',
         )
-        self._surface_alpha_mode = mode
+        self.viewer._surface_presentation.alpha_mode = mode
 
     def _create_cursor_marker(self) -> None:
-        self.cursor_marker = self.dvz.dvz_mesh(self.scene, 0)
+        self.cursor_marker = self.viewer.dvz.dvz_mesh(self.viewer.scene, 0)
         if not self.cursor_marker:
             raise RuntimeError('3-D cursor visual creation failed')
-        material = self.dvz.dvz_phong_material_desc()
+        material = self.viewer.dvz.dvz_phong_material_desc()
         material.phong.ambient = 0.35
         material.phong.diffuse = 0.75
         material.phong.specular = 0.35
         material.phong.shininess = 32.0
-        self._check(
-            self.dvz.dvz_visual_set_material(self.cursor_marker, material),
+        self.viewer._check(
+            self.viewer.dvz.dvz_visual_set_material(self.cursor_marker, material),
             '3-D cursor material',
         )
-        self._check(
-            self.dvz.dvz_visual_set_depth_test(self.cursor_marker, True),
+        self.viewer._check(
+            self.viewer.dvz.dvz_visual_set_depth_test(self.cursor_marker, True),
             '3-D cursor depth',
         )
-        self._check(
-            self.dvz.dvz_visual_set_alpha_mode(self.cursor_marker, self.dvz.DVZ_ALPHA_OPAQUE),
+        self.viewer._check(
+            self.viewer.dvz.dvz_visual_set_alpha_mode(
+                self.cursor_marker, self.viewer.dvz.DVZ_ALPHA_OPAQUE
+            ),
             '3-D cursor alpha mode',
         )
         self._update_cursor_marker()
-        self._check(
-            self.dvz.dvz_panel_add_visual(self.panel, self.cursor_marker, None),
+        self.viewer._check(
+            self.viewer.dvz.dvz_panel_add_visual(self.viewer.panel, self.cursor_marker, None),
             '3-D cursor attach',
         )
 
     def _update_cursor_marker(self) -> None:
         world = np.asarray(self.cursor.world_um(self.slice_source), dtype=np.float32).reshape(1, 3)
-        state = (id(self.mesh_data), tuple(world[0]), self.mesh_data.display_scale)
+        state = (id(self.viewer.mesh_data), tuple(world[0]), self.viewer.mesh_data.display_scale)
         if getattr(self, '_cursor_marker_state', None) == state:
             return
         # A native setter can fail after changing its target. Invalidate before
         # attempting the update so rollback must restore the previous geometry.
         self._cursor_marker_state = None
-        position = self.mesh_data.normalize_points(world)[0]
-        desc = self.dvz.dvz_geometry_sphere_desc()
+        position = self.viewer.mesh_data.normalize_points(world)[0]
+        desc = self.viewer.dvz.dvz_geometry_sphere_desc()
         desc.center[:] = position
         # Fixed atlas-space size: zoom and perspective provide physical depth cues.
-        desc.radius = 120.0 * self.mesh_data.display_scale
-        desc.color = self.dvz.DvzColor(43, 220, 255, 255)
-        geometry = self.dvz.dvz_geometry_sphere(ctypes.byref(desc))
+        desc.radius = 120.0 * self.viewer.mesh_data.display_scale
+        desc.color = self.viewer.dvz.DvzColor(43, 220, 255, 255)
+        geometry = self.viewer.dvz.dvz_geometry_sphere(ctypes.byref(desc))
         if not geometry:
             raise RuntimeError('3-D cursor sphere creation failed')
         parts = [geometry]
         merged = None
         try:
             for axis in range(3):
-                cylinder = self.dvz.dvz_geometry_cylinder_desc()
-                cylinder.radius = 28.0 * self.mesh_data.display_scale
-                cylinder.height = 900.0 * self.mesh_data.display_scale
-                cylinder.color = self.dvz.DvzColor(94, 174, 192, 255)
-                rod = self.dvz.dvz_geometry_cylinder(ctypes.byref(cylinder))
+                cylinder = self.viewer.dvz.dvz_geometry_cylinder_desc()
+                cylinder.radius = 28.0 * self.viewer.mesh_data.display_scale
+                cylinder.height = 900.0 * self.viewer.mesh_data.display_scale
+                cylinder.color = self.viewer.dvz.DvzColor(94, 174, 192, 255)
+                rod = self.viewer.dvz.dvz_geometry_cylinder(ctypes.byref(cylinder))
                 if not rod:
                     raise RuntimeError('3-D cursor cylinder creation failed')
                 parts.append(rod)
@@ -1127,23 +1003,24 @@ class LinkedAtlasNavigator(AtlasViewer):
                 transform[:3, :3] = np.roll(np.eye(3), (axis + 1) % 3, axis=0)
                 transform[:3, 3] = position
                 matrix = ((ctypes.c_double * 4) * 4)(*map(tuple, transform.T))
-                self._check(
-                    self.dvz.dvz_geometry_transform(rod, matrix), '3-D cursor axis transform'
+                self.viewer._check(
+                    self.viewer.dvz.dvz_geometry_transform(rod, matrix),
+                    '3-D cursor axis transform',
                 )
             pointers = (type(geometry) * len(parts))(*parts)
-            merged = self.dvz.dvz_geometry_merge(len(parts), pointers)
+            merged = self.viewer.dvz.dvz_geometry_merge(len(parts), pointers)
             if not merged:
                 raise RuntimeError('3-D cursor geometry merge failed')
             # The mesh copies the geometry; the scene owns the visual.
-            self._check(
-                self.dvz.dvz_mesh_set_geometry(self.cursor_marker, merged),
+            self.viewer._check(
+                self.viewer.dvz.dvz_mesh_set_geometry(self.cursor_marker, merged),
                 '3-D cursor update',
             )
         finally:
             if merged:
-                self.dvz.dvz_geometry_destroy(merged)
+                self.viewer.dvz.dvz_geometry_destroy(merged)
             for part in parts:
-                self.dvz.dvz_geometry_destroy(part)
+                self.viewer.dvz.dvz_geometry_destroy(part)
         self._cursor_marker_state = state
 
     def _update_crosshair(self, axis: str) -> None:
@@ -1155,8 +1032,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         if self._crosshair_states.get(axis) == state:
             return
         self._crosshair_states.pop(axis, None)
-        self._check(
-            self.dvz.dvz_visual_set_data_many(
+        self.viewer._check(
+            self.viewer.dvz.dvz_visual_set_data_many(
                 self._crosshairs[axis], {'position_start': starts, 'position_end': ends}
             ),
             f'{axis} crosshair update',
@@ -1170,7 +1047,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         for axis in refresh_axes:
             self._slice_revisions[axis] += 1
             request = self._slice_request(axis)
-            if self._slice_loader is not None and self.view is not None:
+            if self._slice_loader is not None and self.viewer.view is not None:
                 self._slice_loader.submit(request)
             else:
                 payload = self._prepare_slice(request)
@@ -1186,8 +1063,8 @@ class LinkedAtlasNavigator(AtlasViewer):
             if axis not in images:
                 continue
             visual = images[axis]
-            self._check(
-                self.dvz.dvz_visual_set_data(visual, 'position', positions),
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_data(visual, 'position', positions),
                 f'{axis} slice zoom',
             )
         if self.slice_renderer == 'contours' and axis in self._accepted_contours:
@@ -1205,7 +1082,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         selection.  Callers handling an explicit selection gesture (for
         example a click in a slice) can opt in with ``select_region=True``.
         """
-        self._require_open()
+        self.viewer._require_open()
         if not isinstance(cursor, AtlasCursor):
             raise TypeError('cursor must be AtlasCursor')
         if not isinstance(select_region, (bool, np.bool_)):
@@ -1216,9 +1093,9 @@ class LinkedAtlasNavigator(AtlasViewer):
             cursor.replace(axis, value, self.slice_source.grid.shape)
         self._cancel_auto_slice()
         old_cursor = self.cursor
-        before = self.slices._snapshot()
-        snapshot = self._surface_transaction_snapshot()
-        self.selection._hold_events += 1
+        before = self.viewer.slices._snapshot()
+        snapshot = self.viewer._surface_transaction_snapshot()
+        self.viewer.selection._hold_events += 1
         try:
             self.cursor = cursor
             for axis, value in zip(('ap', 'ml', 'dv'), current, strict=True):
@@ -1226,7 +1103,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             if select_region:
                 ids = self._cursor_selection_ids()
                 if ids is not None:
-                    self._apply_selected_region_ids(
+                    self.viewer._apply_selected_region_ids(
                         ids, update_tree=True, update_table=True, clear_mesh=True
                     )
                 else:
@@ -1248,10 +1125,11 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._restore_linked_transaction(snapshot)
             raise
         finally:
-            self.selection._hold_events -= 1
+            self.viewer.selection._hold_events -= 1
         if select_region:
-            self.selection._publish('regions')
-        self.slices._publish(before)
+            self.viewer.selection._publish('regions')
+        self.viewer.slices._publish(before)
+        self.viewer._on_cursor_committed()
 
     def set_cursor_from_slice_data(
         self, axis: str, x: float, y: float, *, select_region: bool = False
@@ -1260,7 +1138,7 @@ class LinkedAtlasNavigator(AtlasViewer):
 
         Returns ``False`` when the coordinate lies outside the rendered image.
         """
-        self._require_open()
+        self.viewer._require_open()
         cursor = self._cursor_at_slice_data(axis, x, y)
         if cursor is None:
             return False
@@ -1279,7 +1157,7 @@ class LinkedAtlasNavigator(AtlasViewer):
         cursor = self.cursor
         if self.slice_renderer == 'contours':
             accepted = self._accepted_contours.get(axis)
-            if accepted is None or accepted[0].mapping != self.mapping:
+            if accepted is None or accepted[0].mapping != self.viewer.mapping:
                 return None
             cursor = cursor.replace(axis, accepted[0].index, self.slice_source.grid.shape)
             grid = self.slice_source.grid
@@ -1314,12 +1192,12 @@ class LinkedAtlasNavigator(AtlasViewer):
         else:
             if self._slice_loader is not None:
                 request = self._displayed_slice_requests.get(axis)
-                if request is None or request.mapping != self.mapping:
+                if request is None or request.mapping != self.viewer.mapping:
                     return False
                 cursor = cursor.replace(axis, request.index, self.slice_source.grid.shape)
-            row = cursor.region(self.slice_source, self.mapping)
+            row = cursor.region(self.slice_source, self.viewer.mapping)
             region_id = None if row is None else row.atlas_id
-        self.set_selected_region_ids((region_id,) if region_id else ())
+        self.viewer.set_selected_region_ids((region_id,) if region_id else ())
         return True
 
     def _cursor_selection_ids(self):
@@ -1328,7 +1206,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             if not available:
                 return None
             return () if region_id is None else (region_id,)
-        row = self.cursor.region(self.slice_source, self.mapping)
+        row = self.cursor.region(self.slice_source, self.viewer.mapping)
         return () if row is None or row.atlas_id == 0 else (row.atlas_id,)
 
     def _contour_region_under_cursor(self):
@@ -1337,7 +1215,7 @@ class LinkedAtlasNavigator(AtlasViewer):
     def _contour_region_query(self):
         coordinates = dict(zip(('ap', 'ml', 'dv'), self.cursor.as_index(), strict=True))
         for axis, (request, _) in self._accepted_contours.items():
-            if request.index != coordinates[axis] or request.mapping != self.mapping:
+            if request.index != coordinates[axis] or request.mapping != self.viewer.mapping:
                 continue
             x_axis, y_axis = SLICE_DISPLAY_AXES[axis]
             corners, _ = self._slice_quad(axis)
@@ -1353,7 +1231,7 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def _contour_region_at(self, axis, x, y):
         accepted = self._accepted_contours.get(axis)
-        if accepted is None or accepted[0].mapping != self.mapping:
+        if accepted is None or accepted[0].mapping != self.viewer.mapping:
             return None
         corners, _ = self._slice_quad(axis)
         low, high = corners[0, :2], corners[3, :2]
@@ -1373,7 +1251,11 @@ class LinkedAtlasNavigator(AtlasViewer):
             if self.slice_renderer == 'contours':
                 region_id = self._contour_region_at(axis, x, y)
                 row = next(
-                    (r for r in self.catalog.physical(self.mapping) if r.atlas_id == region_id),
+                    (
+                        r
+                        for r in self.viewer.catalog.physical(self.viewer.mapping)
+                        if r.atlas_id == region_id
+                    ),
                     None,
                 )
             else:
@@ -1388,12 +1270,12 @@ class LinkedAtlasNavigator(AtlasViewer):
                 if source_index is None:
                     label = 'loading…'
                 else:
-                    row = mapped_region(self.slice_source, source_index, self.mapping)
+                    row = mapped_region(self.slice_source, source_index, self.viewer.mapping)
             if label is None:
                 label = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
         region_ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
         if cursor is None:
-            model = getattr(self, '_selector_model', None)
+            model = getattr(self.viewer, '_selector_model', None)
             region = model.by_id.get(model.hover) if model is not None else None
             region_ids = (region.atlas_id,) if region is not None else ()
         position = (x, y) if cursor is not None else None
@@ -1405,12 +1287,12 @@ class LinkedAtlasNavigator(AtlasViewer):
         self._hovered_slice_axis = axis
         self._hovered_slice_position = position
         self._hovered_region_label = label
-        self._set_hovered_region_ids(region_ids)
+        self.viewer._set_hovered_region_ids(region_ids)
         return changed
 
     def step_slice(self, axis: str, delta: int) -> bool:
         """Step one slice plane without changing committed region selection."""
-        self._require_open()
+        self.viewer._require_open()
         if axis not in self.slice_panels or not delta:
             return False
         cursor = step_slice_cursor(self.cursor, axis, int(delta), self.slice_source.grid.shape)
@@ -1421,66 +1303,68 @@ class LinkedAtlasNavigator(AtlasViewer):
 
     def toggle_cursor_region_selection(self) -> None:
         """Toggle the region under the current AP/ML/DV cursor."""
-        self._require_open()
+        self.viewer._require_open()
         if self.slice_renderer == 'contours':
             available, region_id = self._contour_region_query()
             if not available:
                 return
             ids = () if region_id is None else (region_id,)
         else:
-            row = self.cursor.region(self.slice_source, self.mapping)
+            row = self.cursor.region(self.slice_source, self.viewer.mapping)
             ids = () if row is None or row.atlas_id == 0 else (row.atlas_id,)
-        if ids == self._selected_region_ids:
+        if ids == self.viewer._selected_region_ids:
             ids = ()
-        self._apply_selected_region_ids(ids, update_tree=True, update_table=True, clear_mesh=True)
-        self.selection._publish('regions')
+        self.viewer._apply_selected_region_ids(
+            ids, update_tree=True, update_table=True, clear_mesh=True
+        )
+        self.viewer.selection._publish('regions')
 
     def select_cursor_region(self) -> None:
         """Toggle the cursor region; retained as the public convenience name."""
-        self._require_open()
+        self.viewer._require_open()
         self.toggle_cursor_region_selection()
 
     def _restore_linked_transaction(self, snapshot, *, composer_mapping=None, widgets=()):
         """Restore both presentation domains, superseding rejected slice requests."""
-        if self._closed:
+        if self.viewer._closed:
             return
         try:
-            self._restore_surface_transaction(snapshot, widgets)
+            self.viewer._restore_surface_transaction(snapshot, widgets)
             if composer_mapping is not None:
                 self.slice_composer.set_mapping(composer_mapping)
-            self._set_tree_selection(self._selected_region_ids)
-            self._set_probe_table_selection(self._selected_region_ids)
-            self._set_region_table_selection(self._selected_region_ids)
+            self.viewer._set_tree_selection(self.viewer._selected_region_ids)
+            self.viewer._set_probe_table_selection(self.viewer._selected_region_ids)
+            self.viewer._set_region_table_selection(self.viewer._selected_region_ids)
             # Mapping/selection setters may already have cleared native picks.
             # Acknowledge that native state without dropping restored host IDs on
             # the next frame; programmatic selection remains authoritative.
-            self._last_mesh_region_ids = self._mesh_selected_region_ids()
+            self.viewer._last_mesh_region_ids = self.viewer._mesh_selected_region_ids()
             if hasattr(self, '_slice_fields'):
                 # Revisions advance again so workers cannot apply rejected state.
                 self._refresh_slices()
                 self._refresh_hover_overlays()
         except Exception as rollback_error:
-            self.close()
+            self.viewer.close()
             raise RuntimeError(
                 'linked transaction rollback failed; viewer closed'
             ) from rollback_error
 
     def set_mapping(self, mapping: str, palette=None) -> None:
         """Switch all mesh, slice, cursor, and ontology identities together."""
-        self._require_open()
+        self.viewer._require_open()
         if palette is not None:
             raise ValueError('linked atlas slices require the verified catalog palette')
         self._cancel_auto_slice()
-        snapshot = self._surface_transaction_snapshot()
+        snapshot = self.viewer._surface_transaction_snapshot()
         previous_mapping = self.slice_composer.mapping
         widgets = tuple(
             name
             for name in ('region_tree', 'probe_table', 'region_table')
-            if getattr(self, name) is not None
+            if getattr(self.viewer, name) is not None
         )
-        self.selection._hold_events += 1
+        self.viewer.selection._hold_events += 1
         try:
-            super().set_mapping(mapping)
+            self.viewer._set_surface_mapping(mapping)
             self.slice_composer.set_mapping(mapping)
             self._refresh_slices()
         except Exception:
@@ -1489,33 +1373,32 @@ class LinkedAtlasNavigator(AtlasViewer):
             )
             raise
         finally:
-            self.selection._hold_events -= 1
-        self.selection._publish('mapping')
+            self.viewer.selection._hold_events -= 1
+        self.viewer.selection._publish('mapping')
 
     def _apply_selected_region_ids(self, region_ids, **kwargs) -> None:
         self._cancel_auto_slice()
-        snapshot = self._surface_transaction_snapshot()
-        self.selection._hold_events += 1
+        snapshot = self.viewer._surface_transaction_snapshot()
+        self.viewer.selection._hold_events += 1
         try:
-            super()._apply_selected_region_ids(region_ids, **kwargs)
+            self.viewer._apply_surface_selected_region_ids(region_ids, **kwargs)
             if hasattr(self, '_slice_fields'):
                 self._refresh_slices()
         except Exception:
             self._restore_linked_transaction(snapshot)
             raise
         finally:
-            self.selection._hold_events -= 1
-        # The outer public setter/gesture publishes after its remaining work.
+            self.viewer.selection._hold_events -= 1
 
     def _restore_selection_feedback(self):
         """Replace rejected slice revisions and restore every transient hover layer."""
-        super()._restore_selection_feedback()
+        self.viewer._restore_surface_selection_feedback()
         self._refresh_slices()
         self._refresh_hover_overlays()
 
     def _set_hovered_region_ids(self, region_ids) -> bool:
         """Brighten transient hover across 3-D and lightweight slice overlays."""
-        changed = super()._set_hovered_region_ids(region_ids)
+        changed = self.viewer._set_surface_hovered_region_ids(region_ids)
         if changed:
             self._refresh_hover_overlays()
         return changed
@@ -1527,10 +1410,10 @@ class LinkedAtlasNavigator(AtlasViewer):
             return
         if self._hovered_slice_axis is not None:
             return
-        region_ids = self._mesh_hovered_region_ids()
-        self._set_hovered_region_ids(region_ids)
-        if region_ids and self.tree_model is not None:
-            self._hovered_region_label = self.tree_model.describe(region_ids[0])
+        region_ids = self.viewer._mesh_hovered_region_ids()
+        self.viewer._set_hovered_region_ids(region_ids)
+        if region_ids and self.viewer.tree_model is not None:
+            self._hovered_region_label = self.viewer.tree_model.describe(region_ids[0])
         else:
             self._hovered_region_label = None
 
@@ -1543,7 +1426,7 @@ class LinkedAtlasNavigator(AtlasViewer):
             return
         target = effect.get('target', effect.get('id'))
         row = candidate.by_id.get(target)
-        selected = self._selected_region_ids
+        selected = self.viewer._selected_region_ids
         signed_id = next(
             (value for value in selected if row is not None and abs(value) == abs(row.atlas_id)),
             None,
@@ -1551,43 +1434,44 @@ class LinkedAtlasNavigator(AtlasViewer):
         # A deselection or clear cancels old work without jumping to another row.
         if target not in candidate.selected:
             signed_id = None
-        self._auto_slice.request(self.mapping, signed_id)
+        self._auto_slice.request(self.viewer.mapping, signed_id)
 
     def _drain_auto_slice(self, *_args):
-        if getattr(self, '_auto_slice', None) is None or self._closed:
+        if getattr(self, '_auto_slice', None) is None or self.viewer._closed:
             return
         anchor = self._auto_slice.drain()
         if anchor is not None:
             self.set_cursor(AtlasCursor(*anchor), select_region=False)
 
     def _draw_viewport_toolbar_gui(self, gui):
-        super()._draw_viewport_toolbar_gui(gui)
         enabled = ctypes.c_bool(self._auto_slice.enabled)
-        self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
-        if self.dvz.dvz_gui_checkbox(gui, b'Auto-slice selected region', ctypes.byref(enabled)):
-            self.slices.set_auto_slice(enabled.value)
+        self.viewer.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.viewer.ui_scale)
+        if self.viewer.dvz.dvz_gui_checkbox(
+            gui, b'Auto-slice selected region', ctypes.byref(enabled)
+        ):
+            self.viewer.slices.set_auto_slice(enabled.value)
         if self._auto_slice.status:
-            self.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.ui_scale)
+            self.viewer.dvz.dvz_gui_same_line(gui, 0.0, 12.0 * self.viewer.ui_scale)
             if self._auto_slice.navigation.available:
-                self.dvz.dvz_gui_text(gui, self._auto_slice.status.encode())
+                self.viewer.dvz.dvz_gui_text(gui, self._auto_slice.status.encode())
             else:
-                self.dvz.dvz_gui_text(gui, b'Unavailable for this source')
-                self.dvz.dvz_gui_same_line(gui, 0.0, 4.0 * self.ui_scale)
-                self._sidebar.icon(
+                self.viewer.dvz.dvz_gui_text(gui, b'Unavailable for this source')
+                self.viewer.dvz.dvz_gui_same_line(gui, 0.0, 4.0 * self.viewer.ui_scale)
+                self.viewer._sidebar.icon(
                     gui, b'##auto_slice_source_info', 'INFO', self._auto_slice.status
                 )
         changed = False
         labels = (b'Coronal (AP)', b'Sagittal (ML)', b'Horizontal (DV)')
-        width, _ = self._sidebar.available(gui)
-        gap = 12.0 * self.ui_scale
-        slider_width = max(1.0, (width - 2.0 * gap) / 3.0 - 150.0 * self.ui_scale)
+        width, _ = self.viewer._sidebar.available(gui)
+        gap = 12.0 * self.viewer.ui_scale
+        slider_width = max(1.0, (width - 2.0 * gap) / 3.0 - 150.0 * self.viewer.ui_scale)
         for index, (axis, size, label) in enumerate(
             zip(('ap', 'ml', 'dv'), self.slice_source.grid.shape, labels, strict=True)
         ):
             if index:
-                self.dvz.dvz_gui_same_line(gui, 0.0, gap)
-            self.dvz.dvz_gui_set_next_item_width(gui, slider_width)
-            changed |= self.dvz.dvz_gui_slider_int(
+                self.viewer.dvz.dvz_gui_same_line(gui, 0.0, gap)
+            self.viewer.dvz.dvz_gui_set_next_item_width(gui, slider_width)
+            changed |= self.viewer.dvz.dvz_gui_slider_int(
                 gui, label, ctypes.byref(self._cursor_controls[axis]), 0, size - 1
             )
         if changed:
@@ -1601,37 +1485,42 @@ class LinkedAtlasNavigator(AtlasViewer):
         if self.slice_renderer == 'contours':
             region_id = self._contour_region_under_cursor()
             row = next(
-                (r for r in self.catalog.physical(self.mapping) if r.atlas_id == region_id), None
+                (
+                    r
+                    for r in self.viewer.catalog.physical(self.viewer.mapping)
+                    if r.atlas_id == region_id
+                ),
+                None,
             )
         else:
-            row = self.cursor.region(self.slice_source, self.mapping)
+            row = self.cursor.region(self.slice_source, self.viewer.mapping)
         region = 'unmapped' if row is None else f'{row.acronym} — {row.name}'
         volume_label = (
             f'3-D {self.volume_resolution_label}' if self.render_volume else '3-D volume disabled'
         )
-        self.dvz.dvz_gui_separator_text(gui, b'Cursor and selection')
-        self.dvz.dvz_gui_text(
+        self.viewer.dvz.dvz_gui_separator_text(gui, b'Cursor and selection')
+        self.viewer.dvz.dvz_gui_text(
             gui,
             f'Slices {self.slice_resolution_label} | {volume_label}'.encode(),
         )
-        self.dvz.dvz_gui_text(
+        self.viewer.dvz.dvz_gui_text(
             gui,
             f'ML {world[0]:.0f} · AP {world[1]:.0f} · DV {world[2]:.0f} um'.encode(),
         )
-        self.dvz.dvz_gui_text(gui, region.encode())
+        self.viewer.dvz.dvz_gui_text(gui, region.encode())
         if row is not None and row.atlas_id != 0:
-            selected = self._selected_region_ids == (row.atlas_id,)
+            selected = self.viewer._selected_region_ids == (row.atlas_id,)
             action = 'Deselect' if selected else 'Select'
             label = f'{action} {row.acronym}##cursor_region_selection'.encode()
-            if self.dvz.dvz_gui_button(gui, label):
+            if self.viewer.dvz.dvz_gui_button(gui, label):
                 self.toggle_cursor_region_selection()
         hover_source = self._hovered_slice_axis.upper() if self._hovered_slice_axis else '3-D'
         hover_label = self._hovered_region_label or '—'
-        self.dvz.dvz_gui_text(gui, f'Hover ({hover_source}): {hover_label}'.encode())
+        self.viewer.dvz.dvz_gui_text(gui, f'Hover ({hover_source}): {hover_label}'.encode())
 
     def _draw_layer_gui(self, gui) -> None:  # noqa: PLR0912 - declarative GUI controls
         """Draw optional layer controls in a compact collapsible section."""
-        if self.dvz.dvz_gui_slider_float(
+        if self.viewer.dvz.dvz_gui_slider_float(
             gui,
             b'Annotation opacity',
             ctypes.byref(self._annotation_opacity_control),
@@ -1640,19 +1529,19 @@ class LinkedAtlasNavigator(AtlasViewer):
         ):
             self.annotation_opacity = float(self._annotation_opacity_control.value)
             self._refresh_slices()
-        if self.dvz.dvz_gui_checkbox(
+        if self.viewer.dvz.dvz_gui_checkbox(
             gui, b'Anatomy slice layer', ctypes.byref(self._anatomy_visible_control)
         ):
             self.set_slice_layers(anatomy=bool(self._anatomy_visible_control.value))
-        if self.dvz.dvz_gui_checkbox(
+        if self.viewer.dvz.dvz_gui_checkbox(
             gui, b'Annotation slice layer', ctypes.byref(self._annotation_visible_control)
         ):
             self.set_slice_layers(annotations=bool(self._annotation_visible_control.value))
-        if self.dvz.dvz_gui_checkbox(
+        if self.viewer.dvz.dvz_gui_checkbox(
             gui, b'Region boundaries', ctypes.byref(self._boundaries_visible_control)
         ):
             self.set_slice_layers(boundaries=bool(self._boundaries_visible_control.value))
-        if self.dvz.dvz_gui_slider_float(
+        if self.viewer.dvz.dvz_gui_slider_float(
             gui,
             b'Boundary opacity',
             ctypes.byref(self._boundary_opacity_control),
@@ -1662,23 +1551,23 @@ class LinkedAtlasNavigator(AtlasViewer):
             self.boundary_opacity = float(self._boundary_opacity_control.value)
             for axis in self._boundary_visuals:
                 self._refresh_boundaries(axis)
-        if self.volume and self.dvz.dvz_gui_slider_float(
+        if self.volume and self.viewer.dvz.dvz_gui_slider_float(
             gui,
             b'Volume opacity',
             ctypes.byref(self._volume_opacity_control),
             0.0,
             1.0,
         ):
-            self.set_volume_opacity(float(self._volume_opacity_control.value))
+            self.viewer.slices.set_volume_opacity(float(self._volume_opacity_control.value))
 
     def set_slice_plane(self, axis, *, in_3d=True):
         """Present accepted slice pixels as paired physical planes in the 3-D panel."""
-        self._require_open()
+        self.viewer._require_open()
         self._slice_planes.show(axis, visible=in_3d)
 
     def set_slice_layers(self, *, anatomy=None, annotations=None, boundaries=None):
         """Change slice layers in the existing panels without moving the cursor."""
-        self._require_open()
+        self.viewer._require_open()
         updates = {}
         for name, value in (
             ('anatomy', anatomy),
@@ -1710,85 +1599,88 @@ class LinkedAtlasNavigator(AtlasViewer):
             try:
                 self._refresh_slices()
             except Exception:
-                self.close()
+                self.viewer.close()
                 raise RuntimeError('slice layer rollback failed; navigator closed') from error
             raise
 
     def set_volume_opacity(self, opacity):
         """Change volume opacity in the existing 3D panel, including zero to hide."""
-        self._require_open()
+        self.viewer._require_open()
         if not np.isfinite(opacity) or not 0 <= opacity <= 1:
             raise ValueError('volume opacity must be finite and between zero and one')
         if not self.volume:
             if opacity:
                 raise ValueError('volume rendering is disabled')
             return
-        previous, mode = self.volume_opacity, self._surface_alpha_mode
+        previous, mode = self.volume_opacity, self.viewer._surface_presentation.alpha_mode
         try:
-            self._check(
-                self.dvz.dvz_volume_set_opacity(self.volume, float(opacity)), 'volume opacity'
+            self.viewer._check(
+                self.viewer.dvz.dvz_volume_set_opacity(self.volume, float(opacity)),
+                'volume opacity',
             )
-            self._check(
-                self.dvz.dvz_visual_set_visible(self.volume, opacity > 0), 'volume visibility'
+            self.viewer._check(
+                self.viewer.dvz.dvz_visual_set_visible(self.volume, opacity > 0),
+                'volume visibility',
             )
             self.volume_opacity = float(opacity)
             self._volume_opacity_control.value = float(opacity)
-            self._update_surface_alpha_mode()
+            self.viewer._update_surface_alpha_mode()
         except Exception as error:
             self.volume_opacity = previous
             self._volume_opacity_control.value = previous
             try:
-                self._check(
-                    self.dvz.dvz_volume_set_opacity(self.volume, previous), 'volume rollback'
+                self.viewer._check(
+                    self.viewer.dvz.dvz_volume_set_opacity(self.volume, previous),
+                    'volume rollback',
                 )
-                self._check(
-                    self.dvz.dvz_visual_set_visible(self.volume, previous > 0),
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_visible(self.volume, previous > 0),
                     'volume visibility rollback',
                 )
-                self._check(
-                    self.dvz.dvz_visual_set_alpha_mode(self.mesh, mode), 'surface alpha rollback'
+                self.viewer._check(
+                    self.viewer.dvz.dvz_visual_set_alpha_mode(self.viewer.mesh, mode),
+                    'surface alpha rollback',
                 )
-                self._surface_alpha_mode = mode
+                self.viewer._surface_presentation.alpha_mode = mode
             except Exception:
-                self.close()
+                self.viewer.close()
                 raise RuntimeError('volume opacity rollback failed; navigator closed') from error
             raise
 
     def _process_gui_frame(self) -> None:
-        super()._process_gui_frame()
         self._drain_auto_slice()
         if self._slice_loader is not None:
-            self._drain_prepared_slices(self.view, None)
+            self._drain_prepared_slices(self.viewer.view, None)
 
     def _draw_plane_controls(self, gui):
         for axis in ('ap', 'ml', 'dv'):
             control = ctypes.c_bool(axis in self._slice_planes.visible_axes)
-            if self.dvz.dvz_gui_checkbox(
+            if self.viewer.dvz.dvz_gui_checkbox(
                 gui, f'{axis.upper()} plane in 3-D'.encode(), ctypes.byref(control)
             ):
-                self.slices.show_plane(axis, in_3d=control.value)
+                self.viewer.slices.show_plane(axis, in_3d=control.value)
 
     def _draw_extra_gui(self, gui) -> None:
         self._draw_cursor_gui(gui)
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Slices and 3-D layers', 0):
+        if self.viewer.dvz.dvz_gui_collapsing_header(gui, b'Slices and 3-D layers', 0):
             self._draw_layer_gui(gui)
             planes = getattr(self, '_slice_planes', None)
             if planes is not None:
                 self._draw_plane_controls(gui)
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Controls and orientation', 0):
-            self.dvz.dvz_gui_text(gui, b'AP: ML -> right, dorsal up')
-            self.dvz.dvz_gui_text(gui, b'ML: AP -> right, dorsal up')
-            self.dvz.dvz_gui_text(gui, b'DV: ML -> right, anterior up')
-            self.dvz.dvz_gui_text(gui, b'Slices: wheel moves; Ctrl+wheel zooms')
-            self.dvz.dvz_gui_text(gui, b'3-D: left-drag orbits; wheel zooms')
+        if self.viewer.dvz.dvz_gui_collapsing_header(gui, b'Controls and orientation', 0):
+            self.viewer.dvz.dvz_gui_text(gui, b'AP: ML -> right, dorsal up')
+            self.viewer.dvz.dvz_gui_text(gui, b'ML: AP -> right, dorsal up')
+            self.viewer.dvz.dvz_gui_text(gui, b'DV: ML -> right, anterior up')
+            self.viewer.dvz.dvz_gui_text(gui, b'Slices: wheel moves; Ctrl+wheel zooms')
+            self.viewer.dvz.dvz_gui_text(gui, b'3-D: left-drag orbits; wheel zooms')
         if self._slice_error is not None:
-            self.dvz.dvz_gui_text(gui, f'Slice load failed: {self._slice_error}'.encode())
+            self.viewer.dvz.dvz_gui_text(gui, f'Slice load failed: {self._slice_error}'.encode())
 
-    def _create_view(self, *, offscreen: bool, title: str) -> None:
-        super()._create_view(offscreen=offscreen, title=title)
+    def attach_input(self, *, offscreen: bool) -> None:
+        """Subscribe slice input after the host viewport is available."""
         if offscreen:
             return
-        self._input_router = self.dvz.dvz_gui_viewport_input(self.viewport)
+        self._input_router = self.viewer.dvz.dvz_gui_viewport_input(self.viewer.viewport)
         if not self._input_router:
             raise RuntimeError('dvz_view_input() failed')
         self._slice_input = SliceInputAdapter(self, self._input_router)
@@ -1801,17 +1693,8 @@ class LinkedAtlasNavigator(AtlasViewer):
         adapter = self._slice_input or SliceInputAdapter(self, self._input_router)
         return adapter.pointer_figure_position(pointer)
 
-    def close(self) -> None:
-        """Guard and defer shutdown before releasing slice subscriptions or workers."""
-        if getattr(self, '_closed', False):
-            return
-        # A failed constructor may have created a scheduler before base viewer
-        # state exists. Fully initialized viewers must pass all mutation guards.
-        if hasattr(self, '_closed'):
-            self._require_open()
-        if getattr(self, '_gui_callback_depth', 0):
-            super().close()
-            return
+    def close(self):
+        """Release input, workers and linked visuals before viewer scene teardown."""
         for visual in getattr(self, '_contour_visuals', {}).values():
             visual.close()
         self._contour_visuals = {}
@@ -1833,11 +1716,5 @@ class LinkedAtlasNavigator(AtlasViewer):
             self._input_subscription = 0
             self._input_callback = None
         elif getattr(self, '_input_subscription', 0) and self._input_router:
-            self.dvz.dvz_input_unsubscribe(self._input_router, self._input_subscription)
+            self.viewer.dvz.dvz_input_unsubscribe(self._input_router, self._input_subscription)
             self._input_subscription = 0
-        super().close()
-
-    def __del__(self) -> None:
-        """Release slice workers and native resources as a last resort."""
-        with suppress(Exception):
-            LinkedAtlasNavigator.close(self)

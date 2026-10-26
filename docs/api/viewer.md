@@ -8,9 +8,9 @@ colors are three or four integer channels in `[0, 255]`.
 Retained-layer controls keep the existing views: `set_surface_visible()` hides the
 whole surface independently of region/hemisphere overrides, `set_surface_opacity()`
 updates global opacity transactionally, and `reset_surface_style()` clears regional
-overrides and shows both hemispheres without moving the camera. The navigator's
-`set_slice_layers(anatomy=..., annotations=..., boundaries=...)` changes existing
-slice panels, and `set_volume_opacity(0)` hides the volume without changing layout.
+overrides and shows both hemispheres without moving the camera. The linked viewer's
+`app.slices.set_layers(anatomy=..., annotations=..., boundaries=...)` changes existing
+slice panels, and `app.slices.set_volume_opacity(0)` hides the volume without changing layout.
 See the [two review apps](../review-apps.md) for concrete compositions.
 
 ## Region browser
@@ -31,13 +31,17 @@ Pass a prepared `AtlasEnvelope` through `selection_envelope=` or `set_selection_
 
 ## Independent anatomical context
 
-The visual prototype adds `anatomy_presentation='major'`, `anatomical_context=` and `context_opacity=`. Prepare `AtlasContextSurface` records with `ibl_datoviz.context.AtlasContextSurface.from_geometry()` from verified shared surface geometry; these arrays use the atlas's unchanged normalization. `set_anatomical_context()` replaces the owned context transactionally, and `set_context_opacity()` changes only its presentation. `set_anatomy_presentation('detailed')` explicitly returns to the detailed atlas. These adapters support the first visual gate; the broader layer-handle API remains proposed.
+Anatomical context uses `anatomy_presentation='major'`, `anatomical_context=` and `context_opacity=`. Prepare `AtlasContextSurface` records with `ibl_datoviz.context.AtlasContextSurface.from_geometry()` from verified shared surface geometry; these arrays use the atlas's unchanged normalization. `set_anatomical_context()` replaces the owned context transactionally, and `set_context_opacity()` changes only its presentation. `set_anatomy_presentation('detailed')` explicitly returns to the detailed atlas. Use viewer-owned scientific layer handles for observations alongside this independent anatomy context.
 
 Major context is independent of mapping, regional scalar colors and fine selection. It retains authored colors, geometry and opacity while selection updates sparse tint state. Displayed coarse parents are highlighted directly without exposing their fine descendants; explicit fine selections receive a translucent overlay capped at 0.18. Context meshes retain true signed Allen parent identities for supported surface picks, rather than inventing fine reduced-mapping identities. Hidden context has no query coverage. Original-world hemisphere predicates follow the atlas midline policy; context stays at its reference position during fine-region explosion.
 
-## Linked atlas navigator
+## Linked atlas layout
 
-::: ibl_datoviz.linked_atlas.LinkedAtlasNavigator
+Use `app.slices.set_position()` for explicit-unit cursor navigation,
+`app.slices.set_layers()` for composition, `app.slices.show_plane()` for physical
+3D planes, and `app.slices.set_volume_opacity()` for an optional volume.
+
+::: ibl_datoviz.viewer.AtlasViewer
     options:
       members:
         - from_packs
@@ -46,24 +50,16 @@ Major context is independent of mapping, regional scalar colors and fine selecti
         - from_anatomy_packs
         - from_slice_source
         - from_registered_slices
-        - set_cursor
-        - set_slice_layers
-        - set_volume_opacity
-        - set_cursor_from_slice_data
         - set_mapping
-        - set_probe
-        - set_probe_data
-        - set_region_data
         - set_region_visible
         - set_region_color
         - set_region_opacity
         - set_hemisphere
-        - set_insertion
         - render_offscreen
         - show
         - close
 
-`LinkedAtlasNavigator.from_registered_assets()` accepts a verified publication result. It combines an
+`AtlasViewer.from_registered_assets()` accepts a verified publication result. It combines an
 independently bounded dense volume and scalar intensity transport with a verified
 `MaterializedRegisteredAssets` result from `ibl-anatomy`; Datoviz does not infer resources from
 the Ephys Atlas deployment layout. The older `from_anatomy_packs()` and lower-level
@@ -86,7 +82,10 @@ slice changes the two visible cursor coordinates while retaining the orthogonal 
 Annotation slices are precolored on the CPU so the complete Allen/Beryl/Cosmos catalog is not
 limited by the current 64-entry GPU categorical palette.
 
-## Navigator data model
+## Lower-level slice data model
+
+Import these explicit composition helpers from `ibl_datoviz.components`; ordinary
+linked applications use `app.slices`.
 
 ::: ibl_datoviz.navigator.AtlasCursor
 
@@ -98,7 +97,7 @@ limited by the current 64-entry GPU categorical palette.
 
 ::: ibl_datoviz.navigator.compose_atlas_slice
 
-## Surface viewer
+## Scientific viewer
 
 ::: ibl_datoviz.viewer.AtlasViewer
     options:
@@ -106,14 +105,18 @@ limited by the current 64-entry GPU categorical palette.
         - from_pack
         - from_assets
         - from_asset_set
+        - add_points
+        - add_paths
+        - add_recording
+        - add_region_values
+        - layers
+        - recordings
+        - remove_layer
+        - remove_recording
         - set_mapping
         - set_camera_angles
         - set_selection_presentation
         - set_selection_envelope
-        - set_probe
-        - set_probe_sites
-        - set_probe_data
-        - set_region_data
         - set_region_visible
         - show_region
         - hide_region
@@ -123,12 +126,6 @@ limited by the current 64-entry GPU categorical palette.
         - set_hemisphere_visible
         - set_hemisphere
         - visible_region_ids
-        - set_insertion
-        - set_insertion_color
-        - set_insertion_width
-        - set_insertion_visible
-        - remove_insertion
-        - insertion_ids
         - selected_region_ids
         - set_selected_region_ids
         - clear_selection
@@ -188,3 +185,24 @@ failed rollback closes the viewer rather than leaving a partially updated scene.
 
 See [multiple insertions](insertions.md) and [volume-free navigation](volume-free.md)
 for the independent trajectory and slice-source contracts.
+
+## Returned handles and selection events
+
+Construct layer and recording handles through the viewer. Their native resources
+remain viewer-owned; removal invalidates the handle. Subscriptions returned by
+`app.selection.on_changed()` can be closed independently and end when the viewer
+closes. A callback observes committed state, and callback errors do not roll it back.
+
+::: ibl_datoviz.layers.LayerHandle
+
+::: ibl_datoviz.layers.RecordingHandle
+
+::: ibl_datoviz.regional_quantities.RegionalQuantityHandle
+
+::: ibl_datoviz.controllers.SelectionState
+
+::: ibl_datoviz.controllers.SelectionEvent
+
+::: ibl_datoviz.controllers.SelectionSubscription
+
+::: ibl_datoviz.slice_controller.SliceController

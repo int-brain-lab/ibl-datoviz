@@ -11,7 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
-from ibl_datoviz import AtlasViewer, ProbeSites
+from ibl_datoviz import AtlasViewer
+from ibl_datoviz.components import ProbeSites
 
 FIXTURE = Path(__file__).with_name('data') / 'bwm-ephys-1.1.0-a21bade7-probe.csv'
 BWM_CAMERA_ANGLES = (0.15, 0.75, -0.25)
@@ -71,8 +72,10 @@ def main() -> int:
         surface_opacity=0.16,
         camera_angles=BWM_CAMERA_ANGLES,
     ) as viewer:
-        viewer.set_probe((data.positions_um[0], data.positions_um[-1]), width_px=2)
-        viewer.set_probe_data(
+        viewer._probe_presentation.set_path(
+            (data.positions_um[0], data.positions_um[-1]), width_px=2
+        )
+        viewer._probe_presentation.set_data(
             data,
             value_range=value_range,
             radius_um=85,

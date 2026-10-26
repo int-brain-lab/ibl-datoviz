@@ -10,15 +10,16 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ibl_datoviz import AtlasCursor, LinkedAtlasNavigator
+from ibl_datoviz import AtlasViewer
+from ibl_datoviz.components import AtlasCursor
 
 
-def _cursor_at_slice(navigator: LinkedAtlasNavigator, axis: str, index: int) -> AtlasCursor:
+def _cursor_at_slice(navigator: AtlasViewer, axis: str, index: int) -> AtlasCursor:
     """Return the centred cursor with one anatomical plane at ``index``."""
     if axis not in ('ap', 'ml', 'dv'):
         raise ValueError('slice axis must be ap, ml or dv')
-    cursor = AtlasCursor.centre(navigator.volumes)
-    return cursor.replace(axis, index, navigator.slice_source.grid.shape)
+    cursor = AtlasCursor.centre(navigator._linked.volumes)
+    return cursor.replace(axis, index, navigator._linked.slice_source.grid.shape)
 
 
 def main() -> int:
@@ -36,11 +37,12 @@ def main() -> int:
     parser.add_argument('--ui-scale', type=float, default=1.0, help='GUI size multiplier')
     args = parser.parse_args()
 
-    with LinkedAtlasNavigator.from_packs(
+    with AtlasViewer.from_packs(
         args.mesh_pack, args.volume_pack, mapping=args.mapping, ui_scale=args.ui_scale
     ) as navigator:
         if args.index is not None:
-            navigator.set_cursor(_cursor_at_slice(navigator, args.axis, args.index))
+            cursor = _cursor_at_slice(navigator, args.axis, args.index)
+            navigator.slices.set_position(ap=cursor.ap, ml=cursor.ml, dv=cursor.dv, units='voxel')
         if args.offscreen:
             rgba = navigator.render_offscreen(args.offscreen)
             print(f'wrote {args.offscreen} ({rgba.shape[1]}x{rgba.shape[0]})')

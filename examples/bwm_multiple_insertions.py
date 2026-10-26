@@ -129,14 +129,14 @@ def main() -> int:
         enable_interaction=True,
     ) as viewer:
         for index, (insertion_id, points) in enumerate(paths):
-            viewer.set_insertion(
+            viewer._insertion_collection().set_insertion(
                 insertion_id,
                 points,
                 color=COLORS[index % len(COLORS)],
                 width_px=widths[insertion_id],
             )
             if insertion_id in args.hide_insertion:
-                viewer.set_insertion_visible(insertion_id, False)
+                viewer._insertion_collection().set_visible(insertion_id, False)
         if args.offscreen:
             rgba = viewer.render_offscreen(args.offscreen)
             print(f'wrote {args.offscreen} ({rgba.shape[1]}x{rgba.shape[0]})')

@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_region_catalog
-from ibl_datoviz import AtlasMesh, AtlasViewer, ProbeSites
+from ibl_datoviz import AtlasMesh, AtlasViewer
+from ibl_datoviz.components import ProbeSites
 from tests.test_atlas import FIXTURE, REGIONS, FakeDatoviz
 
 
@@ -19,13 +20,13 @@ def test_raw_replacement_clears_typed_links_and_table(mesh, count):
     data = ProbeSites.from_arrays([[0, 0, 0], [1, 0, 0]], [1, 2], [-8, 8], site_ids=[11, 12])
     with AtlasViewer(mesh, catalog=open_region_catalog(REGIONS), datoviz=fake) as viewer:
         viewer.gui = object()
-        viewer.set_probe_data(data)
+        viewer._probe_presentation.set_data(data)
         viewer.set_selected_region_ids([-8])
         old_table = viewer.probe_table
         assert old_table is not None
-        viewer.set_probe_sites([[0, 0, 0]] * count)
-        assert viewer.probe_data is None
-        assert viewer._probe_colors is None
+        viewer._probe_presentation.set_sites([[0, 0, 0]] * count)
+        assert viewer._probe_presentation.data is None
+        assert viewer._probe_presentation.colors is None
         assert viewer.probe_table is None
         assert viewer._probe_table_selected_region_ids() == ()
         keys = [call[1] for call in fake.calls if call[0] == 'item_link_keys'][-1]
@@ -34,8 +35,8 @@ def test_raw_replacement_clears_typed_links_and_table(mesh, count):
         viewer.set_mapping('beryl')
         assert sum(call[0] == 'item_link_keys' for call in fake.calls) == link_count
         viewer.set_mapping('allen')
-        viewer.set_probe_data(data)
-        assert viewer.probe_data is data
+        viewer._probe_presentation.set_data(data)
+        assert viewer._probe_presentation.data is data
         assert viewer.probe_table is not None
         fake.table_selection = [12]
         viewer._sync_selection_highlight(table_changed=True)
@@ -47,13 +48,13 @@ def test_rejected_replacement_preserves_typed_state(mesh):
     data = ProbeSites.from_arrays([[0, 0, 0]], [1], [-8])
     with AtlasViewer(mesh, catalog=open_region_catalog(REGIONS), datoviz=fake) as viewer:
         viewer.gui = object()
-        viewer.set_probe_data(data)
-        table, colors = viewer.probe_table, viewer._probe_colors
+        viewer._probe_presentation.set_data(data)
+        table, colors = viewer.probe_table, viewer._probe_presentation.colors
         with pytest.raises(ValueError, match='radius'):
-            viewer.set_probe_sites([[0, 0, 0]], radius_um=-1)
-        assert viewer.probe_data is data
+            viewer._probe_presentation.set_sites([[0, 0, 0]], radius_um=-1)
+        assert viewer._probe_presentation.data is data
         assert viewer.probe_table is table
-        assert viewer._probe_colors is colors
+        assert viewer._probe_presentation.colors is colors
         with pytest.raises(RuntimeError, match='upload'):
             original = fake.dvz_visual_set_data_many
             failed = False
@@ -66,8 +67,8 @@ def test_rejected_replacement_preserves_typed_state(mesh):
                 return original(*args)
 
             fake.dvz_visual_set_data_many = fail_once
-            viewer.set_probe_sites([[0, 0, 0]])
-        assert viewer.probe_data is data
+            viewer._probe_presentation.set_sites([[0, 0, 0]])
+        assert viewer._probe_presentation.data is data
         assert viewer.probe_table is table
 
 
@@ -81,10 +82,10 @@ def test_probe_native_failures_reported(mesh, failure):
             fake.dvz_visual_set_link_keys = lambda *_args: -1
         with pytest.raises(RuntimeError):
             if failure in ('path', 'caps', 'join'):
-                viewer.set_probe([[0, 0, 0], [1, 0, 0]])
+                viewer._probe_presentation.set_path([[0, 0, 0], [1, 0, 0]])
             else:
-                viewer.set_probe_sites([[0, 0, 0]])
-        assert viewer.probe_data is None
+                viewer._probe_presentation.set_sites([[0, 0, 0]])
+        assert viewer._probe_presentation.data is None
 
 
 class StatefulProbeDatoviz(FakeDatoviz):
@@ -118,36 +119,40 @@ def test_probe_sites_failed_setter_restores_owned_upload_and_retries(mesh, prior
     with AtlasViewer(mesh, catalog=open_region_catalog(REGIONS), datoviz=fake) as viewer:
         viewer.gui = object()
         if prior_typed:
-            viewer.set_probe_data(data)
+            viewer._probe_presentation.set_data(data)
             viewer.set_mapping('beryl')
         else:
             colors = np.array([[1, 2, 3, 255], [4, 5, 6, 255]], dtype=np.uint8)
-            viewer.set_probe_sites(data.positions_um, colors=colors)
+            viewer._probe_presentation.set_sites(data.positions_um, colors=colors)
             colors[:] = 99
-        previous = viewer._probe_upload
-        handle, table, payload = viewer.probe_sites, viewer.probe_table, viewer.probe_data
+        previous = viewer._probe_presentation.upload
+        handle, table, payload = (
+            viewer.probe_sites,
+            viewer.probe_table,
+            viewer._probe_presentation.data,
+        )
         fake.fail_next = failure
         with pytest.raises(RuntimeError, match='probe site'):
             if prior_typed:
-                viewer.set_probe_sites([[4, 5, 6]])
+                viewer._probe_presentation.set_sites([[4, 5, 6]])
             else:
-                viewer.set_probe_data(data)
+                viewer._probe_presentation.set_data(data)
         assert viewer.probe_sites is handle
         assert viewer.probe_table is table
-        assert viewer.probe_data is payload
-        assert viewer._probe_upload is previous
+        assert viewer._probe_presentation.data is payload
+        assert viewer._probe_presentation.upload is previous
         for name, array in previous.attributes().items():
             np.testing.assert_array_equal(fake.attributes[name], array)
             assert not array.flags.writeable
         np.testing.assert_array_equal(fake.keys, previous.keys)
         if prior_typed:
-            viewer.set_probe_sites([[4, 5, 6]])
-            assert viewer.probe_data is None
+            viewer._probe_presentation.set_sites([[4, 5, 6]])
+            assert viewer._probe_presentation.data is None
             assert viewer.probe_table is None
             assert len(fake.keys) == 1
         else:
-            viewer.set_probe_data(data)
-            assert viewer.probe_data is data
+            viewer._probe_presentation.set_data(data)
+            assert viewer._probe_presentation.data is data
             assert viewer.probe_table is not None
         assert viewer.probe_sites is handle
 
@@ -155,10 +160,10 @@ def test_probe_sites_failed_setter_restores_owned_upload_and_retries(mesh, prior
 def test_probe_sites_rollback_failure_closes_viewer(mesh):
     fake = FakeDatoviz()
     viewer = AtlasViewer(mesh, datoviz=fake)
-    viewer.set_probe_sites([[0, 0, 0]])
+    viewer._probe_presentation.set_sites([[0, 0, 0]])
     fake.dvz_visual_set_data_many = lambda *_args: -1
     with pytest.raises(RuntimeError, match='rollback failed; viewer closed'):
-        viewer.set_probe_sites([[1, 0, 0]])
+        viewer._probe_presentation.set_sites([[1, 0, 0]])
     assert viewer._closed
     viewer.close()
     assert sum(call[0] == 'destroy_scene' for call in fake.calls) == 1
@@ -171,7 +176,11 @@ def test_null_native_probe_constructor_is_retryable(mesh, kind, monkeypatch):
         constructor = getattr(fake, f'dvz_{kind}')
         monkeypatch.setattr(fake, f'dvz_{kind}', lambda *_args: ctypes.POINTER(ctypes.c_int)())
         points = [[0, 0, 0], [1, 0, 0]]
-        setter = viewer.set_probe if kind == 'path' else viewer.set_probe_sites
+        setter = (
+            viewer._probe_presentation.set_path
+            if kind == 'path'
+            else viewer._probe_presentation.set_sites
+        )
         with pytest.raises(RuntimeError, match=f'dvz_{kind}'):
             setter(points)
         assert getattr(viewer, 'probe' if kind == 'path' else 'probe_sites') is None
@@ -187,19 +196,23 @@ def test_probe_attachment_failure_reuses_pending_scene_owned_visual(mesh, kind, 
         original = fake.dvz_panel_add_visual
         monkeypatch.setattr(fake, 'dvz_panel_add_visual', lambda *_args: -1)
         points = [[0, 0, 0], [1, 0, 0]]
-        setter = viewer.set_probe if kind == 'path' else viewer.set_probe_sites
+        setter = (
+            viewer._probe_presentation.set_path
+            if kind == 'path'
+            else viewer._probe_presentation.set_sites
+        )
         with pytest.raises(RuntimeError, match='attach'):
             setter(points)
         alias = 'probe' if kind == 'path' else 'probe_sites'
-        pending = '_probe_pending' if kind == 'path' else '_probe_sites_pending'
-        handle = getattr(viewer, pending)
+        pending = 'pending_path' if kind == 'path' else 'pending_sites'
+        handle = getattr(viewer._probe_presentation, pending)
         assert handle is not None
         assert getattr(viewer, alias) is None
         monkeypatch.setattr(fake, f'dvz_{kind}', lambda *_args: pytest.fail('allocated again'))
         monkeypatch.setattr(fake, 'dvz_panel_add_visual', original)
         setter(points)
         assert getattr(viewer, alias) is handle
-        assert getattr(viewer, pending) is None
+        assert getattr(viewer._probe_presentation, pending) is None
 
 
 @pytest.mark.parametrize('failure', ['geometry', 'keys'])
@@ -208,15 +221,15 @@ def test_first_sites_upload_failure_reuses_unattached_candidate(mesh, failure, m
     with AtlasViewer(mesh, datoviz=fake) as viewer:
         fake.fail_next = failure
         with pytest.raises(RuntimeError, match='probe site'):
-            viewer.set_probe_sites([[0, 0, 0]])
-        pending = viewer._probe_sites_pending
+            viewer._probe_presentation.set_sites([[0, 0, 0]])
+        pending = viewer._probe_presentation.pending_sites
         assert pending is not None
         assert viewer.probe_sites is None
-        assert viewer._probe_upload is None
+        assert viewer._probe_presentation.upload is None
         monkeypatch.setattr(fake, 'dvz_sphere', lambda *_args: pytest.fail('allocated again'))
-        viewer.set_probe_sites([[1, 0, 0], [2, 0, 0]])
+        viewer._probe_presentation.set_sites([[1, 0, 0], [2, 0, 0]])
         assert viewer.probe_sites is pending
-        assert viewer._probe_sites_pending is None
+        assert viewer._probe_presentation.pending_sites is None
         assert len(fake.keys) == 2
 
 
@@ -227,12 +240,12 @@ def test_path_setup_failure_reuses_unattached_candidate(mesh, setter, monkeypatc
         original = getattr(fake, setter)
         monkeypatch.setattr(fake, setter, lambda *_args: -1)
         with pytest.raises(RuntimeError, match='probe'):
-            viewer.set_probe([[0, 0, 0], [1, 0, 0]])
-        pending = viewer._probe_pending
+            viewer._probe_presentation.set_path([[0, 0, 0], [1, 0, 0]])
+        pending = viewer._probe_presentation.pending_path
         assert pending is not None
         assert viewer.probe is None
         monkeypatch.setattr(fake, 'dvz_path', lambda *_args: pytest.fail('allocated again'))
         monkeypatch.setattr(fake, setter, original)
-        viewer.set_probe([[0, 0, 0], [1, 0, 0]])
+        viewer._probe_presentation.set_path([[0, 0, 0], [1, 0, 0]])
         assert viewer.probe is pending
-        assert viewer._probe_pending is None
+        assert viewer._probe_presentation.pending_path is None

@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_region_catalog
-from ibl_datoviz import AtlasViewer, LinkedAtlasNavigator, ProbeSites
+from ibl_datoviz import AtlasViewer
+from ibl_datoviz.components import ProbeSites
 from tests import FIXTURES
 
 FIXTURE = FIXTURES / 'mesh-pack-v1' / 'pack'
@@ -22,7 +23,7 @@ def test_offscreen_atlas_smoke(tmp_path):
     output = tmp_path / 'atlas.png'
     try:
         with AtlasViewer.from_pack(FIXTURE, width=256, height=192) as viewer:
-            viewer.set_probe([[-1.5, -0.8, -0.8], [0, 0, 0], [2.5, 0.8, 0.8]])
+            viewer._probe_presentation.set_path([[-1.5, -0.8, -0.8], [0, 0, 0], [2.5, 0.8, 0.8]])
             rgba = viewer.render_offscreen(output)
     except RuntimeError as error:
         _skip_without_native_datoviz(error)
@@ -36,18 +37,18 @@ def test_offscreen_atlas_smoke(tmp_path):
 def test_offscreen_linked_atlas_smoke(tmp_path):
     output = tmp_path / 'linked-atlas.png'
     try:
-        with LinkedAtlasNavigator.from_packs(
-            FIXTURE, VOLUME_FIXTURE, width=320, height=240
-        ) as navigator:
-            navigator.set_cursor(navigator.cursor)
+        with AtlasViewer.from_packs(FIXTURE, VOLUME_FIXTURE, width=320, height=240) as navigator:
+            navigator._linked.set_cursor(navigator._linked.cursor)
             assert navigator._selected_region_ids == ()
-            navigator.select_cursor_region()
-            assert navigator.cursor.region(navigator.volumes, 'allen').atlas_id == 315
+            navigator._linked.select_cursor_region()
+            assert (
+                navigator._linked.cursor.region(navigator._linked.volumes, 'allen').atlas_id == 315
+            )
             assert navigator._selected_region_ids == (315,)
             assert navigator._highlight_region_ids == (315,)
-            navigator.select_cursor_region()
+            navigator._linked.select_cursor_region()
             assert navigator._selected_region_ids == ()
-            navigator.select_cursor_region()
+            navigator._linked.select_cursor_region()
             rgba = navigator.render_offscreen(output)
     except RuntimeError as error:
         _skip_without_native_datoviz(error)
@@ -60,7 +61,7 @@ def test_offscreen_linked_atlas_smoke(tmp_path):
 def test_offscreen_multiresolution_atlas_smoke(tmp_path):
     output = tmp_path / 'multiresolution-atlas.png'
     try:
-        with LinkedAtlasNavigator.from_anatomy_packs(
+        with AtlasViewer.from_anatomy_packs(
             FIXTURE,
             VOLUME_FIXTURE,
             INTENSITY_FIXTURE,
@@ -68,10 +69,10 @@ def test_offscreen_multiresolution_atlas_smoke(tmp_path):
             width=320,
             height=240,
         ) as navigator:
-            assert navigator.slice_resolution_label == '10 um'
-            assert navigator.volume_resolution_label == '1 um'
-            navigator.set_cursor(navigator.cursor)
-            navigator.select_cursor_region()
+            assert navigator._linked.slice_resolution_label == '10 um'
+            assert navigator._linked.volume_resolution_label == '1 um'
+            navigator._linked.set_cursor(navigator._linked.cursor)
+            navigator._linked.select_cursor_region()
             rgba = navigator.render_offscreen(output)
     except RuntimeError as error:
         _skip_without_native_datoviz(error)
@@ -86,12 +87,12 @@ def test_offscreen_probe_sites_replacement(tmp_path):
     data = ProbeSites.from_arrays([[-1, 0, 0], [1, 0, 0]], [1, 2], [-8, 8])
     try:
         with AtlasViewer.from_pack(FIXTURE, catalog=catalog, width=256, height=192) as viewer:
-            viewer.set_probe_data(data)
-            viewer.set_probe_sites([[0, 0, 0]])
+            viewer._probe_presentation.set_data(data)
+            viewer._probe_presentation.set_sites([[0, 0, 0]])
             viewer.set_mapping('beryl')
-            assert viewer.probe_data is None
+            assert viewer._probe_presentation.data is None
             viewer.set_mapping('allen')
-            viewer.set_probe_data(data)
+            viewer._probe_presentation.set_data(data)
             rgba = viewer.render_offscreen(tmp_path / 'probe-sites.png')
     except RuntimeError as error:
         _skip_without_native_datoviz(error)
@@ -104,18 +105,18 @@ def test_offscreen_linked_boundaries_mapping_empty_and_restore(tmp_path):
     output = tmp_path / 'boundaries-restored.png'
     try:
         # Beryl collapses this fixture's boundaries, including initial creation.
-        with LinkedAtlasNavigator.from_packs(
+        with AtlasViewer.from_packs(
             FIXTURE, VOLUME_FIXTURE, mapping='beryl', width=320, height=240
         ) as navigator:
             for axis in ('ap', 'ml', 'dv'):
-                assert len(navigator._boundary_positions(axis)[0]) == 0
-                navigator._refresh_boundaries(axis)
+                assert len(navigator._linked._boundary_positions(axis)[0]) == 0
+                navigator._linked._refresh_boundaries(axis)
             navigator.render_offscreen()
             navigator.set_mapping('allen')
-            assert len(navigator._boundary_positions('dv')[0]) > 0
+            assert len(navigator._linked._boundary_positions('dv')[0]) > 0
             navigator._check(navigator.dvz.dvz_view_render_once(navigator.view), 'Allen render')
             navigator.set_mapping('beryl')
-            navigator._refresh_boundaries('dv')
+            navigator._linked._refresh_boundaries('dv')
             navigator._check(navigator.dvz.dvz_view_render_once(navigator.view), 'Beryl render')
             navigator.set_mapping('allen')
             navigator._check(navigator.dvz.dvz_view_render_once(navigator.view), 'restored render')

@@ -8,18 +8,62 @@ from pathlib import Path
 
 import numpy as np
 
-from ibl_datoviz import AtlasViewer, ProbeSites
+from ibl_datoviz import AtlasViewer
+from ibl_datoviz.components import ProbeSites
 
 DEMO_ENTRY_UM = np.asarray((-2200, -2500, 0), dtype=np.float32)
 DEMO_TIP_UM = np.asarray((1000, -2500, -6500), dtype=np.float32)
 # Precomputed with iblatlas AllenAtlas(25).get_labels(); ML sign supplies physical hemisphere.
 DEMO_ALLEN_REGION_IDS = np.asarray(
     [
-        0, -805, -41, -501, -565, -257, -1046, -971, -382, -382, -382, -382,
-        -382, -484682470, -10703, -997, -215, -215, -215, -215, -313, -313,
-        -634, -549009203, -549009203, -549009203, -313, -795, -795, -795,
-        -795, -795, -313, 946, 946, 946, 313, 313, 525, 525, 606826647,
-        606826647, 606826647, 606826647, 1097, 0, 0, 0,
+        0,
+        -805,
+        -41,
+        -501,
+        -565,
+        -257,
+        -1046,
+        -971,
+        -382,
+        -382,
+        -382,
+        -382,
+        -382,
+        -484682470,
+        -10703,
+        -997,
+        -215,
+        -215,
+        -215,
+        -215,
+        -313,
+        -313,
+        -634,
+        -549009203,
+        -549009203,
+        -549009203,
+        -313,
+        -795,
+        -795,
+        -795,
+        -795,
+        -795,
+        -313,
+        946,
+        946,
+        946,
+        313,
+        313,
+        525,
+        525,
+        606826647,
+        606826647,
+        606826647,
+        606826647,
+        1097,
+        0,
+        0,
+        0,
     ],
     dtype=np.int64,
 )
@@ -61,16 +105,10 @@ def main() -> int:
     ) as viewer:
         if args.probe or args.demo_probe:
             entry = (
-                DEMO_ENTRY_UM
-                if args.demo_probe
-                else np.asarray(args.probe[:3], dtype=np.float32)
+                DEMO_ENTRY_UM if args.demo_probe else np.asarray(args.probe[:3], dtype=np.float32)
             )
-            tip = (
-                DEMO_TIP_UM
-                if args.demo_probe
-                else np.asarray(args.probe[3:], dtype=np.float32)
-            )
-            viewer.set_probe((entry, tip), width_px=2.0)
+            tip = DEMO_TIP_UM if args.demo_probe else np.asarray(args.probe[3:], dtype=np.float32)
+            viewer._probe_presentation.set_path((entry, tip), width_px=2.0)
             sites = np.linspace(entry, tip, 48, dtype=np.float32)
             phase = np.linspace(-np.pi, np.pi, len(sites))
             values = np.sin(phase)
@@ -81,9 +119,9 @@ def main() -> int:
                     DEMO_ALLEN_REGION_IDS,
                     labels=[f'Site {index:02d}' for index in range(len(sites))],
                 )
-                viewer.set_probe_data(data, value_range=(-1, 1), radius_um=75)
+                viewer._probe_presentation.set_data(data, value_range=(-1, 1), radius_um=75)
             else:
-                viewer.set_probe_sites(
+                viewer._probe_presentation.set_sites(
                     sites, values=values, value_range=(-1, 1), radius_um=75
                 )
         if args.offscreen:

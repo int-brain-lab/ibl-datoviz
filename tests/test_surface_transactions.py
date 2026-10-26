@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_region_catalog
-from ibl_datoviz import AtlasMesh, AtlasRegionValues, AtlasViewer, ProbeSites
+from ibl_datoviz import AtlasMesh, AtlasViewer
+from ibl_datoviz.components import AtlasRegionValues, ProbeSites
 from tests import FIXTURES
 from tests.test_atlas import FakeDatoviz
 
@@ -111,13 +112,13 @@ def select(viewer):
 @pytest.mark.parametrize('failure', ['keys', 'colors', 'visibility'])
 def test_region_data_failure_restores_scalar_state_caches_and_selection(viewer, failure):
     previous = AtlasRegionValues.from_arrays([315], [0.5])
-    viewer.set_region_data(previous, mapping_reduction='weighted_mean')
+    viewer._set_owned_region_data(previous, mapping_reduction='weighted_mean')
     select(viewer)
     before = native_snapshot(viewer)
-    cache = viewer._surface_base_colors_cache
+    cache = viewer._surface_presentation.base_colors
     viewer.dvz.arm(**{failure: (1,)})
     with pytest.raises(RuntimeError):
-        viewer.set_region_data(
+        viewer._set_owned_region_data(
             AtlasRegionValues.from_arrays([315], [2]),
             opacity=0,
             color_scheme='diverging',
@@ -127,7 +128,7 @@ def test_region_data_failure_restores_scalar_state_caches_and_selection(viewer, 
     assert viewer.region_data is previous
     assert viewer._region_value_range is None and viewer._region_color_scheme == 'sequential'
     assert viewer._region_opacity is None
-    assert viewer._surface_base_colors_cache is cache
+    assert viewer._surface_presentation.base_colors is cache
     assert viewer._selected_region_ids == (315,) and viewer.dvz.mesh_selection == [315]
     assert_native_restored(viewer, before)
 
@@ -136,7 +137,7 @@ def test_scalar_alpha_mode_failure_leaves_prior_payload_and_mode(viewer):
     before = native_snapshot(viewer)
     viewer.dvz.arm(alpha=(1,))
     with pytest.raises(RuntimeError, match='transparency mode'):
-        viewer.set_region_data(
+        viewer._set_owned_region_data(
             AtlasRegionValues.from_arrays([315], [1]),
             opacity=0.3,
             mapping_reduction='weighted_mean',
@@ -151,7 +152,7 @@ def test_scalar_update_preserves_gpu_decoration_without_dense_recolor(viewer):
     bank = viewer._surface_state.handle
     words = bank.words.copy()
     before = len(viewer.dvz.calls)
-    viewer.set_region_data(
+    viewer._set_owned_region_data(
         AtlasRegionValues.from_arrays([315], [1]), mapping_reduction='weighted_mean'
     )
     calls = viewer.dvz.calls[before:]
@@ -165,13 +166,13 @@ def test_scalar_update_preserves_gpu_decoration_without_dense_recolor(viewer):
 @pytest.mark.parametrize('failure', ['keys', 'colors', 'visibility', 'alpha'])
 def test_style_failure_restores_authored_state_colors_and_native_mode(viewer, failure):
     before = native_snapshot(viewer)
-    cache = viewer._surface_base_colors_cache
-    style = viewer._surface_style
+    cache = viewer._surface_presentation.base_colors
+    style = viewer._surface_presentation.style
     viewer.dvz.arm(**{failure: (1,)})
     with pytest.raises(RuntimeError):
         viewer.set_region_opacity(315, 0.5)
-    assert viewer._surface_style is style and not style.regions
-    assert viewer._surface_base_colors_cache is cache
+    assert viewer._surface_presentation.style is style and not style.regions
+    assert viewer._surface_presentation.base_colors is cache
     assert_native_restored(viewer, before)
 
 
@@ -181,12 +182,16 @@ def test_mapping_failure_restores_identity_palette_tree_caches_and_native_select
 ):
     select(viewer)
     before = native_snapshot(viewer)
-    model, palette, cache = viewer.tree_model, viewer.palette, viewer._surface_base_colors_cache
+    model, palette, cache = (
+        viewer.tree_model,
+        viewer.palette,
+        viewer._surface_presentation.base_colors,
+    )
     viewer.dvz.arm(**{failure: (1,)})
     with pytest.raises(RuntimeError):
         viewer.set_mapping('cosmos', palette={315: (10, 20, 30, 0), -315: (40, 50, 60, 255)})
     assert viewer.mapping == 'allen' and viewer.tree_model is model and viewer.palette is palette
-    assert viewer._surface_base_colors_cache is cache
+    assert viewer._surface_presentation.base_colors is cache
     assert viewer._mapping_control.value == viewer.mesh_data.mapping_names.index('allen')
     assert viewer._selected_region_ids == (315,) and viewer.dvz.mesh_selection == [315]
     assert viewer._last_mesh_region_ids == (315,)
@@ -205,20 +210,20 @@ def test_mapping_alpha_failure_preserves_opaque_state(viewer):
 def test_successful_explicit_palette_mapping_updates_tree_identity(viewer):
     viewer.set_mapping('cosmos', palette={315: (10, 20, 30, 128)})
     assert viewer.mapping == viewer.tree_model.mapping == 'cosmos'
-    assert viewer._surface_alpha_mode == viewer.dvz.DVZ_ALPHA_WBOIT
+    assert viewer._surface_presentation.alpha_mode == viewer.dvz.DVZ_ALPHA_WBOIT
 
 
 def test_mapping_probe_identity_failure_restores_owned_keys_and_committed_selection(viewer):
-    viewer.set_probe_data(ProbeSites.from_arrays([[0, 0, 0]], [1], [315]))
+    viewer._probe_presentation.set_data(ProbeSites.from_arrays([[0, 0, 0]], [1], [315]))
     select(viewer)
     snapshot = native_snapshot(viewer)
-    probe_snapshot = viewer._probe_upload
+    probe_snapshot = viewer._probe_presentation.upload
     native_probe_keys = viewer.dvz.probe_keys.copy()
     viewer.dvz.arm(probe_keys=(1,))
     with pytest.raises(RuntimeError, match='probe site mapping link keys'):
         viewer.set_mapping('beryl')
     assert viewer.mapping == viewer.tree_model.mapping == 'allen'
-    assert viewer._probe_upload is probe_snapshot
+    assert viewer._probe_presentation.upload is probe_snapshot
     assert viewer._selected_region_ids == (315,) and viewer.dvz.mesh_selection == [315]
     np.testing.assert_array_equal(viewer.dvz.probe_keys, native_probe_keys)
     assert_native_restored(viewer, snapshot)
@@ -244,7 +249,7 @@ def test_failed_alpha_rollback_closes_viewer(operation, viewer):
         elif operation == 'mapping':
             viewer.set_mapping('cosmos', palette={315: (10, 20, 30, 128)})
         else:
-            viewer.set_region_data(
+            viewer._set_owned_region_data(
                 AtlasRegionValues.from_arrays([315], [1]),
                 opacity=0.3,
                 mapping_reduction='weighted_mean',

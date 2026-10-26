@@ -11,7 +11,8 @@ from pathlib import Path
 import numpy as np
 
 from ibl_anatomy import bundled_asset_set, verify_materialized_asset_set
-from ibl_datoviz import AtlasRegionValues, AtlasViewer
+from ibl_datoviz import AtlasViewer
+from ibl_datoviz.components import AtlasRegionValues
 
 
 def main() -> int:
@@ -28,19 +29,17 @@ def main() -> int:
     asset_set = bundled_asset_set()
     assets = verify_materialized_asset_set(asset_set, args.asset_root)
     rows = tuple(
-        row
-        for row in assets.regions.physical('allen')
-        if row.atlas_id != 0 and row.mapping_member
+        row for row in assets.regions.physical('allen') if row.atlas_id != 0 and row.mapping_member
     )
     region_ids = np.asarray([row.atlas_id for row in rows], dtype=np.int64)
     values = np.log1p(np.abs(region_ids)).astype(np.float64)
     data = AtlasRegionValues.from_arrays(region_ids, values)
 
     with AtlasViewer.from_assets(assets, mapping=args.mapping) as viewer:
-        viewer.set_region_data(data, mapping_reduction='weighted_mean')
+        viewer._set_owned_region_data(data, mapping_reduction='weighted_mean')
         started = time.perf_counter()
         for _ in range(args.iterations):
-            viewer.set_region_data(data, mapping_reduction='weighted_mean')
+            viewer._set_owned_region_data(data, mapping_reduction='weighted_mean')
         elapsed = time.perf_counter() - started
 
     result = {

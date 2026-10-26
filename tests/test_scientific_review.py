@@ -9,7 +9,11 @@ import pytest
 from examples import review_common
 from examples import scientific_scene_review as review
 from examples.bwm_probe import FIXTURE, _load_fixture
-from ibl_datoviz import AtlasViewer, SampledPlane
+from ibl_datoviz import AtlasViewer
+from ibl_datoviz.components import SampledPlane
+from ibl_datoviz.probe_presentation import ProbePresentation
+
+BASE_CLOSE = AtlasViewer.close
 
 
 class FakeComponent:
@@ -56,6 +60,13 @@ def viewer(monkeypatch):
         self.camera_angles = (0.1, 0.2, 0.3)
         self.probe_sites, self.probe_table = object(), object()
         self.native_visibility, self.path_styles = {}, {}
+        self._probe_presentation = ProbePresentation(self)
+        self._insertions = SimpleNamespace(
+            set_insertion=lambda *args, **options: insertion(self, *args, **options),
+            set_visible=lambda key, value: self.path_styles[key].update(visible=value),
+            set_color=lambda key, value: self.path_styles[key].update(color=value),
+            set_width=lambda key, value: self.path_styles[key].update(width=value),
+        )
         self._closed = False
         self.ui_scale = 1.0
         self._sidebar = SimpleNamespace(available=lambda _: (300.0, 600.0))
@@ -74,7 +85,7 @@ def viewer(monkeypatch):
         }
 
     def probe_data(self, sites, **kwargs):
-        self.probe_data = sites
+        self.data = sites
 
     def surface(self, visible):
         self.surface_visible = visible
@@ -83,28 +94,13 @@ def viewer(monkeypatch):
         self._closed = True
 
     monkeypatch.setattr(AtlasViewer, '__init__', initialize)
-    monkeypatch.setattr(AtlasViewer, 'set_insertion', insertion)
-    monkeypatch.setattr(AtlasViewer, 'set_probe_data', probe_data)
+    monkeypatch.setattr(AtlasViewer, '_insertion_collection', lambda self: self._insertions)
+    monkeypatch.setattr(ProbePresentation, 'set_data', probe_data)
     monkeypatch.setattr(
-        AtlasViewer, '_mapped_probe_region_ids', lambda self, sites: sites.allen_region_ids
+        ProbePresentation, 'mapped_region_ids', lambda self, sites: sites.allen_region_ids
     )
-    monkeypatch.setattr(AtlasViewer, '_upload_probe_sites', lambda self, *args, **kwargs: None)
-    monkeypatch.setattr(AtlasViewer, 'set_surface_visible', surface, raising=False)
-    monkeypatch.setattr(
-        AtlasViewer,
-        'set_insertion_visible',
-        lambda self, key, value: self.path_styles[key].update(visible=value),
-    )
-    monkeypatch.setattr(
-        AtlasViewer,
-        'set_insertion_color',
-        lambda self, key, value: self.path_styles[key].update(color=value),
-    )
-    monkeypatch.setattr(
-        AtlasViewer,
-        'set_insertion_width',
-        lambda self, key, value: self.path_styles[key].update(width=value),
-    )
+    monkeypatch.setattr(ProbePresentation, 'upload_sites', lambda self, *args, **kwargs: None)
+    monkeypatch.setattr(AtlasViewer, 'set_surface_visible', surface)
     monkeypatch.setattr(AtlasViewer, 'close', close)
     monkeypatch.setattr(review, 'PointCollectionVisual', FakeComponent)
     monkeypatch.setattr(review, 'SampledPlaneVisual', FakeComponent)
@@ -444,8 +440,10 @@ def test_recording_is_visible_at_start_and_layer_toggles_preserve_styles(viewer)
 
 def test_site_color_changes_preserve_population_identities_and_visibility(viewer):
     uploads = []
-    viewer._mapped_probe_region_ids = lambda sites: sites.allen_region_ids
-    viewer._upload_probe_sites = lambda positions, **kwargs: uploads.append((positions, kwargs))
+    viewer._probe_presentation.mapped_region_ids = lambda sites: sites.allen_region_ids
+    viewer._probe_presentation.upload_sites = lambda positions, **kwargs: uploads.append(
+        (positions, kwargs)
+    )
     for mode in ('uniform', 'scalar'):
         viewer.set_site_mode(mode)
         assert viewer.site_mode == mode
@@ -475,9 +473,7 @@ def test_atlas_display_visibility_is_preserved_by_failed_preset(viewer):
 def test_major_context_loading_delegates_to_hash_verified_shared_catalog(monkeypatch, tmp_path):
     catalog, geometry = object(), (object(), object())
     calls = []
-    monkeypatch.setattr(
-        review_common, 'bundled_surface_catalog', lambda: catalog, raising=False
-    )
+    monkeypatch.setattr(review_common, 'bundled_surface_catalog', lambda: catalog, raising=False)
     monkeypatch.setattr(
         review_common,
         'load_surface_catalog',
@@ -546,7 +542,9 @@ def test_insertion_rows_change_only_active_path_and_preserve_other_styles(viewer
 
 def test_site_radius_preserves_scalar_missingness_and_is_transactional(viewer):
     uploads = []
-    viewer._upload_probe_sites = lambda positions, **kwargs: uploads.append((positions, kwargs))
+    viewer._probe_presentation.upload_sites = lambda positions, **kwargs: uploads.append(
+        (positions, kwargs)
+    )
     viewer.set_site_mode('scalar')
     viewer.set_site_radius(7.0)
     assert viewer.site_mode == 'scalar' and viewer.site_radius_um == 7.0
@@ -566,7 +564,42 @@ def test_site_radius_preserves_scalar_missingness_and_is_transactional(viewer):
     def fail(*args, **kwargs):
         raise RuntimeError('upload failed')
 
-    viewer._upload_probe_sites = fail
+    viewer._probe_presentation.upload_sites = fail
     with pytest.raises(RuntimeError, match='upload failed'):
         viewer.set_site_radius(12.0)
     assert viewer.site_radius_um == 7.0 and viewer._site_radius_control.value == 7.0
+
+
+@pytest.mark.parametrize('guard', ['owner_thread', 'selection_callback'])
+def test_close_guards_preserve_scientific_components(viewer, monkeypatch, guard):
+    points, plane = viewer.review_points, viewer.review_plane
+    with monkeypatch.context() as patch:
+        if guard == 'owner_thread':
+            patch.setattr(viewer, '_owner_thread', -1, raising=False)
+        else:
+            patch.setattr(viewer, 'selection', SimpleNamespace(_notifying=True), raising=False)
+        with pytest.raises(RuntimeError):
+            viewer.close()
+    assert viewer.review_points is points and viewer.review_plane is plane
+    assert not points.closed and not plane.closed and not viewer._closed
+
+
+def test_close_during_gui_callback_defers_scientific_components(viewer, monkeypatch):
+    points, plane = viewer.review_points, viewer.review_plane
+    stopped = []
+    viewer.dvz.dvz_app_stop = stopped.append
+    viewer._gui_callback_depth = 1
+    monkeypatch.setattr(AtlasViewer, 'close', BASE_CLOSE)
+    viewer.close()
+    assert stopped == [viewer.app]
+    assert viewer._close_pending and not viewer._closed
+    assert not points.closed and not plane.closed
+
+    def close_scene(instance):
+        assert points.closed and plane.closed
+        instance._closed = True
+
+    monkeypatch.setattr(AtlasViewer, 'close', close_scene)
+    viewer._gui_callback_depth = 0
+    viewer.close()
+    assert points.closed and plane.closed and viewer._closed
