@@ -45,6 +45,7 @@ line-length = 99
 include = [
     "pyproject.toml", "ibl_datoviz/**/*.py", "examples/**/*.py", "tests/**/*.py",
     "tools/review.py", "tools/check_installed.py", "tools/build_w39_insertions.py",
+    "tools/benchmark_layer_updates.py",
     "tools/diagnose_endpoint_depth.py",
 ]
 

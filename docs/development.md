@@ -145,3 +145,40 @@ Restoration paths use internal setters deliberately when repeating a committed h
 would recurse. Review fixture resets use public controllers, so application policies
 also apply during replay. Change these boundaries with failure-injection and lifetime
 checks, not only successful startup tests.
+
+## Measure scientific layer update calls
+
+After activating the explicit Python/native pairing described above, benchmark
+synthetic annotations against the verified bundled atlas assets:
+
+```bash
+uv run --frozen python tools/benchmark_layer_updates.py build/atlas-d070 \
+  --sizes 100 1000 --glyphs point sphere --iterations 20 --warmup 4 \
+  --json build/layer-updates.json
+```
+
+The deterministic annotations have no scientific region labels or recording
+interpretation. Each point/sphere population has N rows; each path population has
+N independent two-vertex paths. Group visibility uses an explicitly synthetic
+recording group with N sphere channels and one two-vertex trajectory. It does not
+claim generic point grouping or a measured recording workload.
+
+Each glyph/population and recording-group case uses a fresh scene, preventing
+unrelated cases from accumulating historical native visual IDs. Scene setup and
+teardown are excluded from the measured calls. Each case alternates changed
+states, excludes warmup calls, and reports median
+and p95 owner-thread CPU call durations. Native allocation/destruction observer
+overhead is included. There is no render loop or GPU-completion wait, so these
+results do not measure frame rate, GPU execution, or end-to-end interaction
+latency. Path updates can allocate N native visuals per call on older implementations.
+For a bounded path comparison use `--sizes 1 2 --glyphs path`; larger populations
+or long runs may exceed native per-scene lifetime limits and fail explicitly.
+The default glyphs are point and sphere. Allocation counts identify successful visual creation; destruction
+counts are call attempts.
+
+Reports record explicit anatomy hashes, generated-position hashes, package source
+hashes and module paths, NumPy version, and the loaded native library SHA256. Git
+revision/dirty state is recorded only when the package lives directly in its own
+checkout; archived packages nested under another repository retain source hashes
+without inheriting that repository's HEAD. Compare matching populations, settings,
+source identities and native binaries, and keep raw reports under ignored `build/`.
