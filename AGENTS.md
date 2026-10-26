@@ -9,8 +9,9 @@ batch. Keep `main` unchanged until the user explicitly requests a merge or chang
 this branch policy.
 
 Read `docs/NEXT_STEPS.md` for completed work, validation evidence, and remaining release gates.
-Use `docs/REAL_DATA_EXAMPLE_ROADMAP.md` for interactive review criteria. Preserve the public API
-and native ownership contracts: retained arrays must own their storage; scene-owned resources,
+Use `docs/REAL_DATA_EXAMPLE_ROADMAP.md` for interactive review criteria. The user authorized
+legacy API breaks and aggressive modular refactoring on October 26, 2026; migrate repository
+clients and document removals together. Preserve scientific behavior and native ownership contracts: retained arrays must own their storage; scene-owned resources,
 GUI handles, callback subscriptions, and worker shutdown must keep their documented lifetimes.
 
 ## Contributor commands (macOS and Linux)

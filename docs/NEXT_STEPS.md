@@ -9,6 +9,29 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Autonomous API and modularity refactor — October 26 2026
+
+The user reviewed apps 1 and 2 on this Mac and accepted their current behavior.
+This acceptance does not cover unreviewed scientific datasets or other platforms.
+The user authorized aggressive refactoring, legacy API breaks, subagent implementation
+and independent review, and focused local commits on `feature/datoviz-v04`.
+Publication, merging to `main`, and native baseline promotion remain separate decisions.
+
+The implementation target is one concrete `AtlasViewer` with owned linked-slice and
+window/layout components, canonical scientific payloads and layer handles, and explicit
+low-level rendering components. Remove hidden subclass construction and migrate all
+repository clients together. Preserve scientific identities, coordinate interpretation,
+transaction recovery, retained-array ownership, callback lifetimes and worker shutdown.
+Remove overlapping public entry points only alongside their callers; retain distinct
+low-level diagnostic semantics in components rather than silently changing them.
+
+Validation starts from IBL `6a29c33` and the configured Mac native candidate
+`536d78c7df431e6a2931ebc959d6528776177109`. The immutable package native pin remains
+`73d0f0bcdd595d2f76e2cdffcc2dd89c25a56858`; strict baseline checks reject this known
+runtime difference. The ignored anatomy fixture cache initially predates the locked
+anatomy source and must be refreshed before package test execution. Baseline app-1
+and app-2 captures are retained under ignored `build/refactor-20261026/`.
+
 ## Explicit recording stop cancellation — October 21 2026
 
 Normal review recording completion now calls `Recorder.stop(cancel=True)`: after detaching the observer, the recorder sends an explicit cancellation through native host ingress and records a terminal `datoviz.cancel` with reason `capture-stop`. This clears any held key/button and recognizer state before the scientific checkpoint, without inventing successful releases or clicks. Default recorder stop remains strict, and failed review loops do not request cancellation or acquire a successful terminal checkpoint. This handles close paths that terminate before a held input release arrives. Validation passes 100 native Python trace/player tests, 32 IBL wiring/checkpoint tests, Ruff and strict MkDocs. Private-display real-input recordings closed with either a mouse button or a keyboard key held both save complete traces with explicit cancellation and replay to matching terminal scientific state and pixels.
