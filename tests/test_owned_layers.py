@@ -24,6 +24,7 @@ class FakeVisual:
     def __init__(self, state):
         self.state = state
         self.closed = False
+        self._closed = False
         self._visible = state['visible']
         self._insertions = {1: SimpleNamespace(visible=self._visible)}
 
@@ -35,6 +36,15 @@ class FakeVisual:
 
     def close(self):
         self.closed = True
+        self._closed = True
+
+    def update_colors(self, colors):
+        self.state['colors'] = colors
+
+    def update_sizes(self, sizes):
+        self.state['size'] = sizes
+
+    update_radius = update_sizes
 
 
 @pytest.fixture
@@ -109,10 +119,10 @@ def test_failed_replacement_preserves_state_and_live_visual(registry, monkeypatc
     layer = registry.add_points(points())
     old = layer._visual
 
-    def fail(**_kwargs):
+    def fail(*_args, **_kwargs):
         raise RuntimeError('injected native upload failure')
 
-    monkeypatch.setattr(layer, '_build', fail)
+    monkeypatch.setattr(layer._visual, 'update_colors', fail)
     with pytest.raises(RuntimeError, match='injected'):
         layer.set_color('#112233')
     assert layer._visual is old and not old.closed

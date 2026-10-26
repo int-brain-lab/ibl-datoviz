@@ -182,3 +182,38 @@ revision/dirty state is recorded only when the package lives directly in its own
 checkout; archived packages nested under another repository retain source hashes
 without inheriting that repository's HEAD. Compare matching populations, settings,
 source identities and native binaries, and keep raw reports under ignored `build/`.
+
+### October 26 matched CPU update results
+
+Against package `58d880e`, three alternating fresh-process before/after pairs used
+the same verified D070 geometry, deterministic annotation coordinates, native dylib,
+benchmark script, 6 warmup calls and 30 measured calls per case. Package Python
+source hashes were stable within each build, and anatomy/workload/position/native
+identities matched across builds. At 10,000 synthetic rows, medians of trial medians
+were:
+
+| Public call | Before, ms | After, ms |
+| --- | ---: | ---: |
+| Point visibility | 1.3426 | 0.0021 |
+| Point uniform color | 1.3621 | 0.1066 |
+| Point diameter | 1.3526 | 0.0136 |
+| Sphere visibility | 1.3216 | 0.0021 |
+| Sphere uniform color | 1.3319 | 0.1109 |
+| Sphere radius | 1.3158 | 0.0117 |
+| Recording group visibility | 2.3957 | 0.0045 |
+
+These calls allocate no replacement visuals after the change. Point/sphere selection
+still rebuilds candidates and remains around 1.6 ms in this workload. Attribute updates
+retain one positioned-row mask and exact-ref/native-row index per immutable layer;
+no cross-frame geometry cache or scientific identity join is inferred. The results
+measure instrumented CPU API calls on one Mac, including observer overhead, with no
+render loop or GPU-completion wait. They are not desktop FPS or interaction latency.
+Raw comparison reports are ignored under `build/perf-20261026/`.
+
+Sparse categorical contour preparation now compacts crossing cells once before
+querying edge pairs. Images with more than 50% crossing cells retain the original
+full-grid path. Nine alternating paired trials over 21 real 50 µm indices per axis
+(exceeding the 16-entry boundary cache), for Allen and Beryl, produced bitwise-equal
+anatomy, annotations, boundaries and selection outlines. CPU preparation fell 17–26%
+without selection and 29–40% with present selected regions; dense categorical tracing
+remained approximately 5.34 ms. No slice upload or GPU timing gain is established.

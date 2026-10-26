@@ -182,7 +182,7 @@ class PointCollectionVisual(ComponentVisual):
         self._require_open()
         colors = rgba_array(colors, (len(self.data),))
         if len(self.data):
-            self._check(self.dvz.dvz_visual_set_data(self.visual, 'color', colors), 'point colors')
+            self._update_native_attribute('color', colors, self.data.colors, 'point colors')
         self._replace_attribute('colors', colors)
 
     def update_sizes(self, sizes_px):
@@ -197,10 +197,23 @@ class PointCollectionVisual(ComponentVisual):
             raise ValueError('point sizes must have shape (n,) or be scalar')
         sizes = owned(sizes, np.float32)
         if len(self.data):
-            self._check(
-                self.dvz.dvz_visual_set_data(self.visual, 'diameter_px', sizes), 'point sizes'
-            )
+            self._update_native_attribute('diameter_px', sizes, self.data.sizes_px, 'point sizes')
         self._replace_attribute('sizes_px', sizes)
+
+    def _update_native_attribute(self, name, value, previous, context):
+        try:
+            self._check(self.dvz.dvz_visual_set_data(self.visual, name, value), context)
+        except Exception as error:
+            try:
+                # A failed setter may already have changed native storage.
+                self._check(
+                    self.dvz.dvz_visual_set_data(self.visual, name, previous),
+                    f'{context} rollback',
+                )
+            except Exception:
+                self.close()
+                raise RuntimeError(f'{context} rollback failed; component closed') from error
+            raise
 
     def _replace_attribute(self, name, value):
         # Existing arrays are already owned and immutable. Share them internally

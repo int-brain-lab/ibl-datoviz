@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from .component import ComponentVisual, owned
+from .component import ComponentVisual, owned, rgba_array
 from .insertions import InsertionCollectionVisual, _endpoint_gaps
 from .payloads import Paths, Points, Recording
 from .points import PointCollection, PointCollectionVisual
@@ -123,10 +123,12 @@ class _SphereVisual(ComponentVisual):
         super().__init__(viewer.dvz, viewer.scene, viewer.panel, viewer.mesh_data.normalize_points)
         self.data = positions
         self._storage = None
+        self._radius_scale = viewer.mesh_data.display_scale
+        self._alpha_mode = None
         try:
             if len(positions):
                 self.visual = self._required(self.dvz.dvz_sphere(self.scene, 0), 'sphere visual')
-                radius = _positive(radius_um * viewer.mesh_data.display_scale)
+                radius = _positive(radius_um * self._radius_scale)
                 self._storage = {
                     'position': self._positions(positions),
                     'color': owned(colors, np.uint8),
@@ -141,6 +143,7 @@ class _SphereVisual(ComponentVisual):
                     else (self.dvz.DVZ_ALPHA_OPAQUE)
                 )
                 self._check(self.dvz.dvz_visual_set_alpha_mode(self.visual, alpha), 'sphere alpha')
+                self._alpha_mode = alpha
                 self._check(self.dvz.dvz_visual_set_depth_test(self.visual, True), 'sphere depth')
                 self._check(
                     self.dvz.dvz_panel_add_visual(self.panel, self.visual, None), 'sphere attach'
@@ -151,6 +154,76 @@ class _SphereVisual(ComponentVisual):
 
     def _has_data(self):
         return self.data is not None and len(self.data) > 0
+
+    def update_colors(self, colors):
+        """Replace retained colors and derived alpha policy as one native transaction."""
+        self._require_open()
+        colors = rgba_array(colors, (len(self.data),))
+        if not len(self.data):
+            return
+        alpha = (
+            self.dvz.DVZ_ALPHA_WBOIT if np.any(colors[:, 3] < 255) else self.dvz.DVZ_ALPHA_OPAQUE
+        )
+        previous, old_alpha = self._storage['color'], self._alpha_mode
+        alpha_attempted = False
+        try:
+            self._check(
+                self.dvz.dvz_visual_set_data(self.visual, 'color', colors), 'sphere colors'
+            )
+            if alpha != old_alpha:
+                alpha_attempted = True
+                self._check(self.dvz.dvz_visual_set_alpha_mode(self.visual, alpha), 'sphere alpha')
+        except Exception as error:
+            failures = []
+            if alpha_attempted:
+                try:
+                    self._check(
+                        self.dvz.dvz_visual_set_alpha_mode(self.visual, old_alpha),
+                        'sphere alpha rollback',
+                    )
+                except Exception as failure:
+                    failures.append(failure)
+            try:
+                self._check(
+                    self.dvz.dvz_visual_set_data(self.visual, 'color', previous),
+                    'sphere colors rollback',
+                )
+            except Exception as failure:
+                failures.append(failure)
+            if failures:
+                self.close()
+                raise RuntimeError('sphere colors rollback failed; component closed') from error
+            raise
+        self._storage = {**self._storage, 'color': colors}
+        self._alpha_mode = alpha
+
+    def update_radius(self, radius_um):
+        """Update physical radius without normalizing or uploading positions again."""
+        self._require_open()
+        if not len(self.data):
+            return
+        radius = _positive(radius_um * self._radius_scale)
+        radii = owned(np.full(len(self.data), radius), np.float32)
+        try:
+            self._check(
+                self.dvz.dvz_visual_set_data(self.visual, 'radius', radii), 'sphere radius'
+            )
+        except Exception as error:
+            try:
+                self._check(
+                    self.dvz.dvz_visual_set_data(self.visual, 'radius', self._storage['radius']),
+                    'sphere radius rollback',
+                )
+            except Exception:
+                self.close()
+                raise RuntimeError('sphere radius rollback failed; component closed') from error
+            raise
+        self._storage = {**self._storage, 'radius': radii}
+
+    def close(self):
+        """Release native resources and all retained attribute storage."""
+        super().close()
+        self._storage = None
 
 
 class LayerHandle:
@@ -172,6 +245,15 @@ class LayerHandle:
             LayerObservationRef(attachment, key, None if keys is None else keys[i])
             for i, key in enumerate(payload.ids)
         )
+        self._positioned_rows = owned(payload.positioned, bool)
+        self._native_rows_by_ref = {
+            ref: row
+            for row, ref in enumerate(
+                ref
+                for ref, positioned in zip(self._refs, self._positioned_rows, strict=True)
+                if positioned
+            )
+        }
         self._visual = self._build()
 
     @property
@@ -317,6 +399,28 @@ class LayerHandle:
             )
         return (_VisibilityUpdate(self._visual, self._visual._visible, visible),)
 
+    def _update_attributes(self, *, colors=None, size=None):
+        if self._glyph == 'path':
+            self._replace(colors=colors, size=size)
+            return
+        try:
+            if colors is not None:
+                displayed = colors[self._positioned_rows]
+                for ref in self._selected:
+                    row = self._native_rows_by_ref.get(ref)
+                    if row is not None:
+                        displayed[row] = (255, 70, 180, 255)
+                self._visual.update_colors(displayed)
+            elif self._glyph == 'point':
+                self._visual.update_sizes(size)
+            else:
+                self._visual.update_radius(size)
+        except Exception:
+            if self._visual._closed:
+                close = getattr(self._registry.viewer, 'close', self._registry.close)
+                close()
+            raise
+
     def set_visible(self, visible):
         """Change authored visibility without changing observations or selection."""
         self._mutate()
@@ -335,7 +439,7 @@ class LayerHandle:
         if self._glyph == 'path' and rgba[3] != 255:
             raise ValueError('paths require opaque color')
         colors = owned(np.tile(rgba, (len(self.refs), 1)), np.uint8)
-        self._replace(colors=colors)
+        self._update_attributes(colors=colors)
         self._colors, self._encoding = colors, None
 
     def color_by(
@@ -369,7 +473,7 @@ class LayerHandle:
             raise ValueError('quantity name and units must be explicit nonempty strings')
         colors = self._registry._scalar_colors(scalar, cmap, bounds, missing_color)
         encoding = ScalarEncoding(scalar, name, units, cmap, tuple(bounds), missing_color)
-        self._replace(colors=colors)
+        self._update_attributes(colors=colors)
         self._colors, self._encoding = colors, encoding
 
     def _set_size(self, value, capability):
@@ -377,7 +481,9 @@ class LayerHandle:
         if not getattr(self.capabilities, capability):
             raise ValueError(f'{capability} is unsupported for this glyph')
         size = _positive(value)
-        self._replace(size=size)
+        if size == self._size:
+            return
+        self._update_attributes(size=size)
         self._size = size
 
     def set_size_px(self, size):

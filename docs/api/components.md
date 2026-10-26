@@ -52,9 +52,15 @@ Source-backed scalar calls require `observation_refs=payload.observation_keys`
 from the upstream quantity preparation in exactly the full payload order. Reject
 shuffled/foreign references rather than using length as evidence of an identity
 join. Missing scalar values receive an explicit missing color. Uniform color,
-visibility and scalar edits preserve selection. The initial native implementation
-rebuilds candidate visuals transactionally; dense animation performance is not
-qualified yet.
+visibility and scalar edits preserve selection. Layer and recording-group visibility
+updates retained native handles without rebuilding geometry. Point/sphere color and
+size edits also update attributes in place, retaining exact picking keys and selected
+highlights. Partial native failures restore prior attributes; failed recovery closes
+the owning viewer. Path styling and selection changes still rebuild candidates.
+Dense animation frame rate and GPU upload throughput are not qualified by CPU-call
+benchmarks. The configured Mac native candidate cannot render translucent sphere
+WBOIT: opaque sphere styling and translucent points have rendered equivalence evidence,
+while sphere alpha-transition recovery is covered by CPU failure tests only.
 
 `app.selection.set_regions(ids, mapping=app.mapping)` selects only regions;
 `set_observations(refs)` selects exact attachments. `clear_regions`,
