@@ -9,6 +9,77 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Observation selection updates and cursor attribution — October 26 2026
+
+The user authorized the next measured selection/cursor pass, focused commits and
+final publication of `feature/datoviz-v04`. `main`, native checkout/build and the
+immutable dependency pin remain unchanged. Previous push `7f1fd54` passed hosted CI.
+
+`9c45cbb` records actual cursor phase attribution on this Mac. With verified D070,
+complete Allen 50 µm, no GPU volume, warm nearby slices and `select_region=False`,
+full surface snapshots retain approximately 1.97 MB but cost only 0.035–0.065 ms:
+0.8–3.0% of the public call. Slice preparation dominates. No separate cursor recovery
+protocol was introduced; existing atomic cursor/surface recovery, cancellation,
+revision supersession and callback semantics remain intact. See [measurement method
+and cases](development.md#october-26-cursor-phase-attribution).
+
+`a5a0cff` updates point/sphere observation highlights through retained native colors,
+without replacing visuals or query registrations. Selection changes stage every
+layer before writes, compensate every attempted component (including partial native
+failure), and commit all scientific selections only after success. Failed recovery
+closes the owner. Path candidates remain staged replacements, with mixed-glyph
+rollback. Missing-only or equal-pixel selection changes retain exact scientific refs
+without unnecessary color uploads. Pending picking intent invalidates before writes.
+An exact-ref-to-layer index removes measured repeated membership scans; it publishes
+only after successful attachment, prunes before removal callbacks, and clears at close.
+
+Three alternating baseline/candidate process pairs against package `7f1fd54`, with
+identical verified anatomy, native binary, script, workload and coordinate hashes,
+keep the existing single positioned ref/empty benchmark unchanged (30 calls after
+6 warmups). At 10,000 rows, point observation selection falls from 1.6278 to
+0.1911 ms and sphere selection from 1.5866 to 0.1963 ms. No replacement visuals are
+allocated. Other previously optimized layer calls remain approximately unchanged.
+
+Separate synthetic cases, each measured in three alternating process pairs after
+4 warmup calls, alternate two nonempty selections: last/penultimate refs in a
+10,000-row point layer (20 calls) fall from 3.5888 to 0.1995 ms; disjoint 1,000-ref
+sets in a 2,000-row point layer (8 calls) fall from 152.8608 to 1.4739 ms; one ref
+per layer across four 2,500-row point/sphere layers (20 calls) falls from 5.9375 to
+0.2437 ms. The reference-index dictionary alone occupies approximately 295 KB for
+10,000 refs on this Python build, excluding existing ref objects/arrays and total RSS.
+All numbers are medians of trial medians, include observer overhead, exclude setup,
+and measure CPU API calls without a render loop or GPU wait. They are not anatomical
+region-selection timings, FPS or physical input-to-photon latency measurements.
+
+Independent implementation/source reviews found no blocker. Twelve supported native
+baseline/current frames and full scientific/table/event metadata compare exactly,
+covering mixed point/sphere/path selections, missing refs, no-ops, clear restoration,
+and hidden-group edits. Transitions change 98–1,180 pixels; hidden/no-op states
+correctly do not. Native partial-write tests verify multi-layer color/alpha and
+table rollback without event/revision advancement. The old table failure test now
+injects a real partial retained-color write instead of the removed rebuild boundary.
+
+Final configured Mac/Python 3.13 validation: **1,315 passed, one optional registered
+10 µm asset skip**. Pinned source-only validation: **1,217 passed, 99 skips** (native
+runtime/GPU tests unavailable there plus registered assets). Ruff, strict MkDocs,
+whitespace, wheel/sdist builds, isolated installed-wheel CPU checks and both bounded
+three-frame Mac review apps pass. Exact native revision/library remain `536d78c7d` /
+`5dd015cea23df2b473a15529b00560e3dbe7aa8f1a2ce87f6b15cadb54dc31c3`.
+Strict doctor/test/review still reject the existing `73d0f0bc` pin/runtime difference.
+The incomplete optional Mac recording API and native translucent-sphere WBOIT limit
+remain unchanged; supported sphere rendering proof uses opaque styling. No new
+manual interaction or renderer throughput verdict is claimed.
+
+Raw profiles, metadata, comparison scripts and frames remain ignored under
+`build/selection-cursor-20261026/`. Baseline/candidate Python source SHA256 values
+are `336e1368476b4d55af51d9035734ae660e9c1302a81a15a0f1baf39d45d84fe6` and
+`5ce32836f03e39e1fb18a482d4f52fa2b7a7103ef486aff35b1353cd30e0eec6`.
+
+The next product-facing batch should improve active scalar values, units, legends
+and missing-value descriptions in linked tables/layers. Saved workspace state and
+native baseline/capability alignment remain subsequent explicit decisions. More
+cursor recovery or renderer caching work needs new measurements to justify it.
+
 ## Retained layer updates and sparse slice contours — October 26 2026
 
 The user authorized the next measured performance batch, focused commits and a final

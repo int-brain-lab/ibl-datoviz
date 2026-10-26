@@ -273,7 +273,7 @@ silently changing the original benchmark workload:
 
 | Selection scenario | Before, ms | After, ms |
 | --- | ---: | ---: |
-| Last two refs in one 10,000-row point layer | 3.5888 | 0.1995 |
+| Alternate last/penultimate ref in one 10,000-row point layer | 3.5888 | 0.1995 |
 | Disjoint sets of 1,000 refs in one 2,000-row point layer | 152.8608 | 1.4739 |
 | One last-row ref in each of four 2,500-row point/sphere layers | 5.9375 | 0.2437 |
 
