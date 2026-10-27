@@ -1,5 +1,148 @@
 # Manual review feedback
 
+## Scalar right panel rejected and audited — October 27 2026
+
+The reviewer rejects the new scalar example's right panel as confusing and asks
+for a deep audit and a much clearer, simpler scientist-facing design. The earlier
+accepted atlas-navigation clip remains accepted; the scalar clip is not accepted.
+The recommendations below are a design proposal, not an implemented UI change.
+
+### Evidence and causes
+
+The audit inspected the recorded measured, missing, filtered and uniform-color
+states, the package Layers/table adapters, the separate app-1 controls and the
+pinned native docking implementation. Four-frame native diagnostic launches on a
+private Xvfb display measured the final window rectangles. Values below are the
+runtime GUI coordinate units on this Linux display, not Mac/HiDPI evidence.
+
+| Host size / UI scale | Requested Layers width | Actual Layers width | Central viewport size |
+| --- | --- | --- | --- |
+| 2240 × 1600 / 1.25 | 425 | 330 | 1407 × 1248 |
+| 1600 × 1000 / 1.0 | 340 | 255 | 942 × 718 |
+| 1440 × 900 / 1.5 | 510 | 297 | 539 × 478 |
+
+The right panel loses width after the Regions split. In the pinned Datoviz
+`src/gui/gui.cpp`, `_gui_dock_node_for_slot()` splits the remaining central node,
+but `_gui_dock_slot_ratio()` divides the requested width by the full viewport
+width. In the first case, approximately `(2240 - 500) * 425 / 2240 = 330` explains
+the measured result. Enlarging the right-panel constant would mask the problem
+for one geometry. Existing package docking tests assert requested arguments and
+call order, so they cannot catch incorrect realized dimensions.
+
+| Priority | Finding | Consequence for a scientist | Recommendation |
+| --- | --- | --- | --- |
+| Critical | Visibility, style, legend, selection, provenance and help are interleaved with identical visual weight. | The panel gives no clear starting point or task order. | Separate a compact layer list, one active-layer inspector and a small selected-observation summary. |
+| Critical | A four-channel numeric Uniform color editor precedes an active firing-rate legend. Its initial swatch is the first row's color, which happens to be gray for the first missing site. | Gray looks like the layer's overall color although values use viridis. Changing this apparent style control clears the active scalar encoding and table values. | Use an explicit Color by choice. Show a simple color swatch only for Single color. Preserve supplied measurements independently of display mode. |
+| High | Requested dock widths are not realized; labels are placed after native default-width controls. | Controls squeeze labels and technical paragraphs wrap into a narrow column. | Correct or explicitly compensate for docking semantics, measure actual bounds, place labels above full-width controls and define a small-window fallback. |
+| High | The same layer name appears in a separator and checkbox; counts appear as 192/192 after an explanation at the top. | Repetition consumes space, and scientists must decode counts. | One visibility row, a useful name and a plain count such as 192 sites. Show unavailable-coordinate counts only when nonzero. |
+| High | Selected values live inside the legend and use up to 12 significant digits. | A selected value resembles another legend annotation; units can wrap to their own line. | A separate Selected site block, about three significant digits by default, value and unit together, and full precision in detailed data. |
+| High | An Original ID combo duplicates table/scene selection and exposes the entire population. Its labels stringify integer and string IDs identically. | It scales poorly, implies one selected object even when several are selected and makes mixed ID types ambiguous. | Select observations through scene/table; summarize exact typed identity. Retain ID lookup only as an optional search action. |
+| High | Grouped recordings expand every child's complete controls, raw insertion UUID and source status. | A second recording multiplies noise and hides the comparison task. | Compact grouped layer rows and properties for the explicitly inspected layer; keep exact source identity in details and relevant scientific warnings visible. |
+| Medium | Picking help, clipping mechanics, colormap name, coordinate description and API side-effect warnings are permanent prose. | Instructions compete with the measurement and actual warnings. | Keep scientific meaning and unavailable-data counts visible; move routine help/method details behind disclosure. Use concise actionable warnings for actual limitations. |
+| Medium | Example-only Select measured site / Select missing FR / uniform-color buttons sit above the spatial view. | Another control surface competes with the right panel and teaches a demo-specific workflow. | Remove these from the normal scientist workspace; use ordinary table/scene actions in review recordings. |
+| Medium | The table repeats the legend and metadata and starts with Type/XYZ? details. | A fixed-height table shows very few rows. | Open data on demand; favor Site, quantity with units and region. Keep source/type/coordinates available as additional detail and reserve enough height for useful rows. |
+| Medium | The app-1 and generic layer panels implement separate control structures and wrapping rules. | Accepted behaviors and layout improvements can diverge between examples. | Share presentation components while preserving app-1's distinct region-linking diagnostic semantics. |
+
+### Proposed default panel
+
+The default should answer three questions: what is visible, what do its colors
+mean, and what did I select? Visibility and ordinary data inspection must remain
+available without opening advanced settings. The inspector's active layer is UI
+focus; changing it must not select observations or anatomy.
+
+```text
+Layers
+  [x] Recording sites                 192
+
+Color by
+  [ Mean firing rate                  v ]
+  Firing rate (Hz)
+  [ low -------- middle -------- high ]
+  2.41                              45.0
+  [gray] 38 sites: no firing-rate value
+  [View data]
+
+Selected site
+  Site 381                         7.62 Hz
+  [Clear selection]
+
+> Appearance
+> Source and methods
+```
+
+The numeric example uses the current real fixture and rounded display limits;
+the exact prepared values and percentile range remain unchanged. Include a brief
+population description such as "192 co-located channel groups; not neurons" in
+the layer's summary/details, so "site" does not imply a neuron. Explain "no good
+unit assigned" with the missing-value key. Present no selection as Select a site
+in the scene or table. Multiple selections show their count and an Open selected
+rows action; they must never collapse scientific state to one object.
+
+Appearance is collapsed initially. It contains Marker size with the correct
+pixel diameter or physical radius unit, and other supported visual controls.
+Single color reveals a simple swatch; numeric RGBA channels and alpha policy do
+not belong in the default view. Source and methods holds the dataset, insertion,
+exact IDs/hashes, scalar derivation, coordinate meaning, percentile choice and
+clipping counts. Unknown or inadequate source/coordinate validation must remain
+a concise visible warning when scientifically relevant, not disappear in details.
+
+For several recordings, show grouped visibility rows at the top and inspect one
+layer at a time. Hiding a group preserves its children's authored visibility,
+styles and exact selection. Inspecting another layer must not reset camera,
+cursor or table state. Missing positions and missing measurements remain separate.
+
+Use aligned read-only color samples as the first native implementation; a smooth
+bar can follow if a suitable primitive is available. Avoid adding a new renderer
+or graphics resource subsystem just for a decorative gradient. Put labels above
+controls, use available-width sizing, separate value/unit presentation from long
+prose, and treat font-size-aware wrapping as layout rather than a fixed characters
+per line estimate. A wider panel alone will not repair the information hierarchy.
+
+### Supporting state and implementation sequence
+
+1. Preserve scalar measurements independently of the active coloring mode in the
+   shared handle/model, rather than retaining them only in this example. Today
+   `LayerHandle.set_color()` discards its `ScalarEncoding`; a GUI-only cosmetic
+   rename cannot provide a non-destructive color-mode switch. Specify the API
+   change explicitly and preserve immutable arrays, full source alignment and
+   transactional table/visual recovery.
+2. Rebuild the package panel around the compact layer list and inspector. Unify
+   repeated presentation helpers with the app-1 composition without changing its
+   separate diagnostic selection meaning. Keep glyph controls conditional.
+3. Resolve the narrow native dock-ratio defect separately, with an actual-bounds
+   regression. Do not rebuild/change the native checkout or dependency pin as part
+   of this audit. Account for both sidebars and table minimum sizes; on a small
+   window, let users collapse the Regions browser and keep the data table closed
+   until requested. Never silently shrink text to fit all panes.
+4. Simplify the companion table/header and record normal user actions. No new
+   scientific dataset, broad API refactor, persistence feature or performance
+   optimization is needed to establish this layout direction.
+
+### Acceptance criteria
+
+- With one recording, visibility, active measurement/units, color key and missing
+  count are understandable without scrolling or opening advanced controls.
+- No raw RGBA fields, UUID paragraphs, renderer terminology or arbitrary-ID combo
+  appears in the default panel. Scientific caveats remain discoverable and actual
+  validity warnings remain visible.
+- Switching Single color / measurement changes appearance while table values,
+  identities and selections stay intact. Clearing/removing measurements is a
+  separate explicit operation.
+- Measured zero, missing measurement, absent coordinates, hidden layers and no
+  selection remain distinct in wording and behavior. Selected highlights never
+  masquerade as scalar colors. Multiple selections are summarized accurately.
+- Labels, value/unit pairs and controls fit at the three audited host geometries;
+  the narrow-window fallback preserves a usable central view. Native checks read
+  actual pane/control bounds rather than only asserting requested sizes.
+- Two recordings do not expand two complete property forms by default. A table
+  can show useful rows without duplicating a page of legend/method explanations.
+- A new 15–20-second Linux clip demonstrates ordinary visibility, data inspection,
+  missing values and color-mode switching. User acceptance remains required;
+  automated checks and this audit do not supply it.
+
+Runtime measurements and the private diagnostic script remain ignored under
+`build/short-reviews/layout-*.json` and `build/short-reviews/audit_layout.py`.
+
 ## Generic annotations accepted — October 15 2026
 
 The user validates the interactive annotation workflow. The supplied close-up

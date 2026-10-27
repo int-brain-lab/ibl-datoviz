@@ -9,6 +9,29 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Scalar panel rejected; scientist-facing layout audit — October 27 2026
+
+The user rejects the new scalar review's right panel as confusing and requests a
+deep audit and simpler design. This is not acceptance of the scalar clip. The
+earlier atlas-navigation clip remains accepted. See the [recorded audit and
+proposed panel](REVIEW_FEEDBACK.md#scalar-right-panel-rejected-and-audited-october-27-2026).
+
+The audit finds interleaved visibility/style/measurement/selection/help, an
+inappropriate leading RGBA editor, destructive scalar clearing through a visual
+control, repeated labels and metadata, excessive precision, arbitrary-ID selection
+and inconsistent app-specific controls. The recommended next batch is a compact
+layer list, one active-layer inspector, a separate selected-observation summary,
+and collapsed appearance/source details. Preserve measurements when changing
+color mode; this requires shared model work, not only renaming GUI labels.
+
+Private native measurements confirm a docking defect: requested right widths
+425/340/510 realize 330/255/297 at the three audited host sizes/scales. The native
+split ratio uses full-viewport width while splitting the remaining central node.
+Existing mock docking tests cannot detect this. At 1440 × 900 / scale 1.5, the
+central view is only 539 × 478 with both sidebars and the table open. Actual-bounds
+checks and a narrow-window fallback are needed. No UI implementation, native
+build/revision change or dependency promotion was performed during this audit.
+
 ## Scalar values, legends and missingness — October 27 2026
 
 Generic point/sphere observation tables now expose retained numeric Value and
@@ -47,7 +70,8 @@ first on the private gateway's **Datoviz short reviews** page, `/ibl-review/`.
 The H.264 MP4 is 1,179,164 bytes; SHA256:
 `c10c644c8c1b17cbf3711d77b9f31df33f2ec3417acff478e3142784b28dcef5`.
 Artifacts and capture scripts remain ignored under `build/short-reviews/`.
-This new clip awaits user acceptance; the earlier atlas clip remains accepted.
+The user subsequently rejected this new clip's right-panel layout; see the audit
+above. The earlier atlas clip remains accepted.
 Native baseline promotion, saved workspace state and further scientific workflows
 remain subsequent decisions. No dependency pin or native build was changed.
 
