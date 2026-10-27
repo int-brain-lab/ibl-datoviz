@@ -9,6 +9,25 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Short Linux video review accepted — October 27 2026
+
+The user watched and validated the 18-second app-2 Linux pilot through the
+private Fractal gateway at `/ibl-review/` (launcher: **Datoviz short reviews**).
+Acceptance covers the appearance and scripted interactions shown: 3D rotation,
+linked cursor movement, AP slice scrolling and anatomical selection. It does not
+establish hands-on input responsiveness, unshown workflows or Mac rendering.
+Keep subsequent remote review videos short.
+
+Capture used a private Xvfb display on Fractal and the configured native checkout
+`73d0f0bcdd595d2f76e2cdffcc2dd89c25a56858`, matching the immutable pin;
+the strict app launch succeeded and the app closed cleanly. The H.264/yuv420p
+2240 × 1600 MP4 is 18 seconds and 1,549,355 bytes. Artifact SHA256:
+`a004c52d1b29f8bc67887aba2b582a56f09dec4220da28132b02e6d34accedcd`.
+Video, capture driver and diagnostics remain ignored under `build/short-reviews/`.
+This Linux evidence is separate from the historical Mac native-candidate mismatch
+documented below. The next proposed product batch remains scalar values, units,
+legends and missing-data descriptions.
+
 ## Observation selection updates and cursor attribution — October 26 2026
 
 The user authorized the next measured selection/cursor pass, focused commits and

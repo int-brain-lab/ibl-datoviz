@@ -8,6 +8,12 @@ implemented and consolidated around one concrete `AtlasViewer`. Additional
 scientific workflows still require reviewed source-frame evidence for actual BWM
 geometry. Other platforms and unreviewed datasets retain separate acceptance scope.
 
+On October 27, the user also watched and validated an 18-second Linux app-2
+recording covering rotation, linked cursor movement, slice scrolling and region
+selection. This accepts the appearance and scripted interactions shown; hands-on
+Linux responsiveness and unshown workflows remain separate. Remote reviews use
+short clips through the private Fractal gateway; see the current handoff.
+
 The current API design and implementation stages are in the
 [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md). It uses
 `AtlasViewer` as the single entry point and supersedes the historical
