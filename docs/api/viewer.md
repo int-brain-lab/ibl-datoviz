@@ -99,6 +99,12 @@ linked applications use `app.slices`.
 
 ## Scientific viewer
 
+See [Use the viewer in an analysis](../analysis-workflow.md) for exact selected
+records, callback exports, observation-to-slice navigation and offline figure bundles.
+`app.selection.to_records()` and `export_json()` are safe reads inside a committed
+selection callback. `app.slices.locate(ref)` explicitly navigates without selecting
+anatomy. Figure export requires a fresh viewer before creating its first view.
+
 ::: ibl_datoviz.viewer.AtlasViewer
     options:
       members:
@@ -130,6 +136,7 @@ linked applications use `app.slices`.
         - set_selected_region_ids
         - clear_selection
         - render_offscreen
+        - export_figure
         - show
         - close
 

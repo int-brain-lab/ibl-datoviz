@@ -9,6 +9,80 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Analysis round trip and figure export ready — October 27 2026
+
+The user authorized autonomous implementation and Linux validation through a final
+feedback checkpoint. This workflow builds on the existing viewer, subscriptions,
+source keys, tables and slices; no second reader, native revision or pin is introduced.
+
+- `app.selection.to_records()` returns detached rows in committed selection order:
+  typed original IDs, attachment/source scope, frame evidence, supplied positions
+  and Allen annotations, measurements/units/missingness, visibility, provenance and
+  supplied site memberships. Hidden/unpositioned selections remain. Generic
+  observations do not acquire invented source keys; paths retain vertices.
+- `app.selection.export_json()` atomically replaces a strict JSON artifact with
+  separately namespaced region selections and observation records. Read/export is
+  supported in committed callbacks on the owning thread. Export failures preserve
+  the prior file. This is an analysis artifact, not workspace persistence or import.
+- `app.slices.locate(ref)` moves the cursor to the nearest grid location of an
+  attached point/channel/cluster/site without changing scientific selection or
+  camera orientation. **Show in slices** appears for one positioned observation.
+  Missing locations, paths, foreign/removed references and out-of-grid coordinates
+  fail explicitly; the GUI reports out-of-grid errors without closing.
+- `app.export_figure(new_directory, title=...)` creates a PNG, a self-contained SVG
+  with observation-layer legends/linked-panel labels, and provenance JSON with
+  source identities, geometry/value/image hashes, original IDs, measurement scale,
+  missingness, selection, mapping, camera, cursor and anatomy presentation. It
+  requires a fresh viewer before `show()` or `render_offscreen()`, using explicit
+  constructor resolution. SVG embeds raster geometry. Regional/volume encodings
+  need their own figure explanation. This is not live docked-viewport export,
+  a full data bundle, an executable analysis or a restorable workspace.
+
+`examples.analysis_roundtrip` provides an offline route with the existing
+hash-checked 192-site BWM fixture. These are prepared co-located channel groups,
+with the fixture's existing mean firing rate of assigned good units, not original
+cluster identities. No signals, network access, optional reader, pandas or new
+scientific reduction are required. The existing real-recording client now accepts
+`--volume-root` for linked slices and `--selection-output` for original source-scoped
+channel/cluster exports. The [analysis guide](analysis-workflow.md) covers supplied
+arrays/DataFrame columns, callback lifetimes, identity joins, shared explicit color
+limits and figure commands.
+
+The inspected 20-second private-Xvfb capture uses host mouse/keyboard actions to
+select site 1 (finite value), show it in slices, add site 105 (missing value),
+switch to single color and restore scalar coloring. Receipts verify the exact
+two source identities across native tables and saved JSON, unchanged geometry/value
+hashes and arcball model, and unchanged region selection. The independently generated
+offline figure matches those source keys, original positions/values, cursor and
+authored camera matrix; viewport framing need not match the docked window.
+The native host exits cleanly.
+
+Final validation: **1,359 passed, two existing skips** (optional image-plane pan
+absent from the pinned baseline; unmaterialized registered 10 µm assets). The final
+36 focused native tests, serialized strict three-frame startup of both numbered
+apps, Ruff, strict MkDocs, whitespace and wheel/sdist builds pass. A fresh isolated
+wheel environment passes CPU installation checks and native selection/figure export
+with imports from its own site-packages and the unchanged configured library.
+Inkscape renders the self-contained SVG; visual inspection caught and corrected
+its initial image-namespace compatibility. Actual macOS rendering remains unverified.
+
+Artifacts are first at the private gateway's `/ibl-review/#analysis`, alongside
+selected-row JSON and the downloadable SVG/PNG/provenance bundle. MP4: 20 seconds,
+1,016,913 bytes, SHA256
+`e33c1a6dc0d2e3b639676c616d641c1a65aea2b64206f0a6b93ad18a947a7658`.
+SVG SHA256: `acf8a1e82f0a4eb47a7972d0fcc5d71a1e7d751ad678e2f6a9e69290c877388a`.
+ZIP SHA256: `517743951258794b4dc60998ab58a0cbbabdb9438278ff1a45e785291be30bde`.
+Video decoding, HTTP Range and backend SVG serving pass; anonymous live requests
+redirect to authentication. Authenticated Mac playback was not checked. Raw scripts,
+captures, receipts, installation and tests are ignored in
+`build/analysis-workflow-review/`; private artifacts are in
+`build/short-reviews/media/`. No canonical documentation image is promoted.
+
+The final feedback checkpoint is slice-action usability and figure readability.
+Source validation/alignment quality remain unknown. Workspace persistence, native
+baseline promotion, public distribution, publication and merging to `main` remain
+later work or explicit decisions.
+
 ## Two-recording visibility and selection review accepted — October 27 2026
 
 The user authorized the next multi-recording review after accepting the simpler

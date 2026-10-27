@@ -22,6 +22,7 @@ ontology navigation, probe sites, regional values, and linked selection.
 
 [Get started](getting-started.md){ .md-button .md-button--primary }
 [Browse the gallery](gallery/index.md){ .md-button }
+[Use your analysis results](analysis-workflow.md){ .md-button }
 
 !!! note "Development status"
 

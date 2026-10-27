@@ -10,6 +10,7 @@ Native Python visualization for International Brain Laboratory atlas data, built
 v0.4.
 
 **[Documentation](docs/index.md) · [Getting started](docs/getting-started.md) ·
+[Analysis workflow](docs/analysis-workflow.md) ·
 [Gallery](docs/gallery/index.md) · [API reference](docs/api/index.md)**
 
 `ibl-datoviz` combines verified Allen CCF 2017 assets from `ibl-anatomy` with interactive 3-D

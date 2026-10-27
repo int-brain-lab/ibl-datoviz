@@ -1,5 +1,20 @@
 # Manual review feedback
 
+## Analysis workflow ready for feedback — October 27 2026
+
+The user authorized autonomous implementation through a final review checkpoint.
+The new 20-second Linux clip shows a selected site moving the linked slices,
+selection extended to a row with a missing measurement, and both identities
+retained while changing color mode. Exact source-scoped rows are saved to JSON.
+An offline figure matches the supplied data, selected source IDs, cursor and
+authored camera matrix; it is not a live docked-viewport capture.
+
+The remaining feedback is whether **Show in slices** is clear/useful and whether
+the exported figure's panels, legend and labels are readable. Source validation
+and alignment quality remain unknown; macOS rendering is not established. See
+[the handoff](NEXT_STEPS.md#analysis-round-trip-and-figure-export-ready-october-27-2026)
+for checks/artifacts and [the analysis workflow](analysis-workflow.md) for use.
+
 ## Multi-recording review accepted — October 27 2026
 
 The user authorized a multi-recording review after accepting the redesigned

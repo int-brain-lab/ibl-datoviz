@@ -115,6 +115,13 @@ of whether they are rendered with points or spheres. Explicit provenance labels
 still override generic defaults. No new source reader or application controller is
 introduced by this review.
 
+Add `--volume-root VOLUME_ROOT` to use the same recordings in the linked slice
+layout, and `--selection-output selected.json` to save exact source-scoped
+observations on every committed selection. The single-observation inspector's
+**Show in slices** explicitly navigates to its supplied location. See the
+[analysis workflow](analysis-workflow.md) for callbacks, missingness, exported
+records and offline figure bundles.
+
 ## Scalar values and missingness
 
 ```bash

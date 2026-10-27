@@ -1,5 +1,17 @@
 # Real-data interactive example roadmap
 
+## Analysis workflow ready — October 27 2026
+
+Source-scoped selection records/JSON, explicit observation-to-slice navigation and
+offline figure bundles are implemented. The prepared BWM site example and the
+original recording client use the same public viewer/controllers. See the
+[analysis workflow](analysis-workflow.md) for supplied-data recipes and the
+[handoff](NEXT_STEPS.md#analysis-round-trip-and-figure-export-ready-october-27-2026)
+for final Linux checks and the short feedback clip. This new workflow awaits user
+feedback; it does not broaden earlier scientific alignment or platform acceptance.
+
+## Previously accepted review scope
+
 Status: the user reviewed and accepted the current numbered apps 1 and 2 on this
 Mac on October 26, 2026. The subsequent API/modularity refactor preserves their
 real-data offscreen pixels and passes bounded Mac startup checks; see the current
