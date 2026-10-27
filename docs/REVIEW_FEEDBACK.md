@@ -1,6 +1,6 @@
 # Manual review feedback
 
-## Redesigned scalar panel ready for review — October 27 2026
+## Redesigned scalar panel accepted — October 27 2026
 
 The user authorized the audit's implementation. The compact layer inspector,
 separate selection summary, collapsed Appearance/Source and methods, retained
@@ -9,15 +9,17 @@ sidebar tabs are implemented. The package compensates the pinned docking
 helper's viewport-relative sizing without changing the native baseline. App 1
 shares docking and presentation helpers while retaining diagnostic semantics.
 See [implementation and validation](NEXT_STEPS.md#simpler-layer-inspector-implemented-october-27-2026).
-A new 20-second Linux clip uses ordinary table/panel actions. It awaits user
-acceptance; the rejected earlier scalar clip is retained as comparison evidence.
+The user watched and approved the new 20-second Linux clip's panel and ordinary
+table/panel actions. Acceptance is scoped to the shown workflow; multiple-recording
+presentation, hands-on responsiveness and Mac rendering retain their own evidence
+gates. The rejected earlier scalar clip is retained as comparison evidence.
 
 ## Scalar right panel rejected and audited — October 27 2026
 
 The reviewer rejects the new scalar example's right panel as confusing and asks
 for a deep audit and a much clearer, simpler scientist-facing design. The earlier
 accepted atlas-navigation clip remains accepted; the scalar clip is not accepted.
-The recommendations below are a design proposal, not an implemented UI change.
+The recommendations below record the audit before implementation and acceptance.
 
 ### Evidence and causes
 

@@ -67,7 +67,8 @@ missing-value text filtering and Color by controls. It is first on the private
 gateway's Datoviz short reviews page (`/ibl-review/`). MP4 size: 1,231,602 bytes;
 SHA256 `d39d85945060deddc0c91b13a793f6c3a1b11d7350023924b97cfa7640627815`.
 Raw artifacts remain ignored under `build/short-reviews/`; the rejected clip is
-retained separately. The new layout awaits user acceptance. This provides neither
+retained separately. The user watched and approved the redesigned panel and
+ordinary interactions shown in this exact clip on October 27. This provides neither
 hands-on input-latency acceptance nor new Mac rendering evidence.
 
 ## Scalar panel rejected; scientist-facing layout audit — October 27 2026

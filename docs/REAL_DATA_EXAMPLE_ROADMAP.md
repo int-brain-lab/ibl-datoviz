@@ -20,8 +20,10 @@ legends, missing-value descriptions and retained table updates. Its new short
 video's right-panel layout was rejected as confusing. The subsequent
 [scientist-facing panel redesign](REVIEW_FEEDBACK.md#scalar-right-panel-rejected-and-audited-october-27-2026)
 is implemented: compact layer inspection, non-destructive color modes, data on
-demand and corrected docking requests. A new 20-second ordinary-interaction clip
-awaits acceptance separately from the accepted atlas-navigation clip.
+demand and corrected docking requests. The user watched and approved its new
+20-second ordinary-interaction clip on October 27. This acceptance is scoped to
+the redesigned panel and interactions shown, separately from multi-recording,
+hands-on responsiveness and Mac rendering evidence.
 
 The current API design and implementation stages are in the
 [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md). It uses
