@@ -74,6 +74,33 @@ quantity. It colors detailed anatomy using that declared reduction. The client l
 engineering checks. Full interactive scientific presentation remains a user review
 gate even when startup/captures pass.
 
+## Scalar values and missingness
+
+```bash
+just review scalars --strict --ui-scale 1.25
+```
+
+This offline linked workspace uses the existing hash-checked BWM 1.1.0 fixture:
+192 co-located channel groups, with the original site IDs, prepared mean good-unit
+firing rates in Hz and signed Allen identities. It performs no signal reads or
+new aggregation. Missing firing rate means no good unit was assigned to that
+channel group; it does not mean zero firing rate or absent coordinates.
+
+The viridis color limits are explicitly the finite-site 5th and 95th percentiles;
+values outside those limits receive endpoint colors while the table retains raw
+values. Layers shows sampled colors, limits, missing-color swatch and clipping
+counts. Observations repeats a compact legend above sortable Value and searchable
+Value status columns. Quantity derivation and source identity are available under
+Source and provenance.
+
+Use **Select measured site** and **Select missing FR** to compare exact selected
+values with a missing measurement. Selection is magenta; it does not change the
+scalar legend. **Use uniform color** clears the active encoding, and the retained
+table explicitly reports No scalar encoding. **Restore FR colors** restores the
+same prepared values and limits. Check filtering, sorting, hiding and reopening
+without losing rows or selection. The normal numbered apps remain unchanged;
+this named example isolates the new scalar presentation for short video review.
+
 ## Scientific annotations
 
 Review the new viewer-owned point/path API interactively:

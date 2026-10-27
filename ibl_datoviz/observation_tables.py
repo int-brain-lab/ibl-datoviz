@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+from contextlib import contextmanager
 from dataclasses import dataclass
 from threading import get_ident
 
@@ -79,7 +80,7 @@ def _columns(dvz, layer):
                 ),
                 'flags': dvz.DVZ_GUI_TABLE_COLUMN_FLAGS_SORTABLE if numeric else text_flags,
                 'title': title,
-                **({'format': '%.3f'} if numeric else {}),
+                **({'format': '%.9g'} if numeric else {}),
             }
         )
         values.append((numeric, data))
@@ -100,6 +101,9 @@ def _columns(dvz, layer):
             numeric=True,
         )
     else:
+        scalar, status = _scalar_columns(getattr(layer, 'scalar_encoding', None), len(layer.refs))
+        add('Value', scalar, numeric=True)
+        add('Value status', status)
         for axis, name in enumerate(('ML (µm)', 'AP (µm)', 'DV (µm)')):
             add(name, np.ascontiguousarray(payload.positions_um[:, axis]), numeric=True)
     for title, data in _source_fields(layer):
@@ -109,6 +113,14 @@ def _columns(dvz, layer):
     if regions is not None:
         add('Allen region ID', tuple(str(value) for value in regions))
     return columns, values
+
+
+def _scalar_columns(encoding, count):
+    if encoding is None:
+        return np.full(count, np.nan), ('No scalar encoding',) * count
+    return encoding.values, tuple(
+        'Available' if np.isfinite(value) else 'Missing (NaN)' for value in encoding.values
+    )
 
 
 def _source_fields(layer):
@@ -228,6 +240,40 @@ class ObservationTables:
             self._restore(previous)
             raise
 
+    @contextmanager
+    def _updating_encoding(self, layer, encoding):
+        """Keep retained columns and native colors atomic, including partial writes."""
+        table = next((table for table in self._tables if table.layer is layer), None)
+        if table is None or encoding is layer.scalar_encoding:
+            yield
+            return
+
+        def upload(current):
+            values, status = _scalar_columns(current, len(table.refs))
+            dvz, widget = self.viewer.dvz, table.widget
+            widget.check(
+                dvz.dvz_gui_table_set_column_double(widget.handle, 4, values),
+                'observation scalar values',
+            )
+            widget.check(
+                dvz.dvz_gui_table_set_column_text(widget.handle, 5, status),
+                'observation scalar status',
+            )
+
+        try:
+            upload(encoding)
+            yield
+        except BaseException:
+            if table.widget.handle is not None:
+                try:
+                    upload(layer.scalar_encoding)
+                except BaseException as error:
+                    self.viewer.close()
+                    raise RuntimeError(
+                        'observation scalar rollback failed; viewer closed'
+                    ) from error
+            raise
+
     def _restore(self, refs):
         try:
             for table in self._tables:
@@ -281,11 +327,15 @@ class ObservationTables:
             self.viewer.dvz.dvz_gui_end(gui)
 
     def _draw_header(self, gui, table):
+        from .layer_gui import _text, draw_scalar_legend  # noqa: PLC0415
+
         text = self.viewer.dvz.dvz_gui_text
         meaning = table.layer.payload.provenance.get('position_meaning')
-        if meaning:
-            text(gui, str(meaning).encode())
         text(gui, b'Original IDs (text sort); XYZ? = coordinates available')
+        if getattr(table.layer, 'scalar_encoding', None) is not None:
+            draw_scalar_legend(self.viewer, gui, table.layer, 'observations', compact=True)
+        elif not isinstance(table.layer.payload, Paths):
+            text(gui, b'No active scalar encoding; Value = NaN (not a measured zero).')
         fields = [
             (title, data[0])
             for title, data in _source_fields(table.layer)
@@ -296,10 +346,18 @@ class ObservationTables:
             text(gui, f'Recording: {group.recording.insertion_id}'.encode())
             status = group.recording.provenance.get('source_validation_status', 'unspecified')
             text(gui, f'Metadata source validation: {status}'.encode())
-        if fields and self.viewer.dvz.dvz_gui_collapsing_header(gui, b'Source and provenance', 0):
+        description = table.layer.payload.provenance.get('scalar_description')
+        missing = table.layer.payload.provenance.get('scalar_missing_meaning')
+        if (fields or meaning or description or missing or group is not None) and (
+            self.viewer.dvz.dvz_gui_collapsing_header(gui, b'Source and provenance', 0)
+        ):
             # Provenance is available on demand without crowding the observation rows.
-            from .layer_gui import _text  # noqa: PLC0415 - shared width-aware text helper.
-
+            if meaning:
+                _text(self.viewer, gui, meaning)
+            if description:
+                _text(self.viewer, gui, f'Quantity: {description}')
+            if missing:
+                _text(self.viewer, gui, missing)
             for title, value in fields:
                 _text(self.viewer, gui, f'{title}: {value}')
             if group is not None:

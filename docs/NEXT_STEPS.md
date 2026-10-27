@@ -9,6 +9,48 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Scalar values, legends and missingness — October 27 2026
+
+Generic point/sphere observation tables now expose retained numeric Value and
+searchable Value status columns for the complete population. The header names
+the active quantity and units, with low/mid/high samples of the actual native
+colormap and a missing-color swatch. Layers adds clipping/missing counts and
+selected-observation values, including unavailable coordinates. NaN, measured
+zero and no active encoding have distinct descriptions; colors alone are clipped.
+Optional provenance explains the scalar derivation and meaning of missingness.
+
+`color_by()` and uniform-color changes update existing table columns alongside
+retained visual colors. Native row keys, filters, sorting, selection and widget
+handles remain intact. Partial table or visual failures restore columns and the
+previous scientific encoding; failed recovery closes the owner. Uniform color
+still clears scalar encoding, following the existing API contract. No new public
+payload or scalar reduction policy was introduced.
+
+`just review scalars --strict --ui-scale 1.25` isolates these controls in a linked
+workspace using the existing hash-checked BWM 1.1.0 fixture: 192 co-located channel
+groups, 154 finite values and 38 missing values. Source site IDs, signed Allen IDs,
+coordinates and prepared mean good-unit firing rates are retained. Viridis limits
+are the finite-site 5th/95th percentiles; no signal read or new aggregation occurs.
+The numbered apps retain their existing compositions.
+
+Final configured Linux validation: **1,331 passed, two skips** (optional native
+image-plane pan predates this baseline; registered 10 µm assets unavailable).
+Strict doctor and both three-frame numbered review startups pass, as does the new
+scalar review startup. Ruff, strict MkDocs, whitespace and wheel/sdist builds pass.
+The configured native source matches immutable `73d0f0bc`; loaded library SHA256
+is `9116d2cada10cb9802ef2f1c2076bf7b75fc1f781055a6b4124d5ede02fc9b3f`.
+Mac rendering and hands-on Linux responsiveness were not revalidated.
+
+An inspected 18-second native-host clip shows measured/missing selection, missing
+row filtering, uniform-color clearing and scalar restoration. It is available
+first on the private gateway's **Datoviz short reviews** page, `/ibl-review/`.
+The H.264 MP4 is 1,179,164 bytes; SHA256:
+`c10c644c8c1b17cbf3711d77b9f31df33f2ec3417acff478e3142784b28dcef5`.
+Artifacts and capture scripts remain ignored under `build/short-reviews/`.
+This new clip awaits user acceptance; the earlier atlas clip remains accepted.
+Native baseline promotion, saved workspace state and further scientific workflows
+remain subsequent decisions. No dependency pin or native build was changed.
+
 ## Short Linux video review accepted — October 27 2026
 
 The user watched and validated the 18-second app-2 Linux pilot through the

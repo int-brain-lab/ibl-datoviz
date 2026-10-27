@@ -14,6 +14,11 @@ selection. This accepts the appearance and scripted interactions shown; hands-on
 Linux responsiveness and unshown workflows remain separate. Remote reviews use
 short clips through the private Fractal gateway; see the current handoff.
 
+The October 27 scalar-readability batch adds `just review scalars`: the existing
+prepared BWM fixture in a linked workspace with active values/units, sampled
+legends, missing-value descriptions and retained table updates. Its new short
+video awaits acceptance separately from the accepted atlas-navigation clip.
+
 The current API design and implementation stages are in the
 [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md). It uses
 `AtlasViewer` as the single entry point and supersedes the historical

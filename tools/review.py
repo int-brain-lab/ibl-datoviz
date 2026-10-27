@@ -31,6 +31,7 @@ EXAMPLES = {
     '2': ('linked_atlas_review.py', (ASSETS, VOLUME)),
     'annotations': ('scientific_annotations.py', (ASSETS,)),
     'workspace': ('scientific_workspace.py', (ASSETS, '--volume-pack', VOLUME)),
+    'scalars': ('scientific_scalar_review.py', (ASSETS, VOLUME)),
     'surface': ('real_atlas_surface.py', (ASSETS,)),
     'mapping': ('atlas_mapping_switch.py', (ASSETS,)),
     'picking': ('atlas_region_picking.py', (ASSETS,)),
@@ -390,7 +391,7 @@ def run_examples(args, prefix, environment):  # noqa: PLR0912
     if offscreen is not None and args.example == 'all':
         raise ValueError('--offscreen requires one named example or numbered app')
     names = DEFAULT_EXAMPLES if args.example == 'all' else (args.example,)
-    if any(name in ('1', 'annotations', 'workspace') for name in names):
+    if any(name in ('1', 'annotations', 'workspace', 'scalars') for name in names):
         from ibl_anatomy import bundled_surface_catalog  # noqa: PLC0415
 
         missing = [
@@ -429,7 +430,7 @@ def run_examples(args, prefix, environment):  # noqa: PLR0912
                 *(['--replay-report', replay_report] if replay_report is not None else []),
                 *(
                     ['--context-root', CONTEXT]
-                    if name in ('1', 'annotations', 'workspace')
+                    if name in ('1', 'annotations', 'workspace', 'scalars')
                     else []
                 ),
                 '--frames',

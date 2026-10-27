@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ctypes
+from contextlib import nullcontext
 from dataclasses import dataclass
+from functools import cached_property
 from uuid import uuid4
 
 import numpy as np
@@ -44,6 +46,16 @@ class ScalarEncoding:
     cmap: str
     limits: tuple[float, float]
     missing_color: str
+
+    @cached_property
+    def _counts(self):
+        finite = np.isfinite(self.values)
+        return (
+            int(finite.sum()),
+            int((~finite).sum()),
+            int((self.values < self.limits[0]).sum()),
+            int((self.values > self.limits[1]).sum()),
+        )
 
 
 class UnavailableLayerError(LookupError):
@@ -474,8 +486,16 @@ class LayerHandle:
         if self._glyph == 'path' and rgba[3] != 255:
             raise ValueError('paths require opaque color')
         colors = owned(np.tile(rgba, (len(self.refs), 1)), np.uint8)
-        self._update_attributes(colors=colors)
-        self._colors, self._encoding = colors, None
+        self._set_color_encoding(colors, None)
+
+    def _set_color_encoding(self, colors, encoding):
+        tables = getattr(self._registry.viewer, 'tables', None)
+        update = (
+            tables._updating_encoding(self, encoding) if tables is not None else nullcontext()
+        )
+        with update:
+            self._update_attributes(colors=colors)
+        self._colors, self._encoding = colors, encoding
 
     def color_by(
         self, values, *, name, units, cmap, limits, missing_color='#808080', observation_refs=None
@@ -508,8 +528,7 @@ class LayerHandle:
             raise ValueError('quantity name and units must be explicit nonempty strings')
         colors = self._registry._scalar_colors(scalar, cmap, bounds, missing_color)
         encoding = ScalarEncoding(scalar, name, units, cmap, tuple(bounds), missing_color)
-        self._update_attributes(colors=colors)
-        self._colors, self._encoding = colors, encoding
+        self._set_color_encoding(colors, encoding)
 
     def _set_size(self, value, capability):
         self._mutate()

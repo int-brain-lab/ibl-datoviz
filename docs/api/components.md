@@ -279,6 +279,24 @@ are available. Path tables list path IDs and vertex counts rather than inventing
 representative point. Source/recording/session information is shown in the header
 and expandable provenance details. A source Allen ID column appears when supplied.
 
+Point/sphere tables include sortable numeric **Value** and searchable **Value status**
+columns. The header names the active quantity and units and shows low/mid/high
+colormap samples plus the missing-color swatch. Values remain in complete payload
+order, including unpositioned observations; color clipping never changes table
+values. `Available` includes measured zero; `Missing (NaN)` is distinct from missing
+coordinates. With no active scalar encoding, Value contains NaN and status reads
+`No scalar encoding`, rather than implying measured missing values or zeros.
+
+Layers shows the same legend, color-clipping counts and missing-value count, plus
+the values and units of up to three selected observations. Magenta is selection,
+not a scalar value. Optional provenance keys `scalar_description` and
+`scalar_missing_meaning` explain preparation and missingness. Transparent missing
+colors hide scene glyphs but retain their rows and identities. Editing **Uniform
+color** clears scalar encoding and table values, as does `layer.set_color()`;
+`color_by()` supplies an active encoding again. Native column edits and visual
+colors recover together after failure; failed recovery closes the owner. Encoding
+edits retain native table handles, filters, sorting and exact selection.
+
 Native row keys are private widget-local tokens mapped to exact attachment
 references. Filtering and sorting change presentation, not the payload population.
 Table selection updates `app.selection`; Python/GUI selection updates all opened

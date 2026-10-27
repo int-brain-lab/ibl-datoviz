@@ -6,7 +6,8 @@ import datoviz as dvz
 import numpy as np
 import pytest
 
-from ibl_datoviz.layers import LayerObservationRef
+from ibl_datoviz.layer_gui import draw_scalar_legend
+from ibl_datoviz.layers import LayerObservationRef, ScalarEncoding
 from ibl_datoviz.observation_tables import ObservationTables
 from ibl_datoviz.payloads import Paths, Points, SourceKey, SourceObservationKey, WorldFrame
 from tests.test_atlas import FakeDatoviz
@@ -86,7 +87,12 @@ def layer(viewer, *, paths=False, source=False):
         for i, value in enumerate(ids)
     )
     result = SimpleNamespace(
-        payload=payload, refs=refs, name='Layer', _closed=False, visible=False
+        payload=payload,
+        refs=refs,
+        name='Layer',
+        _closed=False,
+        visible=False,
+        scalar_encoding=None,
     )
     viewer.layers.append(result)
     return result
@@ -309,6 +315,7 @@ def test_draw_uses_bool_window_contract_and_one_active_native_table(context, mon
         viewer.dvz, 'dvz_gui_end', lambda *_args: ended.append(True), raising=False
     )
     monkeypatch.setattr(viewer.dvz, 'dvz_gui_combo', lambda *_args: False, raising=False)
+    monkeypatch.setattr(viewer.dvz, 'dvz_gui_collapsing_header', lambda *_: False, raising=False)
     monkeypatch.setattr(tables, '_draw_table', lambda _gui, table: drawn.append(table.layer))
     tables.draw(None)
     assert len(windows) == len(ended) == 1
@@ -316,3 +323,64 @@ def test_draw_uses_bool_window_contract_and_one_active_native_table(context, mon
     tables._opened.value = False
     tables.draw(None)
     assert len(windows) == 1
+
+
+def test_scalar_columns_keep_raw_clipped_values_missingness_and_unpositioned_rows(context):
+    viewer, tables = context
+    first = layer(viewer)
+    first.scalar_encoding = ScalarEncoding(
+        np.array([0.0, np.nan, 50.0]), 'Rate', 'Hz', 'sequential', (1.0, 10.0), '#808080'
+    )
+    table = tables.show(first)
+    numeric = [call for call in viewer.dvz.calls if call[0] == 'table_double']
+    np.testing.assert_equal(numeric[0][2], [0, np.nan, 50])
+    assert table.refs == first.refs
+    assert any(
+        call[0] == 'table_text' and call[2] == ('Available', 'Missing (NaN)', 'Available')
+        for call in viewer.dvz.calls
+    )
+    assert first.scalar_encoding._counts == (2, 1, 1, 1)
+    assert table.widget.handle.columns[3]['title'] == 'Value'
+
+
+def test_local_table_keeps_position_meaning_without_source_keys(context, monkeypatch):
+    viewer, tables = context
+    table = tables.show(layer(viewer))
+    messages = []
+    monkeypatch.setattr(
+        viewer.dvz, 'dvz_gui_text', lambda _g, m: messages.append(m.decode()), raising=False
+    )
+    monkeypatch.setattr(viewer.dvz, 'dvz_gui_collapsing_header', lambda *_: True, raising=False)
+    monkeypatch.setattr('ibl_datoviz.layer_gui._text', lambda _v, _g, m: messages.append(m))
+    tables._draw_header(None, table)
+    assert 'assigned channel' in messages
+
+
+def test_legend_distinguishes_missing_scalar_from_missing_coordinates(context, monkeypatch):
+    viewer, _tables = context
+    first = layer(viewer)
+    first.scalar_encoding = ScalarEncoding(
+        np.array([0.0, 2.0, np.nan]), 'Rate', 'Hz', 'sequential', (1.0, 10.0), '#80808000'
+    )
+    first._registry = SimpleNamespace(_scalar_colors=lambda *_: np.zeros((3, 4), np.uint8))
+    viewer.ui_scale = 1
+    viewer.selection.observations = first.refs
+    messages, swatches = [], []
+    monkeypatch.setattr('ibl_datoviz.layer_gui._text', lambda _v, _g, m: messages.append(m))
+    monkeypatch.setattr(
+        viewer.dvz, 'dvz_gui_text', lambda _g, m: messages.append(m.decode()), raising=False
+    )
+    monkeypatch.setattr(viewer.dvz, 'dvz_gui_same_line', lambda *_: None, raising=False)
+    monkeypatch.setattr(
+        viewer.dvz,
+        'dvz_gui_color_edit4',
+        lambda _g, _k, rgba, _f: swatches.append(tuple(rgba)),
+        raising=False,
+    )
+    draw_scalar_legend(viewer, None, first, 'test')
+    text = '\n'.join(messages)
+    assert 'Rate [Hz]' in text and 'Selected 0: 0 Hz' in text
+    assert "Selected 'not-positioned': 2 Hz; coordinates unavailable" in text
+    assert 'Selected 36: Missing (NaN)' in text
+    assert 'Missing: 1/3 (NaN; not zero)' in text and 'transparent' in text
+    assert len(swatches) == 4 and swatches[-1][3] == 0

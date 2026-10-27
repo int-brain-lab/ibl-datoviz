@@ -439,8 +439,9 @@ def test_annotations_use_context_without_requiring_slice_volumes(
     assert environment['DVZ_WINDOW_INSTANCE'] == instance
 
 
+@pytest.mark.parametrize('example', ['workspace', 'scalars'])
 def test_workspace_launch_requires_volume_and_forwards_explicit_context_and_output(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, example
 ):
     assets = tmp_path / 'atlas assets'
     volume = tmp_path / 'volume assets'
@@ -448,11 +449,14 @@ def test_workspace_launch_requires_volume_and_forwards_explicit_context_and_outp
     monkeypatch.setattr(review, 'ASSETS', assets)
     monkeypatch.setattr(review, 'VOLUME', volume)
     monkeypatch.setitem(
-        review.EXAMPLES, 'workspace',
-        ('scientific_workspace.py', (assets, '--volume-pack', volume)),
+        review.EXAMPLES,
+        example,
+        ('scientific_workspace.py', (assets, '--volume-pack', volume))
+        if example == 'workspace'
+        else ('scientific_scalar_review.py', (assets, volume)),
     )
     args = SimpleNamespace(
-        example='workspace',
+        example=example,
         frames=3,
         ui_scale=1.5,
         offscreen=tmp_path / 'workspace output.png',
@@ -466,13 +470,20 @@ def test_workspace_launch_requires_volume_and_forwards_explicit_context_and_outp
     volume.mkdir()
     review.run_examples(args, [], {})
     command = commands[0]
-    assert command[command.index('--volume-pack') + 1] == review.VOLUME
+    if example == 'workspace':
+        assert command[command.index('--volume-pack') + 1] == review.VOLUME
+    else:
+        assert command[1:4] == [
+            review.REPOSITORY / 'examples/scientific_scalar_review.py',
+            assets,
+            volume,
+        ]
     assert command[command.index('--context-root') + 1] == review.CONTEXT
     assert command[-2:] == ['--offscreen', args.offscreen]
     assert command[command.index('--ui-scale') + 1] == 1.5
 
 
-@pytest.mark.parametrize('choice', ['1', 'annotations', 'workspace', 'all'])
+@pytest.mark.parametrize('choice', ['1', 'annotations', 'workspace', 'scalars', 'all'])
 @pytest.mark.parametrize('partial', [False, True])
 def test_missing_context_fails_before_launch(tmp_path, monkeypatch, choice, partial):
     context = tmp_path / 'missing context'

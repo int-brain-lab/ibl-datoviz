@@ -5,6 +5,8 @@ import textwrap
 
 import numpy as np
 
+from .layers import _color
+
 
 def _text(viewer, gui, message):
     available = (ctypes.c_float * 2)()
@@ -12,6 +14,68 @@ def _text(viewer, gui, message):
     width = max(12, int(available[0] / (9 * viewer.ui_scale)))
     for line in textwrap.wrap(str(message), width):
         viewer.dvz.dvz_gui_text(gui, line.encode())
+
+
+def _swatch(viewer, gui, color, key):
+    control = (ctypes.c_float * 4)(*(np.asarray(color) / 255))
+    # ImGui NoPicker | NoOptions | NoInputs | NoTooltip | NoDragDrop.
+    viewer.dvz.dvz_gui_color_edit4(
+        gui,
+        f'##legend_{key}'.encode(),
+        control,
+        (1 << 1) | (1 << 2) | (1 << 3) | (1 << 5) | (1 << 9),
+    )
+
+
+def draw_scalar_legend(viewer, gui, layer, key, *, compact=False):
+    """Explain the active encoding without substituting highlights for data colors."""
+    encoding = layer.scalar_encoding
+    if encoding is None:
+        return
+    dvz = viewer.dvz
+    _text(viewer, gui, f'{encoding.name} [{encoding.units}]')
+    samples = np.linspace(*encoding.limits, 3)
+    colors = layer._registry._scalar_colors(
+        samples, encoding.cmap, np.asarray(encoding.limits), encoding.missing_color
+    )
+    for index, (value, color) in enumerate(zip(samples, colors, strict=True)):
+        if index:
+            dvz.dvz_gui_same_line(gui, 0, 8 * viewer.ui_scale)
+        _swatch(viewer, gui, color, f'{key}_{index}')
+        dvz.dvz_gui_same_line(gui, 0, 4 * viewer.ui_scale)
+        dvz.dvz_gui_text(gui, f'{value:.4g}'.encode())
+    finite, missing, below, above = encoding._counts
+    if compact:
+        dvz.dvz_gui_same_line(gui, 0, 12 * viewer.ui_scale)
+        _swatch(viewer, gui, _color(encoding.missing_color), f'{key}_missing')
+        dvz.dvz_gui_same_line(gui, 0, 4 * viewer.ui_scale)
+        dvz.dvz_gui_text(gui, f'Missing: {missing}/{finite + missing} (NaN; not zero)'.encode())
+        return
+    _text(
+        viewer,
+        gui,
+        f'{encoding.cmap}; color limits [{encoding.units}]. '
+        f'Clipped colors: {below} below, {above} above; values unchanged.',
+    )
+    _swatch(viewer, gui, _color(encoding.missing_color), f'{key}_missing')
+    dvz.dvz_gui_same_line(gui, 0, 4 * viewer.ui_scale)
+    dvz.dvz_gui_text(gui, f'Missing: {missing}/{finite + missing} (NaN; not zero)'.encode())
+    if _color(encoding.missing_color)[3] == 0:
+        _text(viewer, gui, 'Missing scalars are transparent in the scene; rows are retained.')
+    meaning = layer.payload.provenance.get('scalar_missing_meaning')
+    if meaning:
+        _text(viewer, gui, meaning)
+    selected = set(viewer.selection.observations)
+    rows = [i for i, ref in enumerate(layer.refs) if ref in selected]
+    for row in rows[:3]:
+        value = encoding.values[row]
+        formatted = f'{value:.12g} {encoding.units}' if np.isfinite(value) else 'Missing (NaN)'
+        position = '' if layer.payload.positioned[row] else '; coordinates unavailable'
+        _text(viewer, gui, f'Selected {layer.refs[row].original_id!r}: {formatted}{position}')
+    if len(rows) > 3:
+        _text(viewer, gui, f'{len(rows) - 3} more selected; inspect their table rows.')
+    if rows:
+        _text(viewer, gui, 'Magenta marks selection; the legend shows scalar colors.')
 
 
 def _layer_controls(viewer, gui, layer, key):
@@ -27,7 +91,7 @@ def _layer_controls(viewer, gui, layer, key):
     caps = layer.capabilities
     color = layer._colors[0] / 255 if len(layer.refs) else np.array([0.25, 0.85, 0.98, 1])
     control = (ctypes.c_float * 4)(*color)
-    if dvz.dvz_gui_color_edit4(gui, f'Color##{key}'.encode(), control, 0):
+    if dvz.dvz_gui_color_edit4(gui, f'Uniform color##{key}'.encode(), control, 0):
         rgba = np.rint(np.clip(list(control), 0, 1) * 255).astype(np.uint8)
         if caps.width_px:
             rgba[3] = 255
@@ -50,12 +114,8 @@ def _layer_controls(viewer, gui, layer, key):
         setter(size.value)
     encoding = layer.scalar_encoding
     if encoding is not None:
-        _text(
-            viewer,
-            gui,
-            f'{encoding.name} [{encoding.units}], {encoding.cmap}; '
-            f'{encoding.limits[0]:g} to {encoding.limits[1]:g}',
-        )
+        draw_scalar_legend(viewer, gui, layer, key)
+        _text(viewer, gui, 'Editing Uniform color clears the scalar encoding.')
     meaning = layer.payload.provenance.get('position_meaning')
     if meaning:
         _text(viewer, gui, meaning)

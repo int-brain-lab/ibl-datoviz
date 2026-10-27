@@ -131,3 +131,109 @@ def test_native_table_reads_reject_foreign_thread_before_native_access(app):
         pytest.raises(RuntimeError, match='owning thread'),
     ):
         pool.submit(table.selected_refs).result()
+
+
+@pytest.fixture
+def scalar_columns(app, monkeypatch):
+    """Observe real native copies, including injected failures after mutation."""
+    state = {}
+    for kind in ('double', 'text'):
+        name = f'dvz_gui_table_set_column_{kind}'
+        original = getattr(app.dvz, name)
+
+        def record(handle, column, values, *, kind=kind, original=original):
+            status = original(handle, column, values)
+            if column in (4, 5):
+                state[kind] = np.array(values, copy=True) if kind == 'double' else tuple(values)
+            return status
+
+        monkeypatch.setattr(app.dvz, name, record)
+    return state
+
+
+def encode(layer, values, *, units='Hz'):
+    layer.color_by(values, name='Rate', units=units, cmap='viridis', limits=(1, 10))
+
+
+def test_active_scalar_updates_retain_table_filter_selection_and_raw_values(
+    app, scalar_columns, monkeypatch
+):
+    layer = add_points(app)
+    table = app.tables.show(layer)
+    widget, refs = table.widget.handle, table.refs
+    app.selection.set_observations((layer.refs[1],))
+    revision = app.selection.revision
+    assert app.dvz.dvz_gui_table_set_filter(widget, b'missing') == 0
+    sort = app.dvz.dvz_gui_table_get_sort(widget)
+    monkeypatch.setattr(app.dvz, 'dvz_gui_table_set_rows', lambda *_: pytest.fail('rows reset'))
+    for values, units in (([0, np.nan], 'Hz'), ([-5, 99], 'mV')):
+        encode(layer, values, units=units)
+        np.testing.assert_equal(scalar_columns['double'], values)
+        assert layer.scalar_encoding.units == units
+        assert table.widget.handle is widget and table.refs == refs
+        assert table.selected_refs() == (layer.refs[1],)
+        assert app.dvz.dvz_gui_table_get_filter(widget) == 'missing'
+        assert app.dvz.dvz_gui_table_get_sort(widget) == sort
+    layer.set_color('#112233')
+    assert layer.scalar_encoding is None and np.isnan(scalar_columns['double']).all()
+    assert scalar_columns['text'] == ('No scalar encoding',) * 2
+    assert app.selection.revision == revision
+
+
+@pytest.mark.parametrize('kind', ['double', 'text', 'visual'])
+@pytest.mark.parametrize('action', ['scalar', 'uniform'])
+def test_scalar_partial_writes_restore_tables_colors_metadata_and_selection(
+    app, scalar_columns, monkeypatch, kind, action
+):
+    layer = add_points(app)
+    table = app.tables.show(layer)
+    encode(layer, [0, np.nan])
+    old_encoding, old_colors = layer.scalar_encoding, layer._colors
+    app.selection.set_observations((layer.refs[1],))
+    revision = app.selection.revision
+    name = 'dvz_visual_set_data' if kind == 'visual' else f'dvz_gui_table_set_column_{kind}'
+    original = getattr(app.dvz, name)
+    failed = False
+
+    def fail_once(*args):
+        nonlocal failed
+        status = original(*args)
+        if not failed:
+            failed = True
+            return -1
+        return status
+
+    monkeypatch.setattr(app.dvz, name, fail_once)
+    with pytest.raises(RuntimeError):
+        if action == 'scalar':
+            encode(layer, [5, 6], units='mV')
+        else:
+            layer.set_color('#112233')
+    assert failed and layer.scalar_encoding is old_encoding and layer._colors is old_colors
+    np.testing.assert_equal(scalar_columns['double'], [0, np.nan])
+    assert scalar_columns['text'] == ('Available', 'Missing (NaN)')
+    assert table.selected_refs() == (layer.refs[1],)
+    assert app.selection.revision == revision and not app._closed
+
+
+def test_failed_scalar_table_recovery_closes_owner(app, monkeypatch):
+    layer = add_points(app)
+    table = app.tables.show(layer)
+    monkeypatch.setattr(app.dvz, 'dvz_gui_table_set_column_double', lambda *_: -1)
+    with pytest.raises(RuntimeError, match='scalar rollback failed; viewer closed'):
+        encode(layer, [1, 2])
+    assert app._closed and table.widget.handle is None
+
+
+@pytest.mark.parametrize('empty', [False, True])
+def test_empty_and_all_missing_scalar_tables_retain_complete_population(app, empty):
+    layer = (
+        app.add_points(Points((), np.empty((0, 3)), app.frame, {})) if empty else add_points(app)
+    )
+    table = app.tables.show(layer)
+    layer.set_visible(False)
+    encode(layer, np.full(len(layer.refs), np.nan))
+    assert table.refs == layer.refs
+    assert layer.scalar_encoding._counts == (0, len(layer.refs), 0, 0)
+    layer.set_color('#112233')
+    assert not layer.visible and layer.scalar_encoding is None
