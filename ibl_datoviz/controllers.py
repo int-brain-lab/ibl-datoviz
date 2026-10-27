@@ -73,6 +73,37 @@ class SelectionController:
             self._observations,
         )
 
+    def to_records(self):
+        """Return detached selected rows with exact IDs, source scope and measurements.
+
+        Safe inside a selection callback on the owning thread. Hidden and
+        unpositioned rows are retained; missing numbers are JSON ``null``.
+        Unscoped generic observations retain their attachment ID and a null
+        source key. This is an analysis export, not a restorable workspace.
+        """
+        from .analysis_export import selection_records  # noqa: PLC0415
+
+        if self.viewer._closed:
+            raise RuntimeError('viewer is closed')
+        if get_ident() != self.viewer._owner_thread:
+            raise RuntimeError('selection reads require the viewer owning thread')
+        return selection_records(self.viewer)
+
+    def export_json(self, path):
+        """Export both selection domains and exact rows to a strict JSON document."""
+        from .analysis_export import write_json  # noqa: PLC0415
+
+        rows = self.to_records()
+        return write_json(path, {
+            'schema': 'ibl-datoviz-selection-v1',
+            'revision': self.revision,
+            'regions': [
+                {'mapping': mapping, 'signed_region_id': region_id}
+                for mapping, region_id in self.regions
+            ],
+            'observations': rows,
+        })
+
     def _check_mutation(self):
         self.viewer._require_open()
         if get_ident() != self.viewer._owner_thread:

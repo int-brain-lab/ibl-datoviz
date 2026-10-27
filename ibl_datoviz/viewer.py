@@ -2132,6 +2132,18 @@ class AtlasViewer:
         if self._linked is not None:
             self._linked.attach_input(offscreen=offscreen)
 
+    def export_figure(self, directory: str | Path, *, title: str = 'IBL atlas') -> Path:
+        """Export an offline PNG, self-contained SVG with legends, and provenance JSON.
+
+        Call before show() or render_offscreen(), using the constructor's width
+        and height for raster resolution. The output directory must be new.
+        Scientific values, source identities and selection are unchanged. SVG
+        embeds the raster scene; it does not vectorize anatomical geometry.
+        """
+        from .figure_export import export_figure  # noqa: PLC0415
+
+        return export_figure(self, directory, title=title)
+
     def render_offscreen(self, output: str | Path | None = None) -> NDArray[np.uint8]:
         """Render exactly one frame and return a copied RGBA image."""
         self._require_open()

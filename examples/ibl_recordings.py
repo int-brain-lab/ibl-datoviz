@@ -19,6 +19,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from examples.scientific_common import add_arguments, finish, prepare_viewer
+from ibl_anatomy import open_volume_pack
 from ibl_datoviz import AtlasViewer, WorldFrame
 from ibl_datoviz.ibl import COORDINATE_CONVENTION, BwmSource, prepare_bwm_recording
 
@@ -103,6 +104,13 @@ def main():
         help='original cluster ID in --select-pid, otherwise the last --pid',
     )
     parser.add_argument('--select-pid', help='insertion containing --select-cluster')
+    parser.add_argument(
+        '--volume-root', type=Path, help='existing compatible volume pack for linked slices'
+    )
+    parser.add_argument(
+        '--selection-output', type=Path, metavar='JSON',
+        help='save exact source-scoped rows after each committed selection',
+    )
     args = parser.parse_args()
     if len(set(args.pid)) != len(args.pid):
         parser.error('repeat distinct --pid values; duplicate source attachments are rejected')
@@ -115,6 +123,11 @@ def main():
     source = _source(args)
     recordings = [prepare_bwm_recording(source.insertion(pid), frame=frame) for pid in args.pid]
     options = prepare_viewer(args)
+    if args.volume_root is not None:
+        options.update(
+            layout='linked', volumes=open_volume_pack(args.volume_root).load_volumes(),
+            render_volume=False,
+        )
     accepted_frame = recordings[0].channels.frame
     report = {
         'recordings': [_receipt(recording) for recording in recordings],
@@ -135,13 +148,28 @@ def main():
             )
             for recording in recordings
         }
+        subscription = None
+        if args.selection_output is not None:
+            subscription = app.selection.on_changed(
+                lambda _event: app.selection.export_json(args.selection_output)
+            )
         if args.select_cluster is not None:
             pid = args.select_pid or args.pid[-1]
             app.selection.set_observations(
                 [handles[pid].clusters.observation(args.select_cluster)]
             )
             report['selection'] = {'insertion_id': pid, 'original_cluster_id': args.select_cluster}
-        finish(app, args, report, 'Shared BWM recordings')
+        if args.selection_output is not None:
+            app.selection.export_json(args.selection_output)
+        try:
+            finish(app, args, report, 'Shared BWM recordings')
+        finally:
+            if subscription is not None:
+                subscription.close()
+        if args.selection_output is not None and app.selection.callback_errors:
+            raise RuntimeError(
+                'selection export callback failed'
+            ) from app.selection.callback_errors[0]
 
 
 if __name__ == '__main__':

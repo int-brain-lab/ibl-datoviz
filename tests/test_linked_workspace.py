@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from ibl_anatomy import open_volume_pack
-from ibl_datoviz import AtlasMesh, AtlasViewer, Points
+from ibl_datoviz import AtlasMesh, AtlasViewer, Paths, Points
 from ibl_datoviz.components import AtlasCursor
 from ibl_datoviz.slice_preparation import prepare_slice_layers
 from tests.test_volume_free_navigator import MESH, VOLUME
@@ -58,6 +58,64 @@ def test_cursor_units_and_callbacks_observe_committed_state(linked):
     linked.slices.set_position(ap=1, ml=4, dv=1, units='voxel')
     assert linked.slices.position.index == (1, 4, 1)
     assert 'reentrantly' in str(linked.slices.callback_errors[-1])
+
+
+def test_locate_exact_point_preserves_both_selection_domains_and_rejects_missing(linked):
+    world = linked._linked.slice_source.grid.index_to_world((1, 4, 1))
+    point = linked.add_points(Points(
+        (0, 'missing', 'outside'), [world, [np.nan, 0, 0], [1e8, 0, 0]], linked.frame, {},
+    ))
+    linked.selection.set_observations((point.refs[0], point.refs[1]))
+    linked.selection.set_regions((315,), mapping='allen')
+    before = linked.selection.snapshot()
+    linked.slices.locate(point.observation(0))
+    assert linked.slices.position.index == (1, 4, 1)
+    assert linked.selection.snapshot() == before
+    position = linked.slices.position
+    with pytest.raises(ValueError, match='unavailable'):
+        linked.slices.locate(point.observation('missing'))
+    with pytest.raises(IndexError, match='outside'):
+        linked.slices.locate(point.observation('outside'))
+    with pytest.raises(ValueError, match='foreign'):
+        linked.slices.locate(object())
+    path = linked.add_paths(Paths(('line',), ([[0, 0, 0], [1, 1, 1]],), linked.frame, {}))
+    with pytest.raises(ValueError, match='path'):
+        linked.slices.locate(path.refs[0])
+    assert linked.slices.position == position
+    linked.remove_layer(point)
+    with pytest.raises(ValueError, match='removed'):
+        linked.slices.locate(point.refs[0])
+
+
+def test_inspector_show_in_slices_uses_exact_ref_without_changing_selection(linked, monkeypatch):
+    from ibl_datoviz.layer_gui import LayerPanel  # noqa: PLC0415
+    from tests.test_layer_panel import Gui  # noqa: PLC0415
+
+    world = linked._linked.slice_source.grid.index_to_world((1, 4, 1))
+    layer = linked.add_points(Points(
+        (0, 'missing', 'outside'), [world, [np.nan, 0, 0], [1e8, 0, 0]], linked.frame, {},
+    ))
+    linked.selection.set_observations((layer.refs[0],))
+    gui = Gui()
+    gui.buttons.add(b'Show in slices')
+    for name in dir(gui):
+        if name.startswith('dvz_gui_'):
+            monkeypatch.setattr(linked.dvz, name, getattr(gui, name))
+    panel = LayerPanel(linked)
+    panel._selected(None, layer)
+    assert linked.slices.position.index == (1, 4, 1)
+    assert linked.selection.observations == (layer.refs[0],)
+    assert ('button', b'Show in slices') in gui.calls
+    gui.calls.clear()
+    linked.selection.set_observations((layer.refs[1],))
+    panel._selected(None, layer)
+    assert ('button', b'Show in slices') not in gui.calls
+    gui.buttons.add(b'Show in slices')
+    linked.selection.set_observations((layer.refs[2],))
+    position = linked.slices.position
+    panel._selected(None, layer)
+    assert 'outside' in panel.error and not linked._closed
+    assert linked.slices.position == position
 
 
 def test_invalid_cursor_validates_all_axes_before_mutation(linked):

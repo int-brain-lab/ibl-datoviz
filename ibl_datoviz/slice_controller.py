@@ -108,6 +108,28 @@ class SliceController:
             raise ValueError('cursor units must be voxel or um')
         self.viewer._linked.set_cursor(AtlasCursor(*values), select_region=select_region)
 
+    def locate(self, observation):
+        """Move slices to one attached point's supplied position without selecting anatomy.
+
+        Requires a positioned point/channel/cluster/site. Paths, foreign or
+        removed references, missing positions and out-of-grid coordinates fail
+        before cursor mutation. Scientific observation selection is preserved.
+        """
+        from .payloads import Points  # noqa: PLC0415
+
+        self._check()
+        for layer in self.viewer.layers:
+            if observation not in layer.refs:
+                continue
+            if not isinstance(layer.payload, Points):
+                raise ValueError('slice location requires a point observation, not a path')
+            index = layer.refs.index(observation)
+            if not layer.payload.positioned[index]:
+                raise ValueError('observation location is unavailable')
+            ml, ap, dv = layer.payload.positions_um[index]
+            return self.set_position(ap=ap, ml=ml, dv=dv, units='um')
+        raise ValueError('observation reference is foreign, removed or unknown')
+
     @property
     def auto_slice(self):
         """Whether subsequent Regions-list selections move all three slices."""

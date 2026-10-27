@@ -122,3 +122,43 @@ def test_cli_accepts_producer_metadata_or_explicit_legacy_evidence(
          tmp_path if source_option == '--workspace' else None)
     ]
     json.dumps(report)
+
+
+def test_real_recording_client_links_slices_and_exports_exact_populations(
+    native_datoviz, prepared, tmp_path, monkeypatch
+):
+    from ibl_datoviz import AtlasMesh  # noqa: PLC0415
+    from tests.test_volume_free_navigator import MESH, VOLUME  # noqa: PLC0415
+
+    prepared.metadata.metadata = _declared_shared_metadata(prepared)
+    output = tmp_path / 'selected.json'
+    monkeypatch.setattr(sys, 'argv', [
+        'ibl-recordings', str(tmp_path), '--release', str(tmp_path),
+        '--pid', 'insertion-a', '--volume-root', str(VOLUME),
+        '--selection-output', str(output), '--select-cluster', '0',
+    ])
+    monkeypatch.setattr(client, '_source', lambda _args: SimpleNamespace(
+        insertion=lambda _pid: prepared,
+    ))
+    monkeypatch.setattr(client, 'prepare_viewer', lambda _args: {
+        'atlas': AtlasMesh.from_pack(MESH), 'enable_hover': False,
+        'width': 640, 'height': 480,
+    })
+
+    def interact(app, _args, _report, _title):
+        assert app.slices.available
+        assert json.loads(output.read_text())['observations'][0]['source_key']['population'] == (
+            'clusters'
+        )
+        group = app.recordings[0]
+        app.selection.set_observations((
+            group.channels.observation(0), group.clusters.observation(0),
+        ))
+        rows = json.loads(output.read_text())['observations']
+        assert [row['source_key']['population'] for row in rows] == ['channels', 'clusters']
+        assert [row['original_id'] for row in rows] == [0, 0]
+        assert app.selection.callback_errors == ()
+
+    monkeypatch.setattr(client, 'finish', interact)
+    client.main()
+    assert len(json.loads(output.read_text())['observations']) == 2

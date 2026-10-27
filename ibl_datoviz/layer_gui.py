@@ -7,7 +7,7 @@ import weakref
 import numpy as np
 
 from .layers import _color
-from .payloads import Channels, Clusters, Paths, Sites
+from .payloads import Channels, Clusters, Paths, Points, Sites
 
 
 def _available(viewer, gui):
@@ -160,7 +160,7 @@ class LayerPanel:
     def _action(self, method, *args):
         try:
             method(*args)
-        except (ValueError, RuntimeError) as error:
+        except (ValueError, RuntimeError, IndexError) as error:
             if getattr(self.viewer, '_closed', False):
                 raise
             self.error = str(error)
@@ -255,6 +255,11 @@ class LayerPanel:
                 dvz.dvz_gui_text(gui, text.encode())
             if not layer.payload.positioned[index]:
                 _text(viewer, gui, 'Location unavailable')
+            elif (
+                isinstance(layer.payload, Points) and viewer.slices.available
+                and dvz.dvz_gui_button(gui, b'Show in slices')
+            ):
+                self._action(viewer.slices.locate, ref)
         else:
             _text(viewer, gui, f'{len(local)} {_noun(layer, plural=True)} selected')
             if dvz.dvz_gui_button(gui, b'View selected rows'):
