@@ -1,14 +1,14 @@
 # Real-data interactive example roadmap
 
-## Analysis workflow ready — October 27 2026
+## Analysis workflow accepted — October 27 2026
 
 Source-scoped selection records/JSON, explicit observation-to-slice navigation and
 offline figure bundles are implemented. The prepared BWM site example and the
 original recording client use the same public viewer/controllers. See the
 [analysis workflow](analysis-workflow.md) for supplied-data recipes and the
-[handoff](NEXT_STEPS.md#analysis-round-trip-and-figure-export-ready-october-27-2026)
-for final Linux checks and the short feedback clip. This new workflow awaits user
-feedback; it does not broaden earlier scientific alignment or platform acceptance.
+[handoff](NEXT_STEPS.md#analysis-round-trip-and-figure-export-accepted-october-27-2026)
+for final Linux checks and the short feedback clip. The user accepted the workflow
+and figure ("lgtm"); scientific alignment and platform acceptance retain their scope.
 
 ## Previously accepted review scope
 

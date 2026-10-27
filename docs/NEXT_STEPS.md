@@ -9,7 +9,7 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
-## Analysis round trip and figure export ready — October 27 2026
+## Analysis round trip and figure export accepted — October 27 2026
 
 The user authorized autonomous implementation and Linux validation through a final
 feedback checkpoint. This workflow builds on the existing viewer, subscriptions,
@@ -78,7 +78,8 @@ captures, receipts, installation and tests are ignored in
 `build/analysis-workflow-review/`; private artifacts are in
 `build/short-reviews/media/`. No canonical documentation image is promoted.
 
-The final feedback checkpoint is slice-action usability and figure readability.
+The user accepted the workflow and exported figure ("lgtm"). This accepts the
+shown Linux slice action and figure readability within the reviewed scope.
 Source validation/alignment quality remain unknown. Workspace persistence, native
 baseline promotion, public distribution, publication and merging to `main` remain
 later work or explicit decisions.
