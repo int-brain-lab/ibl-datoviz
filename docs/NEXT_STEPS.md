@@ -9,7 +9,7 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
-## Two-recording visibility and selection review ready — October 27 2026
+## Two-recording visibility and selection review accepted — October 27 2026
 
 The user authorized the next multi-recording review after accepting the simpler
 scalar inspector. The new inspected 20-second Linux clip reuses the two actual
@@ -48,7 +48,9 @@ panel/table tests pass**; Ruff, strict MkDocs and whitespace checks pass.
 
 MP4 SHA256 is `4a06aae8dd585284337a85d4dd35fac733ccd5a354b65e9e862be4983ec9f42c`
 (20 seconds, 890,345 bytes). The clip is first on the private gateway's Datoviz
-short reviews page. It awaits user acceptance. Scripts, state verification and
+short reviews page. The user watched and accepted it ("lgtm"). This establishes
+acceptance of the shown Linux visibility/selection workflow; it does not establish
+scientific alignment validation or native macOS rendering. Scripts, state verification and
 receipts remain ignored under `build/multi-recording-review/`, and the video under
 `build/short-reviews/media/`. The earlier accepted panel/atlas clips remain
 available separately. Saved workspace state and native baseline promotion remain
