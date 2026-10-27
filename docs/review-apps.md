@@ -74,6 +74,47 @@ quantity. It colors detailed anatomy using that declared reduction. The client l
 engineering checks. Full interactive scientific presentation remains a user review
 gate even when startup/captures pass.
 
+## Multiple recordings and linked selection
+
+The existing public `examples.ibl_recordings` client accepts repeated explicit
+insertion IDs. Run it in the configured native environment with the optional
+shared metadata reader available:
+
+```bash
+python -m examples.ibl_recordings ATLAS_ROOT --context-root CONTEXT_ROOT \
+  --release BWM_RELEASE --pid FIRST_PID --pid SECOND_PID \
+  --frame-evidence REVIEWED_FRAME_JSON --ui-scale 1.25
+```
+
+Use existing reviewed inputs; do not invent a frame declaration to open a dataset.
+The October 27 short review reuses the existing manifest-pinned BWM 1.1.0 release
+and the reviewed legacy coordinate interpretation scoped to its two insertions.
+The populations are 384 channels / 459 clusters and 96 channels / 2 clusters.
+These are complete released populations; no quality filtering or signal reads
+are introduced. Cluster locations are assigned source-channel locations, not
+independently measured neuron positions. Source validation and alignment quality
+remain unknown; the native panel retains the source warning.
+
+The review applies amber/cyan single colors to distinguish recordings, with
+magenta reserved for observation selection. These colors encode identity, not
+firing rate or quality. No scalar measurement is supplied in this geometry-only
+composition, which the table reports explicitly.
+
+Check group visibility independently: hiding a recording masks its children
+without changing their authored visibility settings or the other recording.
+Use Inspect layer to change the properties being shown; it must not change data
+selection. Open the first cluster table and Ctrl/Cmd-click two rows, inspect the
+second recording's clusters and open its table, then add two rows there. Both
+tables and the inspector should preserve the four exact source-scoped references.
+Switch table and inspector back to the first recording: its two selected rows
+must remain, and the inspector reports the selections in other layers separately.
+The same local ID in another recording is a different scientific observation.
+
+Inspector nouns follow declared Channels, Clusters and Sites payloads independently
+of whether they are rendered with points or spheres. Explicit provenance labels
+still override generic defaults. No new source reader or application controller is
+introduced by this review.
+
 ## Scalar values and missingness
 
 ```bash

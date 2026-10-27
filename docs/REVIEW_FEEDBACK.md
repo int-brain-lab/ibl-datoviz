@@ -1,5 +1,16 @@
 # Manual review feedback
 
+## Multi-recording review ready — October 27 2026
+
+The user authorized a multi-recording review after accepting the redesigned
+single-recording panel. A new 20-second Linux clip shows two actual BWM
+recordings, independent group visibility and four selected clusters retained
+across their two linked tables. Source validation and alignment quality remain
+unknown under the existing reviewed coordinate declaration. Scientific/native
+state checks pass; the clip awaits user acceptance. See
+[the handoff](NEXT_STEPS.md#two-recording-visibility-and-selection-review-ready-october-27-2026)
+for exact inputs, source identities and artifact hashes.
+
 ## Redesigned scalar panel accepted — October 27 2026
 
 The user authorized the audit's implementation. The compact layer inspector,

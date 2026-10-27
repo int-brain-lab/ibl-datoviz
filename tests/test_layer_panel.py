@@ -5,7 +5,7 @@ import pytest
 
 from ibl_anatomy import open_region_catalog
 from ibl_datoviz import AtlasMesh, AtlasViewer, Channels, Recording, SourceKey
-from ibl_datoviz.layer_gui import LayerPanel
+from ibl_datoviz.layer_gui import LayerPanel, _noun
 from tests import FIXTURES
 from tests.test_atlas import FIXTURE
 from tests.test_observation_table_integration import add_points, encode
@@ -165,4 +165,20 @@ def test_recording_inspection_names_are_distinct_and_hide_source_identifiers(app
     visible = '\n'.join(str(call) for call in gui.calls)
     assert '00000000-0000' not in visible
     assert panel.active_layer() is groups[0].channels
+    assert ('section', b'Selected channel') in gui.calls
     assert app.selection.observations == ()
+
+
+@pytest.mark.parametrize(
+    'kind,expected',
+    [('Channels', 'channel'), ('Clusters', 'cluster'), ('Sites', 'site'), ('Points', 'point')],
+)
+def test_inspector_uses_declared_population_type_independently_of_glyph(kind, expected):
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    import ibl_datoviz  # noqa: PLC0415
+
+    payload = getattr(ibl_datoviz, kind)((0,), [[0, 0, 0]], ibl_datoviz.WorldFrame('test'), {})
+    layer = SimpleNamespace(payload=payload)
+    assert _noun(layer) == expected
+    assert _noun(layer, plural=True) == expected + 's'

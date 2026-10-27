@@ -7,6 +7,7 @@ import weakref
 import numpy as np
 
 from .layers import _color
+from .payloads import Channels, Clusters, Paths, Sites
 
 
 def _available(viewer, gui):
@@ -38,7 +39,19 @@ def _swatch(viewer, gui, color, key):
 
 
 def _noun(layer, *, plural=False):
-    default = 'path' if layer.capabilities.width_px else 'point'
+    default = next(
+        (
+            name
+            for kind, name in (
+                (Channels, 'channel'),
+                (Clusters, 'cluster'),
+                (Sites, 'site'),
+                (Paths, 'path'),
+            )
+            if isinstance(layer.payload, kind)
+        ),
+        'point',
+    )
     key = 'observation_label_plural' if plural else 'observation_label'
     return str(layer.payload.provenance.get(key, default + 's' if plural else default))
 

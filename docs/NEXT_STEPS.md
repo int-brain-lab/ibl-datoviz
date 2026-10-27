@@ -9,6 +9,51 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Two-recording visibility and selection review ready — October 27 2026
+
+The user authorized the next multi-recording review after accepting the simpler
+scalar inspector. The new inspected 20-second Linux clip reuses the two actual
+BWM 1.1.0 insertions in the existing reviewed legacy frame declaration:
+`a21bade7-5be7-4a17-a9b9-ddee453e6260` (384 channels / 459 clusters) and
+`bf746764-78e0-4b9c-bdf6-65b6ff45745d` (96 channels / 2 clusters).
+The immutable release manifest is
+`43978e003c20e4bb526486ef26f9ab286d9379a73a4d412f48293e20e527613b`;
+the existing evidence file `build/ibl-integration/reviewed-bwm-frame.json` retains
+SHA256 `cc745213a47587b8ad89674ad243cc1c14eea22d9f528d8583cd7f0b4ab881ba`.
+The bridge enforces the exact manifest/PID scope. Frame interpretation, source
+validation and alignment quality remain distinct; the latter two are unknown.
+
+The existing public recording client and shared `ibl_ai_agent.access` metadata
+reader prepare both recordings without signal reads, filtering, deduplication,
+coordinate substitution or scientific aggregation. Original channel/cluster IDs
+and coordinates remain intact. The explicit optional-reader environment is kept
+outside the locked package environment; reader source revision is `cda7f2d14`.
+Native source/library, package dependency pins and the reviewed frame are unchanged.
+Amber/cyan identify recordings; magenta is selection, not a measured scalar.
+The scene supplies no scalar measurement, which the tables state explicitly.
+
+Normal host mouse/keyboard actions hide and restore Recording 1, open its cluster
+table, select IDs 1 and 1000, inspect/open Recording 2 and add clusters 21 and 36,
+then switch table/inspection back. Native checkpoint receipts confirm independent
+visibility, preserved authored child visibility, four exact scientific references,
+two native table selections matching scientific state, unchanged source geometry
+hashes and an unchanged arcball model. The host closes cleanly. This is a bounded
+UI/geometry review, not alignment validation or an input-latency benchmark.
+
+The review exposed one terminology correction: inspector nouns now follow the
+declared Channels/Clusters/Sites payload, independently of the rendering glyph;
+generic annotations remain points unless explicitly labeled. The four payload
+cases and the recording-group inspector are covered. All **29 focused native
+panel/table tests pass**; Ruff, strict MkDocs and whitespace checks pass.
+
+MP4 SHA256 is `4a06aae8dd585284337a85d4dd35fac733ccd5a354b65e9e862be4983ec9f42c`
+(20 seconds, 890,345 bytes). The clip is first on the private gateway's Datoviz
+short reviews page. It awaits user acceptance. Scripts, state verification and
+receipts remain ignored under `build/multi-recording-review/`, and the video under
+`build/short-reviews/media/`. The earlier accepted panel/atlas clips remain
+available separately. Saved workspace state and native baseline promotion remain
+subsequent decisions.
+
 ## Simpler layer inspector implemented — October 27 2026
 
 The user authorized implementation of the scientist-facing panel audit. The
