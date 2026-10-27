@@ -38,6 +38,9 @@ class ScalarReview(AtlasViewer):
             'position_meaning': 'Prepared co-located BWM channel groups; source ML/AP/DV (um).',
             'scalar_description': provenance['derivation']['value'],
             'scalar_missing_meaning': 'Missing FR: no good unit assigned to this channel group.',
+            'observation_label': 'site',
+            'observation_label_plural': 'sites',
+            'color_limits_meaning': 'Color limits: finite-site 5th and 95th percentiles.',
         }
         self.site_layer = self.add_points(
             Points(
@@ -48,42 +51,23 @@ class ScalarReview(AtlasViewer):
                 keys,
                 allen_region_ids=sites.allen_region_ids,
             ),
-            name='BWM channel groups',
+            name='Recording sites',
         )
         self.site_layer.set_size_px(12)
         self.encode_values()
-        self.tables.show(self.site_layer)
 
     def encode_values(self):
         """Use explicit finite-site 5th/95th percentile color limits; retain raw values."""
         layer = self.site_layer
         layer.color_by(
             self.review_sites.values,
-            name='Mean good-unit firing rate',
+            name='Mean firing rate',
             units='Hz',
             cmap='viridis',
             limits=self.value_range,
             missing_color='#808080',
             observation_refs=layer.payload.observation_keys,
         )
-
-    def _draw_viewport_toolbar_gui(self, gui):
-        super()._draw_viewport_toolbar_gui(gui)
-        layer = getattr(self, 'site_layer', None)
-        if layer is None:
-            return
-        dvz = self.dvz
-        label = b'Use uniform color' if layer.scalar_encoding is not None else b'Restore FR colors'
-        if dvz.dvz_gui_button(gui, label):
-            if layer.scalar_encoding is not None:
-                layer.set_color('#40dcfa')
-            else:
-                self.encode_values()
-        for finite, label in ((True, b'Select measured site'), (False, b'Select missing FR')):
-            dvz.dvz_gui_same_line(gui, 0, 8 * self.ui_scale)
-            if dvz.dvz_gui_button(gui, label):
-                rows = np.flatnonzero(np.isfinite(self.review_sites.values) == finite)
-                self.selection.set_observations((layer.refs[int(rows[0])],) if len(rows) else ())
 
 
 def main():

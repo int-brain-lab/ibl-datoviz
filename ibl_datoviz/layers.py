@@ -260,6 +260,8 @@ class LayerHandle:
         self._size = 3.0 if glyph == 'path' else 8.0 if glyph == 'point' else 20.0
         self._colors = owned(np.tile(_color('#40dcfa'), (len(payload.ids), 1)), np.uint8)
         self._encoding = None
+        self._scalar_data = None
+        self._uniform_color = '#40dcfa'
         self._selected = frozenset()
         self._endpoint_gaps_px = (0.0, 0.0)
         attachment = str(uuid4())
@@ -326,8 +328,13 @@ class LayerHandle:
 
     @property
     def scalar_encoding(self):
-        """Retained complete-population scalar encoding, or no scalar encoding."""
+        """Active scalar coloring, or None while using a single color."""
         return self._encoding
+
+    @property
+    def scalar_data(self):
+        """Retained measurement and color preferences, independent of color mode."""
+        return self._scalar_data
 
     def _require_open(self):
         if self._closed:
@@ -480,22 +487,47 @@ class LayerHandle:
         self._visible = bool(visible)
 
     def set_color(self, color):
-        """Replace scalar encoding with one uniform color."""
+        """Use one uniform color without discarding the supplied measurement."""
         self._mutate()
         rgba = _color(color)
         if self._glyph == 'path' and rgba[3] != 255:
             raise ValueError('paths require opaque color')
         colors = owned(np.tile(rgba, (len(self.refs), 1)), np.uint8)
-        self._set_color_encoding(colors, None)
+        self._set_color_encoding(colors, None, self._scalar_data)
+        self._uniform_color = '#' + bytes(rgba).hex()
 
-    def _set_color_encoding(self, colors, encoding):
+    def _set_color_encoding(self, colors, encoding, data):
         tables = getattr(self._registry.viewer, 'tables', None)
-        update = (
-            tables._updating_encoding(self, encoding) if tables is not None else nullcontext()
-        )
+        update = tables._updating_encoding(self, data) if tables is not None else nullcontext()
         with update:
             self._update_attributes(colors=colors)
-        self._colors, self._encoding = colors, encoding
+        self._colors, self._encoding, self._scalar_data = colors, encoding, data
+
+    def set_color_mode(self, mode):
+        """Switch scalar/single-color presentation while retaining values and selection."""
+        self._mutate()
+        if mode == 'uniform':
+            self.set_color(self._uniform_color)
+        elif mode == 'scalar':
+            data = self._scalar_data
+            if data is None:
+                raise ValueError('no scalar measurement has been supplied')
+            if self._encoding is data:
+                return
+            colors = self._registry._scalar_colors(
+                data.values, data.cmap, np.asarray(data.limits), data.missing_color
+            )
+            self._set_color_encoding(colors, data, data)
+        else:
+            raise ValueError('color mode must be scalar or uniform')
+
+    def clear_scalar_data(self):
+        """Explicitly remove the measurement and restore the authored single color."""
+        self._mutate()
+        if self._scalar_data is None:
+            return
+        colors = owned(np.tile(_color(self._uniform_color), (len(self.refs), 1)), np.uint8)
+        self._set_color_encoding(colors, None, None)
 
     def color_by(
         self, values, *, name, units, cmap, limits, missing_color='#808080', observation_refs=None
@@ -528,7 +560,7 @@ class LayerHandle:
             raise ValueError('quantity name and units must be explicit nonempty strings')
         colors = self._registry._scalar_colors(scalar, cmap, bounds, missing_color)
         encoding = ScalarEncoding(scalar, name, units, cmap, tuple(bounds), missing_color)
-        self._set_color_encoding(colors, encoding)
+        self._set_color_encoding(colors, encoding, encoding)
 
     def _set_size(self, value, capability):
         self._mutate()

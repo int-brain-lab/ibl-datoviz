@@ -21,6 +21,7 @@ class ViewerLayout:
 
     def __init__(self, viewer: AtlasViewer) -> None:
         self.viewer = viewer
+        self._dock_info = None
 
     def draw_frame(self, gui) -> None:
         """Draw one GUI frame with balanced native window and child scopes."""
@@ -60,36 +61,61 @@ class ViewerLayout:
         if getattr(viewer, 'tables', None) is not None:
             viewer.tables.draw(gui)
 
-    def dock_windows(self, gui) -> None:
-        """Split sidebars before the central observation dock, preserving user moves."""
+    def _host_size(self):
         viewer = self.viewer
-        viewer.dvz.dvz_gui_dock_window_once(
-            gui,
-            b'Regions',
-            viewer.dvz.DVZ_GUI_DOCK_SLOT_LEFT,
-            viewer.sidebar_width * viewer.ui_scale,
+        width, height = ctypes.c_uint32(), ctypes.c_uint32()
+        if getattr(viewer, 'view', None) is not None:
+            viewer.dvz.dvz_view_logical_size(
+                viewer.view, ctypes.byref(width), ctypes.byref(height)
+            )
+        return (
+            width.value or getattr(viewer, 'width', 2240),
+            height.value or getattr(viewer, 'height', 1600),
         )
+
+    def dock_windows(self, gui) -> None:
+        """Budget real pane widths and tab the sidebars on narrow displays."""
+        viewer, dvz = self.viewer, self.viewer.dvz
         registry = getattr(viewer, '_regional_quantities', None)
         quantity = registry.handle if registry is not None else None
-        if viewer.layers or quantity is not None:
-            viewer.dvz.dvz_gui_dock_window_once(
-                gui,
-                b'Layers',
-                viewer.dvz.DVZ_GUI_DOCK_SLOT_RIGHT,
-                340 * viewer.ui_scale,
+        has_layers = bool(
+            viewer.layers
+            or quantity is not None
+            or getattr(viewer, '_has_custom_layers_gui', False)
+        )
+        width, height = self._host_size()
+        if self._dock_info is None:
+            compact = width / viewer.ui_scale < 1250
+            regions = min(viewer.sidebar_width * viewer.ui_scale, width * 0.25)
+            layers = min(360 * viewer.ui_scale, width * (0.38 if compact else 0.30))
+            slot = (
+                dvz.DVZ_GUI_DOCK_SLOT_RIGHT
+                if compact and has_layers
+                else dvz.DVZ_GUI_DOCK_SLOT_LEFT
+            )
+            if compact and has_layers:
+                regions = layers
+            self._dock_info = width, regions, layers, slot, compact
+        initial_width, regions, layers, slot, compact = self._dock_info
+        dvz.dvz_gui_dock_window_once(gui, b'Regions', slot, regions)
+        if has_layers:
+            # The pinned helper divides by full viewport width even when splitting
+            # the remaining node. Compensate its viewport-relative ratio here.
+            # Revalidate this adapter explicitly when promoting the native baseline.
+            request = regions if compact else layers * initial_width / (initial_width - regions)
+            dvz.dvz_gui_dock_window_once(
+                gui, b'Layers', slot if compact else dvz.DVZ_GUI_DOCK_SLOT_RIGHT, request
             )
         tables = getattr(viewer, 'tables', None)
         if tables is not None and tables.visible:
-            viewer.dvz.dvz_gui_dock_window_once(
+            dvz.dvz_gui_dock_window_once(
                 gui,
                 b'Observations',
-                viewer.dvz.DVZ_GUI_DOCK_SLOT_BOTTOM,
-                280 * viewer.ui_scale,
+                dvz.DVZ_GUI_DOCK_SLOT_BOTTOM,
+                min(340 * viewer.ui_scale, height * 0.4),
             )
         if viewer.viewport is not None:
-            viewer.dvz.dvz_gui_dock_window_once(
-                gui, b'3D atlas', viewer.dvz.DVZ_GUI_DOCK_SLOT_CENTER, 0.0
-            )
+            dvz.dvz_gui_dock_window_once(gui, b'3D atlas', dvz.DVZ_GUI_DOCK_SLOT_CENTER, 0.0)
 
     def create_window(self, figure, title):
         """Create a host window with the configured work-area policy."""

@@ -264,38 +264,55 @@ baseline and default appearance.
 
 ## Linked observation tables
 
-Open a retained table from a layer's **Observation table** button, or from Python:
+Open a retained table with **View data** in Layers, or from Python:
 
 ```python
 table = app.tables.show(recording.clusters)
 app.selection.set_observations([recording.clusters.observation(cluster_id)])
 ```
 
-The **Observations** window switches between opened layers. Its rows cover the
-complete attached population, including hidden layers and unavailable coordinates.
-Original integer/string IDs remain distinct; IDs currently sort as text, and string
-labels use quoted representations. `XYZ?` reports whether all three coordinates
-are available. Path tables list path IDs and vertex counts rather than inventing a
-representative point. Source/recording/session information is shown in the header
-and expandable provenance details. A source Allen ID column appears when supplied.
+The **Observations** window switches between opened layers when more than one is
+open. Rows retain the complete population, including hidden layers and unavailable
+coordinates. Original integer/string IDs remain distinct through quoted string
+representations; ID sorting is textual. Default point/sphere columns are ID,
+sortable numeric Value and searchable Status, with a source Region (Allen) column
+when supplied. Region names use exact signed Allen IDs and remain independent of
+the current surface mapping; unresolved IDs stay explicit. A Location column is
+added when coordinates are unavailable. Path tables show path IDs and vertex counts.
+Exact IDs/types, coordinates and source/session/provenance details remain available
+under **Source and methods** in the inspected layer, including full-precision values.
 
-Point/sphere tables include sortable numeric **Value** and searchable **Value status**
-columns. The header names the active quantity and units and shows low/mid/high
-colormap samples plus the missing-color swatch. Values remain in complete payload
-order, including unpositioned observations; color clipping never changes table
-values. `Available` includes measured zero; `Missing (NaN)` is distinct from missing
-coordinates. With no active scalar encoding, Value contains NaN and status reads
-`No scalar encoding`, rather than implying measured missing values or zeros.
+The table header gives the measurement name and units. `Available` includes
+measured zero; `Missing (NaN)` differs from missing coordinates. When no measurement
+has been supplied, Value contains NaN and Status says `Not supplied`. Color clipping
+never modifies these values. **Selected rows only**, or
+`app.tables.show_selected(layer)`, applies a view mask without changing scientific
+selection or the payload population. Turn it off to restore all rows; text filtering
+and sorting remain independent.
 
-Layers shows the same legend, color-clipping counts and missing-value count, plus
-the values and units of up to three selected observations. Magenta is selection,
-not a scalar value. Optional provenance keys `scalar_description` and
-`scalar_missing_meaning` explain preparation and missingness. Transparent missing
-colors hide scene glyphs but retain their rows and identities. Editing **Uniform
-color** clears scalar encoding and table values, as does `layer.set_color()`;
-`color_by()` supplies an active encoding again. Native column edits and visual
-colors recover together after failure; failed recovery closes the owner. Encoding
-edits retain native table handles, filters, sorting and exact selection.
+Layers shows compact visibility rows and properties for one inspected layer.
+Changing inspection focus does not change scientific selection. **Color by**
+switches between the supplied measurement and Single color. Read-only color
+samples and the missing-value key are separate from the **Selected** summary;
+magenta highlights selection. **Appearance** and **Source and methods** start
+collapsed. Optional provenance keys `observation_label`/`observation_label_plural`
+name the population, while `scalar_description`, `scalar_missing_meaning` and
+`color_limits_meaning` explain the scientific preparation.
+
+`layer.scalar_data` retains the latest supplied immutable measurement and color
+preferences even in Single color mode. `scalar_encoding` identifies active scalar
+coloring and is None in Single color mode. `set_color()` changes appearance while
+retaining data; `set_color_mode('scalar')` restores the retained measurement's
+colors, and `set_color_mode('uniform')` restores the authored single color.
+`clear_scalar_data()` explicitly removes the measurement and restores single color.
+This changes the earlier behavior where `set_color()` also cleared table values.
+Scientific callers relying on that removal must now call `clear_scalar_data()`.
+
+New measurements and explicit removal update table columns and native colors
+transactionally. Partial failures restore the previous data and presentation;
+failed recovery closes the owner. Color-mode edits do not rewrite measurement
+columns. Widget handles, filters, sorting, exact selection and original source
+alignment remain intact. Transparent missing colors retain rows and identities.
 
 Native row keys are private widget-local tokens mapped to exact attachment
 references. Filtering and sorting change presentation, not the payload population.

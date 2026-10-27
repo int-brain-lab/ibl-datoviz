@@ -389,7 +389,7 @@ def test_primary_layers_read_authoritative_state_and_hide_diagnostics(viewer):
     viewer._draw_insertion_gui = lambda _gui: drawn.append('insertions')
     viewer._layer_controls['sites'].value = False
     viewer._draw_layer_controls(None)
-    assert drawn == ['insertions']
+    assert drawn == []  # Appearance starts collapsed.
     assert labels == [b'Brain context', b'Insertion paths', b'Recording sites']
     assert viewer._layer_controls['sites'].value
     assert viewer.camera_angles == (0.1, 0.2, 0.3)
@@ -416,7 +416,6 @@ def test_layers_window_is_persistent_dockable_and_balances_scope(viewer, fail):
     else:
         viewer._draw_auxiliary_gui(None)
     assert calls == [
-        ('dock', (b'Layers', 2, 330.0)),
         ('begin', (b'Layers', None, 0)),
         'controls',
         'end',

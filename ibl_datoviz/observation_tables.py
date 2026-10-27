@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ctypes
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import get_ident
 
 import numpy as np
@@ -21,12 +21,20 @@ class ObservationRows:
     refs: tuple
 
 
+@dataclass
+class _TablePresentation:
+    selected_only: ctypes.c_bool = field(default_factory=lambda: ctypes.c_bool(False))
+    applied_selected_only: bool = False
+    mask: np.ndarray | None = None
+
+
 @dataclass(frozen=True)
 class ObservationTable:
     """One retained table borrowing an attached scientific layer."""
 
     layer: object
     widget: GuiWidget
+    _presentation: _TablePresentation = field(default_factory=_TablePresentation, compare=False)
 
     @property
     def refs(self):
@@ -71,10 +79,10 @@ def _columns(dvz, layer):
     columns = []
     values = []
 
-    def add(title, data, *, numeric=False):
+    def add(title, data, column_id, *, numeric=False):
         columns.append(
             {
-                'column_id': len(columns) + 1,
+                'column_id': column_id,
                 'type': (
                     dvz.DVZ_GUI_TABLE_COLUMN_DOUBLE if numeric else dvz.DVZ_GUI_TABLE_COLUMN_TEXT
                 ),
@@ -88,36 +96,48 @@ def _columns(dvz, layer):
     add(
         'ID',
         tuple(repr(value) if isinstance(value, str) else str(value) for value in payload.ids),
+        1,
     )
-    add(
-        'Type',
-        tuple('string' if isinstance(value, str) else 'integer' for value in payload.ids),
-    )
-    add('XYZ?', tuple('yes' if value else 'no' for value in payload.positioned))
     if isinstance(payload, Paths):
         add(
             'Vertices',
             np.asarray([len(path) for path in payload.positions_um], np.float64),
+            4,
             numeric=True,
         )
     else:
-        scalar, status = _scalar_columns(getattr(layer, 'scalar_encoding', None), len(layer.refs))
-        add('Value', scalar, numeric=True)
-        add('Value status', status)
-        for axis, name in enumerate(('ML (µm)', 'AP (µm)', 'DV (µm)')):
-            add(name, np.ascontiguousarray(payload.positions_um[:, axis]), numeric=True)
-    for title, data in _source_fields(layer):
-        if len(set(data)) > 1:
-            add(title, data)
+        scalar, status = _scalar_columns(getattr(layer, 'scalar_data', None), len(layer.refs))
+        add('Value', scalar, 4, numeric=True)
+        add('Status', status, 5)
     regions = getattr(payload, 'allen_region_ids', None)
     if regions is not None:
-        add('Allen region ID', tuple(str(value) for value in regions))
+        catalog = getattr(
+            getattr(getattr(layer, '_registry', None), 'viewer', None), 'catalog', None
+        )
+        by_id = {} if catalog is None else {row.atlas_id: row for row in catalog.physical('allen')}
+        labels = []
+        for value in regions:
+            row = by_id.get(int(value))
+            labels.append(
+                str(value)
+                if row is None
+                else row.acronym
+                if int(value) == 0
+                else f'{row.acronym} ({"left" if row.is_left else "right"})'
+            )
+        add('Region (Allen)', tuple(labels), 9)
+    if not payload.positioned.all():
+        add(
+            'Location',
+            tuple('Available' if value else 'Unavailable' for value in payload.positioned),
+            3,
+        )
     return columns, values
 
 
 def _scalar_columns(encoding, count):
     if encoding is None:
-        return np.full(count, np.nan), ('No scalar encoding',) * count
+        return np.full(count, np.nan), ('Not supplied',) * count
     return encoding.values, tuple(
         'Available' if np.isfinite(value) else 'Missing (NaN)' for value in encoding.values
     )
@@ -167,13 +187,15 @@ def _create_table(dvz, layer):
             ),
             'observation table rows',
         )
-        for index, (numeric, data) in enumerate(values, 1):
+        for column, (numeric, data) in zip(columns, values, strict=True):
             setter = (
                 dvz.dvz_gui_table_set_column_double
                 if numeric
                 else dvz.dvz_gui_table_set_column_text
             )
-            widget.check(setter(widget.handle, index, data), 'observation table column')
+            widget.check(
+                setter(widget.handle, column['column_id'], data), 'observation table column'
+            )
     except BaseException:
         widget.close()
         raise
@@ -223,6 +245,42 @@ class ObservationTables:
         self._active = len(self._tables) - 1
         return table
 
+    def show_selected(self, layer):
+        """Open data with an explicit view-only mask over selected observation rows."""
+        table = self.show(layer)
+        table._presentation.selected_only.value = True
+        return table
+
+    def _sync_visibility(self, table):
+        state = table._presentation
+        if not state.selected_only.value and state.mask is None:
+            return
+        refs = set(self.viewer.selection.observations)
+        mask = np.array(
+            [not state.selected_only.value or ref in refs for ref in table.refs], dtype=bool
+        )
+        if state.mask is not None and np.array_equal(mask, state.mask):
+            state.applied_selected_only = state.selected_only.value
+            return
+        setter = self.viewer.dvz.dvz_gui_table_set_visible
+        try:
+            table.widget.check(setter(table.widget.handle, mask), 'observation row visibility')
+        except BaseException:
+            previous = state.mask if state.mask is not None else np.ones(len(table.refs), bool)
+            state.selected_only.value = state.applied_selected_only
+            try:
+                table.widget.check(
+                    setter(table.widget.handle, previous), 'observation row visibility rollback'
+                )
+            except BaseException as error:
+                self.viewer.close()
+                raise RuntimeError(
+                    'observation row visibility rollback failed; viewer closed'
+                ) from error
+            raise
+        state.mask = mask
+        state.applied_selected_only = state.selected_only.value
+
     def _set_selection(self, refs):
         """Upload atomically, restoring authoritative state after partial failure."""
         self.viewer.selection._check_mutation()
@@ -244,7 +302,7 @@ class ObservationTables:
     def _updating_encoding(self, layer, encoding):
         """Keep retained columns and native colors atomic, including partial writes."""
         table = next((table for table in self._tables if table.layer is layer), None)
-        if table is None or encoding is layer.scalar_encoding:
+        if table is None or encoding is layer.scalar_data:
             yield
             return
 
@@ -266,7 +324,7 @@ class ObservationTables:
         except BaseException:
             if table.widget.handle is not None:
                 try:
-                    upload(layer.scalar_encoding)
+                    upload(layer.scalar_data)
                 except BaseException as error:
                     self.viewer.close()
                     raise RuntimeError(
@@ -312,7 +370,7 @@ class ObservationTables:
                     scope = f' ({group.recording.insertion_id[:8]})' if group is not None else ''
                     labels.append(f'{i + 1}: {table.layer.name}{scope}'.encode())
                 items = (ctypes.c_char_p * len(labels))(*labels)
-                if self.viewer.dvz.dvz_gui_combo(
+                if len(labels) > 1 and self.viewer.dvz.dvz_gui_combo(
                     gui,
                     b'Layer##observations',
                     ctypes.byref(active),
@@ -322,46 +380,23 @@ class ObservationTables:
                     self._active = active.value
                 table = self._tables[self._active]
                 self._draw_header(gui, table)
+                self._sync_visibility(table)
                 self._draw_table(gui, table)
         finally:
             self.viewer.dvz.dvz_gui_end(gui)
 
     def _draw_header(self, gui, table):
-        from .layer_gui import _text, draw_scalar_legend  # noqa: PLC0415
+        from .layer_gui import _text  # noqa: PLC0415
 
-        text = self.viewer.dvz.dvz_gui_text
-        meaning = table.layer.payload.provenance.get('position_meaning')
-        text(gui, b'Original IDs (text sort); XYZ? = coordinates available')
-        if getattr(table.layer, 'scalar_encoding', None) is not None:
-            draw_scalar_legend(self.viewer, gui, table.layer, 'observations', compact=True)
-        elif not isinstance(table.layer.payload, Paths):
-            text(gui, b'No active scalar encoding; Value = NaN (not a measured zero).')
-        fields = [
-            (title, data[0])
-            for title, data in _source_fields(table.layer)
-            if data and len(set(data)) == 1
-        ]
-        group = getattr(table.layer, '_group', None)
-        if group is not None:
-            text(gui, f'Recording: {group.recording.insertion_id}'.encode())
-            status = group.recording.provenance.get('source_validation_status', 'unspecified')
-            text(gui, f'Metadata source validation: {status}'.encode())
-        description = table.layer.payload.provenance.get('scalar_description')
-        missing = table.layer.payload.provenance.get('scalar_missing_meaning')
-        if (fields or meaning or description or missing or group is not None) and (
-            self.viewer.dvz.dvz_gui_collapsing_header(gui, b'Source and provenance', 0)
-        ):
-            # Provenance is available on demand without crowding the observation rows.
-            if meaning:
-                _text(self.viewer, gui, meaning)
-            if description:
-                _text(self.viewer, gui, f'Quantity: {description}')
-            if missing:
-                _text(self.viewer, gui, missing)
-            for title, value in fields:
-                _text(self.viewer, gui, f'{title}: {value}')
-            if group is not None:
-                _text(self.viewer, gui, f'Session: {group.recording.session_id}')
+        dvz, layer = self.viewer.dvz, table.layer
+        data = getattr(layer, 'scalar_data', None)
+        if data is not None:
+            _text(self.viewer, gui, f'{data.name} ({data.units})')
+        elif not isinstance(layer.payload, Paths):
+            _text(self.viewer, gui, 'No measurement supplied')
+        dvz.dvz_gui_checkbox(
+            gui, b'Selected rows only', ctypes.byref(table._presentation.selected_only)
+        )
 
     def _draw_table(self, gui, table):
         previous = self.viewer.selection.observations

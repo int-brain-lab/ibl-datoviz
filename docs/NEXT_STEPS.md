@@ -9,6 +9,67 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Simpler layer inspector implemented — October 27 2026
+
+The user authorized implementation of the scientist-facing panel audit. The
+generic panel now separates compact layer visibility rows, one inspected layer's
+Color by control, a read-only scalar/missing-value key and a Selected summary.
+Appearance and Source and methods start collapsed. The arbitrary-ID dropdown,
+leading numeric RGBA editor, repeated count instructions and routine technical
+paragraphs are removed from the default view. Single selections show rounded
+value/unit pairs; exact typed IDs, full precision, coordinates and source metadata
+remain in details. Multiple selections retain their exact identities and offer
+View selected rows. Inspection focus is weakly held and cannot change scientific
+selection; recording names remain distinct without exposing raw UUIDs by default.
+
+`LayerHandle.scalar_data` retains the supplied immutable measurement and color
+preferences independently of active `scalar_encoding`. `set_color()` and
+`set_color_mode('uniform')` keep data/table values; `set_color_mode('scalar')`
+restores the retained scale. `clear_scalar_data()` is the explicit data-removal
+operation. This deliberately changes the previous set_color side effect, with
+migration documented in the API. Replacement/removal retains transactional
+table/visual recovery; color-mode switches do not rewrite measurement columns.
+
+View data opens a compact table on demand. The default columns prioritize ID,
+Value, Status and supplied signed Allen region labels; Location appears when
+coordinates are unavailable. Exact source IDs/types/coordinates remain in the
+inspector's details. Source-region names remain explicitly Allen, independent of
+surface mapping. Selected rows only is a view mask, not scientific filtering or
+selection mutation, and compensates partial native failure. Failed recovery
+closes the owner. Table sorting/filtering, original row identities and selections
+survive coloring edits. The scalar example's special toolbar buttons are removed.
+
+Default docking now compensates the pinned native helper's full-viewport split
+ratio using host logical dimensions. This is a package adapter, not a native fix;
+revalidate/remove that compensation if a future promoted baseline changes the
+helper. No native build, revision or pin changed. At startup width / UI scale
+below 1250, Regions and Layers share a tabbed sidebar. Initial layout is budgeted
+once; later user docking/resizing remains authoritative. Real-data native checks
+measure right widths 450 and 360 in the two wide audit cases; the narrow
+1440 × 900 / scale 1.5 case provides a 539-wide shared sidebar and an 898-wide
+central view, rather than the former 297/539 split. Actual-bounds regressions
+cover all three geometries, including open data tables. App 1 shares docking and
+text/legend helpers and moves styles under Appearance while preserving its
+distinct diagnostic region-linking semantics.
+
+Full Linux validation: **1,343 passed, two existing skips** (optional native
+image-plane pan and unavailable registered 10 µm assets). A final void-region
+label correction also passes all 20 observation-table integration tests, including
+a new signed/void/unknown identity regression. Ruff, strict MkDocs,
+whitespace and wheel/sdist builds pass. Both numbered apps pass serialized
+strict three-frame startup. An initial parallel Xvfb launch encountered an X
+authentication error; the serialized startup succeeds. Configured native source
+and loaded library remain `73d0f0bc` and SHA256
+`9116d2cada10cb9802ef2f1c2076bf7b75fc1f781055a6b4124d5ede02fc9b3f`.
+
+The inspected 20-second Linux clip uses ordinary View data, row selection,
+missing-value text filtering and Color by controls. It is first on the private
+gateway's Datoviz short reviews page (`/ibl-review/`). MP4 size: 1,231,602 bytes;
+SHA256 `d39d85945060deddc0c91b13a793f6c3a1b11d7350023924b97cfa7640627815`.
+Raw artifacts remain ignored under `build/short-reviews/`; the rejected clip is
+retained separately. The new layout awaits user acceptance. This provides neither
+hands-on input-latency acceptance nor new Mac rendering evidence.
+
 ## Scalar panel rejected; scientist-facing layout audit — October 27 2026
 
 The user rejects the new scalar review's right panel as confusing and requests a

@@ -6,7 +6,7 @@ import datoviz as dvz
 import numpy as np
 import pytest
 
-from ibl_datoviz.layer_gui import draw_scalar_legend
+from ibl_datoviz.layer_gui import draw_scalar_legend, draw_source_details
 from ibl_datoviz.layers import LayerObservationRef, ScalarEncoding
 from ibl_datoviz.observation_tables import ObservationTables
 from ibl_datoviz.payloads import Paths, Points, SourceKey, SourceObservationKey, WorldFrame
@@ -14,6 +14,9 @@ from tests.test_atlas import FakeDatoviz
 
 
 class TableDatoviz(FakeDatoviz):
+    def dvz_gui_checkbox(self, *_args):
+        return False
+
     def dvz_gui_table(self, name, columns, flags):
         super().dvz_gui_table(name, columns, flags)
         return SimpleNamespace(selection=[], columns=columns)
@@ -93,6 +96,8 @@ def layer(viewer, *, paths=False, source=False):
         _closed=False,
         visible=False,
         scalar_encoding=None,
+        scalar_data=None,
+        capabilities=SimpleNamespace(width_px=paths),
     )
     viewer.layers.append(result)
     return result
@@ -110,7 +115,7 @@ def test_all_rows_original_zero_strings_and_repeated_coordinates_survive(context
     assert table.keys.dtype == np.uint64 and not table.keys.flags.writeable
     assert table.selected_refs() == (first.refs[1],)
     columns = {column['title'] for column in table.widget.handle.columns}
-    assert {'ID', 'Type', 'ML (µm)'} <= columns
+    assert {'ID', 'Value', 'Status', 'Location'} <= columns
     assert 'Content SHA256' not in columns
     assert any(
         call[0] == 'table_text' and call[2] == ('0', "'not-positioned'", '36')
@@ -258,7 +263,7 @@ def test_id_type_and_repr_keep_string_zero_and_control_characters_unambiguous(co
     tables.show(first)
     text_columns = [call[2] for call in viewer.dvz.calls if call[0] == 'table_text']
     assert ('0', "'0'", "'\\x00\\n'") in text_columns
-    assert ('integer', 'string', 'string') in text_columns
+    assert ('integer', 'string', 'string') not in text_columns
 
 
 def test_show_reopens_retained_widget_and_selects_its_layer(context):
@@ -316,6 +321,7 @@ def test_draw_uses_bool_window_contract_and_one_active_native_table(context, mon
     )
     monkeypatch.setattr(viewer.dvz, 'dvz_gui_combo', lambda *_args: False, raising=False)
     monkeypatch.setattr(viewer.dvz, 'dvz_gui_collapsing_header', lambda *_: False, raising=False)
+    monkeypatch.setattr('ibl_datoviz.layer_gui._text', lambda *_: None)
     monkeypatch.setattr(tables, '_draw_table', lambda _gui, table: drawn.append(table.layer))
     tables.draw(None)
     assert len(windows) == len(ended) == 1
@@ -331,6 +337,7 @@ def test_scalar_columns_keep_raw_clipped_values_missingness_and_unpositioned_row
     first.scalar_encoding = ScalarEncoding(
         np.array([0.0, np.nan, 50.0]), 'Rate', 'Hz', 'sequential', (1.0, 10.0), '#808080'
     )
+    first.scalar_data = first.scalar_encoding
     table = tables.show(first)
     numeric = [call for call in viewer.dvz.calls if call[0] == 'table_double']
     np.testing.assert_equal(numeric[0][2], [0, np.nan, 50])
@@ -340,7 +347,7 @@ def test_scalar_columns_keep_raw_clipped_values_missingness_and_unpositioned_row
         for call in viewer.dvz.calls
     )
     assert first.scalar_encoding._counts == (2, 1, 1, 1)
-    assert table.widget.handle.columns[3]['title'] == 'Value'
+    assert table.widget.handle.columns[1]['title'] == 'Value'
 
 
 def test_local_table_keeps_position_meaning_without_source_keys(context, monkeypatch):
@@ -352,7 +359,7 @@ def test_local_table_keeps_position_meaning_without_source_keys(context, monkeyp
     )
     monkeypatch.setattr(viewer.dvz, 'dvz_gui_collapsing_header', lambda *_: True, raising=False)
     monkeypatch.setattr('ibl_datoviz.layer_gui._text', lambda _v, _g, m: messages.append(m))
-    tables._draw_header(None, table)
+    draw_source_details(viewer, None, table.layer)
     assert 'assigned channel' in messages
 
 
@@ -379,8 +386,7 @@ def test_legend_distinguishes_missing_scalar_from_missing_coordinates(context, m
     )
     draw_scalar_legend(viewer, None, first, 'test')
     text = '\n'.join(messages)
-    assert 'Rate [Hz]' in text and 'Selected 0: 0 Hz' in text
-    assert "Selected 'not-positioned': 2 Hz; coordinates unavailable" in text
-    assert 'Selected 36: Missing (NaN)' in text
-    assert 'Missing: 1/3 (NaN; not zero)' in text and 'transparent' in text
+    assert 'Rate (Hz)' in text
+    assert '1 missing values' in text and 'not drawn' in text
+    assert 'Selected' not in text  # Selection now has its own inspector section.
     assert len(swatches) == 4 and swatches[-1][3] == 0

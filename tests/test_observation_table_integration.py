@@ -174,14 +174,30 @@ def test_active_scalar_updates_retain_table_filter_selection_and_raw_values(
         assert table.selected_refs() == (layer.refs[1],)
         assert app.dvz.dvz_gui_table_get_filter(widget) == 'missing'
         assert app.dvz.dvz_gui_table_get_sort(widget) == sort
+    data = layer.scalar_data
     layer.set_color('#112233')
-    assert layer.scalar_encoding is None and np.isnan(scalar_columns['double']).all()
-    assert scalar_columns['text'] == ('No scalar encoding',) * 2
+    assert layer.scalar_encoding is None and layer.scalar_data is data
+    np.testing.assert_equal(scalar_columns['double'], [-5, 99])
+    layer.set_color_mode('scalar')
+    assert layer.scalar_encoding is data
+    layer.clear_scalar_data()
+    assert layer.scalar_data is None and np.isnan(scalar_columns['double']).all()
+    assert scalar_columns['text'] == ('Not supplied',) * 2
     assert app.selection.revision == revision
 
 
-@pytest.mark.parametrize('kind', ['double', 'text', 'visual'])
-@pytest.mark.parametrize('action', ['scalar', 'uniform'])
+@pytest.mark.parametrize(
+    'kind,action',
+    [
+        ('double', 'scalar'),
+        ('text', 'scalar'),
+        ('visual', 'scalar'),
+        ('visual', 'uniform'),
+        ('double', 'clear'),
+        ('text', 'clear'),
+        ('visual', 'clear'),
+    ],
+)
 def test_scalar_partial_writes_restore_tables_colors_metadata_and_selection(
     app, scalar_columns, monkeypatch, kind, action
 ):
@@ -207,8 +223,10 @@ def test_scalar_partial_writes_restore_tables_colors_metadata_and_selection(
     with pytest.raises(RuntimeError):
         if action == 'scalar':
             encode(layer, [5, 6], units='mV')
-        else:
+        elif action == 'uniform':
             layer.set_color('#112233')
+        else:
+            layer.clear_scalar_data()
     assert failed and layer.scalar_encoding is old_encoding and layer._colors is old_colors
     np.testing.assert_equal(scalar_columns['double'], [0, np.nan])
     assert scalar_columns['text'] == ('Available', 'Missing (NaN)')
@@ -237,3 +255,81 @@ def test_empty_and_all_missing_scalar_tables_retain_complete_population(app, emp
     assert layer.scalar_encoding._counts == (0, len(layer.refs), 0, 0)
     layer.set_color('#112233')
     assert not layer.visible and layer.scalar_encoding is None
+
+
+@pytest.mark.parametrize('failure', [False, True])
+def test_selected_row_view_mask_tracks_selection_without_changing_scientific_state(
+    app, monkeypatch, failure
+):
+    layer = add_points(app)
+    table = app.tables.show_selected(layer)
+    app.selection.set_observations((layer.refs[1],))
+    snapshot = app.selection.snapshot()
+    original = app.dvz.dvz_gui_table_set_visible
+    writes = []
+
+    def record(handle, mask):
+        result = original(handle, mask)
+        writes.append(mask.copy())
+        return -1 if failure and len(writes) == 1 else result
+
+    monkeypatch.setattr(app.dvz, 'dvz_gui_table_set_visible', record)
+    if failure:
+        with pytest.raises(RuntimeError, match='row visibility'):
+            app.tables._sync_visibility(table)
+        np.testing.assert_array_equal(writes[-1], [True, True])
+        assert not table._presentation.selected_only.value and not app._closed
+    else:
+        app.tables._sync_visibility(table)
+        np.testing.assert_array_equal(writes[-1], [False, True])
+        assert table.selected_refs() == (layer.refs[1],)
+        table._presentation.selected_only.value = False
+        app.tables._sync_visibility(table)
+        np.testing.assert_array_equal(writes[-1], [True, True])
+    assert app.selection.snapshot() == snapshot
+
+
+def test_scalar_measurement_restore_after_multiple_uniform_edits_and_explicit_removal(app):
+    layer = add_points(app)
+    encode(layer, [0, np.nan])
+    data = layer.scalar_data
+    assert not data.values.flags.writeable
+    app.selection.set_observations((layer.refs[1],))
+    for color in ('#112233', '#abcdef'):
+        layer.set_color(color)
+        assert layer.scalar_data is data and layer.scalar_encoding is None
+        layer.set_color_mode('scalar')
+        assert layer.scalar_encoding is data
+    layer.set_color_mode('uniform')
+    np.testing.assert_array_equal(layer._colors[0], [171, 205, 239, 255])
+    layer.clear_scalar_data()
+    with pytest.raises(ValueError, match='no scalar measurement'):
+        layer.set_color_mode('scalar')
+    with pytest.raises(ValueError, match='color mode'):
+        layer.set_color_mode('unknown')
+    assert app.selection.observations == (layer.refs[1],)
+
+
+def test_table_region_labels_keep_signed_identity_void_and_unknown_ids(app, monkeypatch):
+    labels = []
+    original = app.dvz.dvz_gui_table_set_column_text
+
+    def capture(handle, column, values):
+        if column == 9:
+            labels.extend(values)
+        return original(handle, column, values)
+
+    monkeypatch.setattr(app.dvz, 'dvz_gui_table_set_column_text', capture)
+    known = next(row for row in app.catalog.physical('allen') if row.atlas_id < 0)
+    layer = app.add_points(
+        Points(
+            (0, 1, 2),
+            [[0, 0, 0]] * 3,
+            app.frame,
+            {},
+            allen_region_ids=[0, known.atlas_id, 9999999],
+        )
+    )
+    app.tables.show(layer)
+    void = next(row for row in app.catalog.physical('allen') if row.atlas_id == 0)
+    assert labels == [void.acronym, f'{known.acronym} (left)', '9999999']

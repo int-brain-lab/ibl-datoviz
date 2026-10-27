@@ -30,6 +30,7 @@ from ibl_datoviz.components import (
     SampledPlaneVisual,
 )
 from ibl_datoviz.context import DEFAULT_CONTEXT_LANDMARKS
+from ibl_datoviz.layer_gui import _swatch, _text
 from ibl_datoviz.presentation import scalar_colors
 
 PRESETS = ('atlas', 'single-probe', 'multiple-insertions', 'mixed')
@@ -103,6 +104,8 @@ def optional_insertions(paths, provenance):
 
 class ScientificSceneReview(AtlasViewer):
     """Keep one viewer and persistent GUI areas while changing scientific layers."""
+
+    _has_custom_layers_gui = True
 
     def __init__(self, mesh, **kwargs):
         self.review_controls = None
@@ -386,10 +389,10 @@ class ScientificSceneReview(AtlasViewer):
 
     def _text(self, gui, message, *, width=43):
         if hasattr(self.dvz, 'dvz_gui_content_avail'):
-            available_width, _ = self._sidebar.available(gui)
-            width = max(12, min(width, int(available_width / (7.0 * self.ui_scale))))
-        for line in textwrap.wrap(message, width=width):
-            self.dvz.dvz_gui_text(gui, line.encode())
+            _text(self, gui, message, columns=width)
+        else:
+            for line in textwrap.wrap(message, width=width):
+                self.dvz.dvz_gui_text(gui, line.encode())
 
     def _combo(self, gui, label, control, choices):
         items = (ctypes.c_char_p * len(choices))(*(item.encode() for item in choices))
@@ -413,12 +416,6 @@ class ScientificSceneReview(AtlasViewer):
         """Keep Layers docked on the right, outside the Regions browser."""
         if self.review_controls is None:
             return
-        self._check(
-            self.dvz.dvz_gui_dock_window_once(
-                gui, b'Layers', self.dvz.DVZ_GUI_DOCK_SLOT_RIGHT, 330.0 * self.ui_scale
-            ),
-            'recording layers dock',
-        )
         visible = self.dvz.dvz_gui_begin(gui, b'Layers', None, 0)
         try:
             self.layers_rect = self._sidebar.rect(gui)
@@ -455,13 +452,16 @@ class ScientificSceneReview(AtlasViewer):
             )
             self.dvz.dvz_gui_same_line(gui, 0.0, 6.0 * self.ui_scale)
             self.dvz.dvz_gui_text(gui, str(count).encode())
-            if layer == 'insertions' and self.review_layers['insertions']:
-                self._draw_insertion_gui(gui)
-            if layer == 'sites' and self.review_layers['sites']:
-                self._draw_site_controls(gui)
-        if self.dvz.dvz_gui_collapsing_header(gui, b'Recording details', 0):
-            if self.dvz.dvz_gui_button(gui, b'Site table'):
+        if self.review_layers['sites']:
+            self._draw_site_controls(gui)
+            if self.dvz.dvz_gui_button(gui, b'View data'):
                 self._show_scientific_data.value = not self._show_scientific_data.value
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Appearance', 0):
+            if self.review_layers['sites']:
+                self._draw_site_size(gui)
+            if self.review_layers['insertions']:
+                self._draw_insertion_gui(gui)
+        if self.dvz.dvz_gui_collapsing_header(gui, b'Source and methods', 0):
             self._text(
                 gui,
                 f'{self.recording_caption}: {self.value_description}. '
@@ -493,17 +493,38 @@ class ScientificSceneReview(AtlasViewer):
             self._draw_plane_gui(gui)
 
     def _draw_site_controls(self, gui):
-        self.dvz.dvz_gui_text(gui, b'Color')
-        self.dvz.dvz_gui_same_line(gui, 0.0, 6.0 * self.ui_scale)
+        self.dvz.dvz_gui_text(gui, b'Color by')
         width, _ = self._sidebar.available(gui)
         self.dvz.dvz_gui_set_next_item_width(gui, max(1.0, width - 1.0))
         if self._combo(
-            gui, '##site_color', self._site_mode_control, ('Uniform', 'Mean firing rate (Hz)')
+            gui, '##site_color', self._site_mode_control, ('Single color', 'Mean firing rate (Hz)')
         ):
             self._action(self.set_site_mode, ('uniform', 'scalar')[self._site_mode_control.value])
             self._site_mode_control.value = ('uniform', 'scalar').index(self.site_mode)
+        low, high = self.value_range
+        if self.site_mode == 'scalar':
+            samples = np.linspace(low, high, 3)
+            colors = scalar_colors(samples, self.value_range, 'sequential')
+            for index, (value, color) in enumerate(zip(samples, colors, strict=True)):
+                if index:
+                    self.dvz.dvz_gui_same_line(gui, 0, 8 * self.ui_scale)
+                _swatch(self, gui, color, f'recording_fr_{index}')
+                self.dvz.dvz_gui_same_line(gui, 0, 4 * self.ui_scale)
+                self.dvz.dvz_gui_text(gui, f'{value:.3g}'.encode())
+            missing = int(np.isnan(self.review_sites.values).sum())
+            if missing:
+                self._text(gui, f'{missing} sites have no firing-rate value.')
+        else:
+            self._text(gui, 'Single color; measured values remain in the data table.')
+        self._text(
+            gui,
+            f'{len(self.review_sites.values)} co-located channel groups; sites are not neurons.',
+        )
+        if self.preset == 'multiple-insertions':
+            self._text(gui, 'Sites belong to the BWM recording, not these W39 paths.')
+
+    def _draw_site_size(self, gui):
         self.dvz.dvz_gui_text(gui, 'Radius (µm)'.encode())
-        self.dvz.dvz_gui_same_line(gui, 0.0, 6.0 * self.ui_scale)
         width, _ = self._sidebar.available(gui)
         self.dvz.dvz_gui_set_next_item_width(gui, max(1.0, width - 1.0))
         if self.dvz.dvz_gui_slider_float(
@@ -511,20 +532,6 @@ class ScientificSceneReview(AtlasViewer):
         ):
             self._action(self.set_site_radius, self._site_radius_control.value)
             self._site_radius_control.value = self.site_radius_um
-        low, high = self.value_range
-        legend = (
-            f'Mean firing rate: {low:.3g}–{high:.3g} Hz (5–95%). '
-            'Purple: low; yellow: high; gray: missing.'
-            if self.site_mode == 'scalar'
-            else 'Cyan identifies recording sites; no quantity is encoded.'
-        )
-        self._text(gui, legend)
-        self._text(
-            gui,
-            f'{len(self.review_sites.values)} co-located channel groups; sites are not neurons.',
-        )
-        if self.preset == 'multiple-insertions':
-            self._text(gui, 'Sites belong to the BWM recording, not these W39 paths.')
 
     def set_site_radius(self, radius_um):
         """Resize glyphs in physical units while preserving observations and their encoding."""

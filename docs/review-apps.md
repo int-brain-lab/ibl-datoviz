@@ -86,20 +86,37 @@ firing rates in Hz and signed Allen identities. It performs no signal reads or
 new aggregation. Missing firing rate means no good unit was assigned to that
 channel group; it does not mean zero firing rate or absent coordinates.
 
-The viridis color limits are explicitly the finite-site 5th and 95th percentiles;
-values outside those limits receive endpoint colors while the table retains raw
-values. Layers shows sampled colors, limits, missing-color swatch and clipping
-counts. Observations repeats a compact legend above sortable Value and searchable
-Value status columns. Quantity derivation and source identity are available under
-Source and provenance.
+The viridis color limits are the finite-site 5th and 95th percentiles. Endpoint
+colors clamp values outside those limits; table values are unchanged. The right
+panel starts with one compact Recording sites row, Color by, a read-only color
+key, missing-value count and a separate selected-site summary. Appearance and
+Source and methods start collapsed. Scientific derivation, source identity, exact
+coordinates and full precision remain available in the latter.
 
-Use **Select measured site** and **Select missing FR** to compare exact selected
-values with a missing measurement. Selection is magenta; it does not change the
-scalar legend. **Use uniform color** clears the active encoding, and the retained
-table explicitly reports No scalar encoding. **Restore FR colors** restores the
-same prepared values and limits. Check filtering, sorting, hiding and reopening
-without losing rows or selection. The normal numbered apps remain unchanged;
-this named example isolates the new scalar presentation for short video review.
+Use **View data**, then select ordinary table rows to compare an available value
+and missing measurement. The default table shows ID, Value, Status and exact
+Allen region names; type/coordinate/source details do not crowd the data rows.
+Filter `missing` to inspect no-value rows. Selection is magenta and retains its
+identity through display changes. Choose **Single color** under Color by: values
+and selection must remain in the table. Restore Mean firing rate (Hz) through the
+same control. There are no example-only selection buttons in the viewport toolbar.
+
+The table is closed initially. With several layers, **Inspect layer** changes only
+the properties being edited; it does not select data. Multiple selections have a
+count and **View selected rows** action. The table's **Selected rows only** checkbox
+controls a view mask independently of scientific selection and text filtering.
+Clearing selection in the inspector clears only that layer's observations.
+
+At narrow startup widths (host logical width / UI scale below 1250), Regions and
+Layers share a tabbed sidebar so the central atlas remains usable. Wider windows
+use separate sidebars. Default docks budget the host's actual logical dimensions
+and compensate the pinned engine's viewport-relative split sizes. This adapter
+must be revalidated on native baseline promotion. Docking is initialized once;
+subsequent user docking/resizing is preserved rather than automatically reset.
+
+The named scalar example isolates this interaction for short remote video review.
+App 1 shares the corrected docking, legend/text helpers and collapsed Appearance;
+its diagnostic table still has its original region-linking meaning.
 
 ## Scientific annotations
 
@@ -116,16 +133,16 @@ runtime and existing anatomy assets; slice volumes and the shared IBL reader are
 not required. Missing major surfaces fail explicitly; run setup if not prepared.
 
 Use the Layers panel to hide/show targets and the route, edit colors and point
-size/path width, and select `target-a` or `target-b` by original ID. Selection is
+size/path width, and select `target-a` or `target-b` in the data table. Selection is
 pink. Check that hiding a selected layer preserves selection and that mapping
 changes clear region selection while retaining the selected annotation. Orbit,
 pan, zoom and reset; layer state should persist. Native mouse picking of these
 annotations is a later gate; the region browser and anatomical picking still work.
-Changing a scalar-colored layer's uniform color clears its scalar encoding.
+Changing a scalar-colored layer to Single color retains measurement values and selection.
 
-The accepted workflow now includes an additional **Observation table** button
+The accepted workflow now includes an additional **View data** button
 per layer. Open the targets table and select a row: its original ID should become
-the selected annotation. Change the ID in Layers and check that the table follows.
+the selected annotation. Select another target in the scene and check that the table follows.
 Open the route's table and switch between opened layers in the Observations
 window; paths show vertex counts. Try sorting/filtering, closing and reopening the
 window, and hiding a selected layer. The complete payload and exact selection
@@ -198,7 +215,7 @@ The default scene contains six verified source-native context structures: Isocor
 
 A real BWM recording starts visible: 192 prepared recording sites in cyan and one amber path joining their actual coordinates. The default glyph radius is 20 µm rather than 85 µm to reduce overlap between neighboring sites. Uniform cyan identifies the site layer, rather than a measured quantity. The path is not an independent histology trace. Layer counts describe the supplied observations. **Layers** is persistently docked on the right of the viewport and can be resized, moved or docked elsewhere; the Regions browser retains its own full-height reservation. Its three checkboxes control Brain context, Insertion paths and Recording sites. No toggle changes the camera or context opacity.
 
-**Recording sites → Color** switches uniform geometry to mean firing rate. Values are means of good units assigned to co-located channel groups in the default verified fixture; these are not individual neuron soma locations. The range uses finite-site 5th/95th percentiles in Hz, with purple low and yellow high. Missing scalar values are gray and original table values remain unchanged. **Recording details → Site table** opens the optional linked recording table. Recording captions and derivation text come from the supplied fixture's provenance, not a hardcoded subject identity.
+**Color by** switches uniform geometry to mean firing rate. Values are means of good units assigned to co-located channel groups in the default verified fixture; these are not individual neuron soma locations. The range uses finite-site 5th/95th percentiles in Hz, with purple low and yellow high. Missing scalar values are gray and original table values remain unchanged. **View data** opens the optional linked recording table. Recording captions and derivation text come from the supplied fixture's provenance, not a hardcoded subject identity.
 
 The settings gear opens **Display settings**, including Context opacity. Context uses one approximate transparency technique throughout 0–1, avoiding the old automatic transparent-to-opaque pipeline jump at 1. This does not make overlapping transparent surfaces physically exact. At high opacity, internal data can still be obscured; the recording task starts at 0.04. Fine overlays cap opacity at 0.18 so they do not become opaque obstacles. The optional explicit detailed-anatomy presentation retains its separate rendering behavior.
 
@@ -208,11 +225,11 @@ Review in this order:
 2. Turn Recording sites off: the amber path should remain. Turn Insertion paths off too: both data layers disappear. Restore each independently; camera, region selection and styles must stay fixed.
 3. Turn Brain context off/on. Sites and paths remain visible; restoring context restores its previous appearance.
 4. Search and select the FRP leaf, then the VPL leaf (in the thalamus). Context and data must remain. Clear selection, then click a large visible cortex surface: select the shown parent/side without exposing all cortical layers. Try Allen/Beryl/Cosmos and left/right visibility.
-5. Under Recording sites, switch Color to Mean firing rate (Hz) and inspect the range/missing-value legend. Adjust Radius (um) while zooming in: these are display glyphs, not physical site sizes. Open Recording details → Site table and check linked selection. Restore uniform color to compare geometry readability.
+5. Switch Color by to Mean firing rate (Hz) and inspect the range/missing-value legend. Under Appearance, adjust Radius (um) while zooming in: these are display glyphs, not physical site sizes. Open View data and check linked selection. Restore uniform color to compare geometry readability.
 6. Resize or dock Layers elsewhere. At UI scale 1.5, the three primary toggles must remain readable and accessible; the tree should not jump when selection changes. Orbit/zoom and verify Reset view; inspect Explode selection with a fine region selected.
 7. In Display settings, compare low opacity, 0.9 and 1.0. Check the endpoint transition and judge the transparency approximation separately from anatomical clutter.
 
-Each active insertion has its own compact row: visibility, identifier, editable color swatch and width in pixels. Insertion details shows full insertion IDs and supplied session metadata. Narrow docks place the width on a second line within the same insertion group. These controls do not change other insertions.
+Under Appearance, each active insertion has its own compact row: visibility, identifier, editable color swatch and width in pixels. Insertion details shows full insertion IDs and supplied session metadata. Narrow docks place the width on a second line within the same insertion group. These controls do not change other insertions.
 
 Advanced diagnostics retain the older presets, comparison point renderer, physical plane and optional W39 paths. Anatomy planes interpolate continuous grayscale; region labels retain nearest-neighbor filtering. Choose Multiple W39 insertions to inspect three independently styled paths, orbit and zoom, and verify that repeated channel locations produce continuous strokes without spikes. These W39 IDs identify insertions, and their derivative does not supply session metadata. They are outside this first visual gate. Missing optional W39 data disables that example without borrowing BWM firing rates. Later gates will review multiple-recording API scripts and linked slices; no alignment computation or new cluster/voxel feature workflow is claimed here.
 

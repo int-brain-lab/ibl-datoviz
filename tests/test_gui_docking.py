@@ -30,9 +30,9 @@ def test_default_dock_order_splits_sidebars_before_observations(layers, quantity
     )
     ViewerLayout(viewer).dock_windows(None)
     assert calls == [
-        (b'Regions', 1, 600),
-        (b'Layers', 2, 510),
-        (b'Observations', 4, 420),
+        (b'Regions', 1, 560),
+        (b'Layers', 2, 720),
+        (b'Observations', 4, 510),
         (b'3D atlas', 0, 0),
     ]
 
@@ -80,3 +80,56 @@ def test_explode_toolbar_is_exclusive_to_3d_layout(layout, explode_shown):
     assert (b'Explode' in sliders) is explode_shown
     assert buttons == [b'Reset view']
     assert linked_controls == (['slices'] if layout == 'linked' else [])
+
+
+@pytest.mark.parametrize(
+    'width,height,scale', [(2240, 1600, 1.25), (1600, 1000, 1.0), (1440, 900, 1.5)]
+)
+def test_native_actual_dock_bounds_preserve_width_and_narrow_viewport(
+    native_datoviz, monkeypatch, width, height, scale
+):
+    from ibl_anatomy import open_region_catalog  # noqa: PLC0415
+    from ibl_datoviz import AtlasMesh, Points  # noqa: PLC0415
+    from tests import FIXTURES  # noqa: PLC0415
+    from tests.test_atlas import FIXTURE  # noqa: PLC0415
+
+    catalog = open_region_catalog(FIXTURES / 'linked-atlas-v1/volume-pack/regions.json')
+    with AtlasViewer(
+        atlas=AtlasMesh.from_pack(FIXTURE),
+        catalog=catalog,
+        width=width,
+        height=height,
+        ui_scale=scale,
+        enable_hover=False,
+    ) as viewer:
+        layer = viewer.add_points(Points((0,), [[0, 0, 0]], viewer.frame, {}))
+        viewer.tables.show(layer)
+        original = viewer._draw_scientific_layers_gui
+        frames = []
+
+        def measure(gui):
+            original(gui)
+            state = {}
+            for name in (b'Regions', b'Layers', b'3D atlas'):
+                viewer.dvz.dvz_gui_begin(gui, name, None, 0)
+                try:
+                    rect = viewer.dvz.DvzRect()
+                    assert viewer.dvz.dvz_gui_current_window_rect(gui, ctypes.byref(rect))
+                    state[name] = (rect.x, rect.y, rect.width, rect.height)
+                finally:
+                    viewer.dvz.dvz_gui_end(gui)
+            frames.append(state)
+
+        monkeypatch.setattr(viewer, '_draw_scientific_layers_gui', measure)
+        viewer.show(frame_count=4)
+        state = frames[-1]
+        compact = width / scale < 1250
+        target = min(360 * scale, width * (0.38 if compact else 0.30))
+        assert state[b'Layers'][2] == pytest.approx(target, abs=4)
+        assert state[b'3D atlas'][3] >= height * 0.55
+        if compact:
+            assert state[b'Regions'] == state[b'Layers']
+            assert state[b'3D atlas'][2] >= width * 0.60
+        else:
+            assert state[b'Regions'][0] == 0
+            assert state[b'3D atlas'][2] >= width * 0.45

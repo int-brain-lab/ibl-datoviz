@@ -17,9 +17,11 @@ short clips through the private Fractal gateway; see the current handoff.
 The October 27 scalar-readability batch adds `just review scalars`: the existing
 prepared BWM fixture in a linked workspace with active values/units, sampled
 legends, missing-value descriptions and retained table updates. Its new short
-video's right-panel layout was rejected as confusing. The next priority is the
-[scientist-facing panel redesign](REVIEW_FEEDBACK.md#scalar-right-panel-rejected-and-audited-october-27-2026),
-separately from the accepted atlas-navigation clip.
+video's right-panel layout was rejected as confusing. The subsequent
+[scientist-facing panel redesign](REVIEW_FEEDBACK.md#scalar-right-panel-rejected-and-audited-october-27-2026)
+is implemented: compact layer inspection, non-destructive color modes, data on
+demand and corrected docking requests. A new 20-second ordinary-interaction clip
+awaits acceptance separately from the accepted atlas-navigation clip.
 
 The current API design and implementation stages are in the
 [scientific viewer API proposal](SCIENTIFIC_VIEWER_API_PROPOSAL.md). It uses

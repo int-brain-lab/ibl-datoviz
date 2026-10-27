@@ -48,4 +48,4 @@ def test_scalar_review_preserves_fixture_values_ids_source_and_missing_meaning()
         for key in payload.observation_keys
     )
     assert 'no good unit' in payload.provenance['scalar_missing_meaning']
-    assert tables == [app.site_layer]
+    assert tables == []  # Data is opened on demand, not imposed on startup.
