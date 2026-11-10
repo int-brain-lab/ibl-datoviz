@@ -276,6 +276,37 @@ def test_region_mask_uses_current_mapping_without_selecting_other_regions(volume
     assert not composer.region_mask('dv', 1, ()).any()
 
 
+@pytest.mark.parametrize('mapping', ['allen', 'beryl', 'cosmos'])
+@pytest.mark.parametrize('axis', ['ap', 'ml', 'dv'])
+@pytest.mark.parametrize('selected', [(), (997,), (-997, 997, 0), (315, -997)])
+@pytest.mark.parametrize('factor', [0.0, 0.25, 0.5, np.float32(0.35), 1.0])
+def test_layer_selection_matches_pixel_dimming_without_mutating_palette(
+    volumes, mapping, axis, selected, factor
+):
+    composer = AtlasSliceComposer(volumes, mapping)
+    palette = composer._colors.copy()
+    anatomy, annotation = composer.compose_layers(axis, 1, annotation_opacity=0.58)
+    expected = annotation.copy()
+    if any(selected) and factor != 1:
+        dim = (annotation[..., 3] != 0) & ~composer.region_mask(axis, 1, selected)
+        expected[dim, :3] = np.rint(expected[dim, :3] * factor).astype(np.uint8)
+    actual_anatomy, actual_annotation = composer.compose_layers(
+        axis,
+        1,
+        annotation_opacity=0.58,
+        selected_region_ids=selected,
+        selection_dim_factor=factor,
+    )
+    np.testing.assert_array_equal(actual_anatomy, anatomy)
+    np.testing.assert_array_equal(actual_annotation, expected)
+    np.testing.assert_array_equal(composer._colors, palette)
+    restored_anatomy, restored_annotation = composer.compose_layers(
+        axis, 1, annotation_opacity=0.58
+    )
+    np.testing.assert_array_equal(restored_anatomy, anatomy)
+    np.testing.assert_array_equal(restored_annotation, annotation)
+
+
 @pytest.mark.parametrize('layered', [False, True])
 def test_selection_without_dimming_skips_membership_mask(volumes, monkeypatch, layered):
     composer = AtlasSliceComposer(volumes, 'allen')

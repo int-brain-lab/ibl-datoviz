@@ -82,7 +82,12 @@ def label_contours(labels: NDArray) -> tuple[NDArray[np.float32], NDArray[np.flo
     tl, tr = padded[:-1, :-1], padded[:-1, 1:]
     bl, br = padded[1:, :-1], padded[1:, 1:]
     edges = np.stack((tl != tr, tr != br, bl != br, tl != bl), axis=-1)
-    counts = edges.sum(axis=-1)
+    # Four boolean crossings fit in a byte. Avoid an int64 axis reduction
+    # over the interleaved edge table for every image cell.
+    counts = edges[..., 0].astype(np.uint8)
+    counts += edges[..., 1]
+    counts += edges[..., 2]
+    counts += edges[..., 3]
     # Most anatomical images have few crossing cells. Compact them once so
     # each edge-pair query scans only crossings, retaining row-major order.
     # Dense categorical images keep the full-grid path to avoid an expensive
@@ -268,11 +273,15 @@ class AtlasSliceComposer:
         # painting an artificial black rectangle around every slice.
         anatomy_alpha = np.where(valid, 255, 0).astype(np.uint8)
         anatomy = np.concatenate((anatomy_rgb, anatomy_alpha[..., None]), axis=2)
-        region_rgb = self._colors[annotation].copy()
+        colors = self._colors
         selected = {abs(int(region_id)) for region_id in selected_region_ids if region_id}
         if selected and selection_dim_factor != 1:
-            dim = valid & ~np.isin(np.abs(self._mapped_ids[annotation]), tuple(selected))
-            region_rgb[dim] = np.rint(region_rgb[dim] * selection_dim_factor).astype(np.uint8)
+            # Dimming is constant for each source index. Apply identical byte
+            # rounding to the small palette before expanding it to image pixels.
+            colors = colors.copy()
+            dim = self._valid & ~np.isin(np.abs(self._mapped_ids), tuple(selected))
+            colors[dim] = np.rint(colors[dim] * selection_dim_factor).astype(np.uint8)
+        region_rgb = colors[annotation]
         annotation_rgba = np.concatenate(
             (
                 region_rgb,
