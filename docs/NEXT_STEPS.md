@@ -9,6 +9,78 @@ all their commits are preserved in `feature/datoviz-v04` or its `main` ancestry.
 Branch names in the dated entries below identify historical implementation batches.
 See `AGENTS.md` for the working-branch policy.
 
+## Measured performance and workflow hardening — November 11 2026
+
+The user authorized autonomous package/native investigation, independent subagents,
+focused local commits and isolated candidate builds. Every suspected native
+performance change requires GPT-6.1 Sol at high reasoning effort to audit attribution
+and design before implementation, and the final code/evidence afterward. No new
+Datoviz production optimization was justified or implemented in this batch.
+
+- `073894d` corrects stale onboarding source revisions and the native build link
+  to the unchanged locked Datoviz `73d0f0bc` and anatomy `95ae2426`.
+- `eda5886` dims the source-index annotation palette before pixel expansion and
+  counts four contour crossings with exact byte additions. Existing rounding,
+  signed identities, voids, output ordering, caches and worker ownership remain.
+- `9e8bca9` retains existing path visuals for color, width and scientific-selection
+  highlights using the existing compensated native attribute setters. Layer and
+  mixed-glyph transactions restore every attempted write before scientific commit;
+  missing visuals or failed recovery close the owner. Geometry, endpoint gaps,
+  authored visibility and picking registrations remain. Frontmost path queries
+  retain their existing explicit unsupported/fail-closed policy.
+
+Three alternating fresh-process package-baseline/current pairs use verified real
+50 µm slices, four warmups and 40 full preparation calls per workload. Selected
+nearby preparation is 40–44% faster, selected 40-section sweeps 36–39% faster and
+unselected sweeps 17–20% faster; unselected nearby work is approximately unchanged.
+All 24 ordered complete-payload hashes match across all six processes. These are
+CPU preparation measurements, not GPU, frame-rate or physical-input improvements.
+The exact final measurement script and archive source hashes are preserved; an
+inherited archive Git-revision metadata error is explicitly documented and fixed
+in the future runnable script. Earlier prototype timings are superseded.
+
+Three matched tiny synthetic path benchmark pairs (one/two paths, four measured
+calls per operation) eliminate four/eight replacement allocations and destructions.
+Color/width/selection CPU medians fall from approximately 0.13–0.23 ms to
+0.05–0.11 ms. No sparse native GPU-upload or large-population gain is claimed.
+Six real anatomy/BWM scenes compare exact scientific state and RGBA pixels. Five
+synthetic path states also match exactly, both before first rendering and across
+same-view render/mutate/render updates; changes affect 926–2,564 pixels and clear
+restores authored appearance. The initial obscured-path fixture was rejected;
+only the corrected visible/live fixtures establish this rendered equivalence.
+
+The native audit compares isolated Release builds of the configured baseline and
+the pre-existing `rc4/integration` candidate `f99b2e01f`, preserving strict presentation.
+Single diagnostic runs separate host and source phases; private-display presentation
+waits dominate host time. The upload trace primarily contains changed AP boundary
+geometry, not redundant full-atlas/all-slice uploads. This does not justify new
+composition caches, synchronization removal or stroke-specific lowering. Native
+source and its pre-existing generated integration bindings are preserved; fresh
+header/facade checks and all 212 active ctypes ABI layouts pass. Earlier unsuccessful
+cache/intermediate-coordinate experiments remain excluded.
+
+The bounded export audit found no demonstrated identity or filesystem-recovery
+defect. It documents the existing figure receipt's incomplete presentation scope
+rather than presenting it as restorable state. A rebuilt wheel/sdist, clean Python
+3.11 installation and isolated installed-native selection/figure export pass;
+installed slice/path source hashes match the final candidate. Typed/source-scoped
+IDs, missing coordinates/measurements and measured zero remain distinct.
+
+Final configured Linux validation: **1,548 passed, two existing skips** (optional
+image-plane pan absent from the baseline; explicitly materialized registered
+10 µm assets unavailable). Ruff, changed-file formatting, strict MkDocs, whitespace,
+strict doctor and both strict three-frame numbered startups pass. The native
+library remains SHA256 `9116d2cada10cb9802ef2f1c2076bf7b75fc1f781055a6b4124d5ede02fc9b3f`.
+Independent source/transaction reviews and the high-effort final architecture audit
+report no blocking findings. These checks do not establish Mac rendering or new
+hands-on latency acceptance.
+
+The local review entry point is ignored `build/overnight-perf/REVIEW.md`, with
+exact revisions, independent audit notes, raw receipts, baseline/current launchers
+and a hands-on checklist for both repositories. `main`, dependency pins, configured
+native baseline and pre-existing untracked user files remain unchanged. No push,
+publication, merge, baseline promotion or canonical media promotion was performed.
+
 ## Analysis round trip and figure export accepted — October 27 2026
 
 The user authorized autonomous implementation and Linux validation through a final
