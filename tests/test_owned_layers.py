@@ -26,7 +26,13 @@ class FakeVisual:
         self.closed = False
         self._closed = False
         self._visible = state['visible']
-        self._insertions = {1: SimpleNamespace(visible=self._visible)}
+        self._insertions = {
+            index + 1: SimpleNamespace(
+                visible=self._visible,
+                data=SimpleNamespace(color=color, width_px=state['size']),
+            )
+            for index, color in enumerate(state['colors'])
+        }
 
     def set_visible(self, *args):
         self._visible = bool(args[-1])
@@ -45,6 +51,12 @@ class FakeVisual:
         self.state['size'] = sizes
 
     update_radius = update_sizes
+
+    def set_color(self, key, color):
+        self._insertions[key].data.color = color
+
+    def set_width(self, key, width):
+        self._insertions[key].data.width_px = width
 
 
 @pytest.fixture
@@ -303,7 +315,7 @@ def test_endpoint_gap_style_survives_layer_rebuilds_and_rejects_unsupported_runt
     route.set_color('#ff0000')
     route.set_visible(False)
     registry.update_selection([route.observation('route')])
-    assert gaps == [(4, 6)] * 4
+    assert gaps == [(4, 6)]
     assert route.endpoint_gaps_px == (4, 6)
     with pytest.raises(ValueError, match='endpoint gaps'):
         route.set_endpoint_gaps_px(-1, 3)

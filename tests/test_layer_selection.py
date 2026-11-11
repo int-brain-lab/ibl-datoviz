@@ -160,21 +160,25 @@ def test_sphere_alpha_failure_restores_prior_point_and_sphere_policy(registry):
         np.testing.assert_array_equal(native.visuals[layer._visual.visual]['color'], colors)
 
 
-def test_path_candidate_failure_precedes_any_live_point_color_write(registry):
+def test_partial_path_failure_restores_previous_point_write_and_both_handles(registry):
     layers, native, _transforms, _guards = registry
     point, route = points(layers), paths(layers)
     old_point, old_route = point._visual, route._visual
-    native.arm_attributes()
-    native.fail = 'batch'
-    with pytest.raises(RuntimeError, match='insertion upload'):
+    prior_point = displayed_colors(point).copy()
+    prior_path = route._visual.get_data(1).color.copy()
+    native.arm_attributes(color=(2,))
+    with pytest.raises(RuntimeError, match='insertion color'):
         layers.update_selection((point.refs[0], route.refs[0]))
     assert point._visual is old_point and route._visual is old_route
     assert not point._selected and not route._selected
-    assert 'color' not in native.attribute_writes
+    np.testing.assert_array_equal(native.visuals[old_point.visual]['color'], prior_point)
+    np.testing.assert_array_equal(
+        native.visuals[old_route._insertions[1].visual]['color'], [prior_path] * 2
+    )
     assert len(native.visuals) == 2
 
 
-def test_partial_point_failure_discards_staged_paths_and_restores_original_handles(registry):
+def test_partial_point_failure_preserves_path_and_point_handles(registry):
     layers, native, _transforms, _guards = registry
     point, route = points(layers), paths(layers)
     old_point, old_route = point._visual, route._visual
@@ -185,6 +189,26 @@ def test_partial_point_failure_discards_staged_paths_and_restores_original_handl
     assert point._visual is old_point and route._visual is old_route
     assert not point._selected and not route._selected
     assert set(native.visuals) == old_visuals
+
+
+def test_later_point_failure_restores_already_updated_path(registry):
+    layers, native, _transforms, _guards = registry
+    route, point = paths(layers), points(layers)
+    old_route, old_point = route._visual, point._visual
+    old_colors = old_route.get_data(1).color.copy()
+    native.arm_attributes(color=(2,))
+    with pytest.raises(RuntimeError, match='point colors'):
+        layers.update_selection((route.refs[0], point.refs[0]))
+    assert route._visual is old_route and point._visual is old_point
+    assert not route._selected and not point._selected
+    np.testing.assert_array_equal(old_route.get_data(1).color, old_colors)
+    np.testing.assert_array_equal(
+        native.visuals[old_route._insertions[1].visual]['color'], [old_colors] * 2
+    )
+    np.testing.assert_array_equal(
+        native.visuals[old_point.visual]['color'], displayed_colors(point)
+    )
+    assert not layers.viewer.closed
 
 
 def test_closed_failing_component_is_not_read_during_global_recovery(registry):

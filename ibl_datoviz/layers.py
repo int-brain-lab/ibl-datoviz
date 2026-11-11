@@ -86,7 +86,6 @@ class _SelectionUpdate:
     selected: frozenset
     colors: np.ndarray | None = None
     previous_colors: np.ndarray | None = None
-    candidate: object = None
 
 
 def _apply_visibility(registry, updates):
@@ -431,7 +430,9 @@ class LayerHandle:
 
     def _update_attributes(self, *, colors=None, size=None):
         if self._glyph == 'path':
-            self._replace(colors=colors, size=size)
+            self._update_path_attributes(
+                colors=None if colors is None else self._display_colors(colors), size=size
+            )
             return
         try:
             if colors is not None:
@@ -446,6 +447,41 @@ class LayerHandle:
                 close()
             raise
 
+    def _update_path_attributes(self, *, colors=None, size=None):
+        """Keep path handles and compensate every attempted per-path setter."""
+        updates = []
+        for row, (key, item) in enumerate(self._visual._insertions.items()):
+            if colors is not None and not np.array_equal(colors[row], item.data.color):
+                updates.append((key, self._visual.set_color, item.data.color, colors[row]))
+            if size is not None and size != item.data.width_px:
+                updates.append((key, self._visual.set_width, item.data.width_px, size))
+        attempted = []
+        try:
+            for key, setter, previous, value in updates:
+                attempted.append((key, setter, previous))
+                setter(key, value)
+        except Exception as error:
+            failures = []
+            for key, setter, previous in reversed(attempted):
+                if key not in self._visual._insertions:
+                    failures.append(RuntimeError('path visual was removed during local rollback'))
+                    continue
+                try:
+                    setter(key, previous)
+                except Exception as recovery_error:
+                    failures.append(recovery_error)
+            if failures:
+                close = getattr(self._registry.viewer, 'close', self._registry.close)
+                close()
+                raise RuntimeError('path attributes rollback failed; owner closed') from error
+            raise
+
+    def _update_display_colors(self, colors):
+        if self._glyph == 'path':
+            self._update_path_attributes(colors=colors)
+        else:
+            self._visual.update_colors(colors)
+
     def _display_colors(self, colors=None, *, selected=None):
         colors = self._colors if colors is None else colors
         selected = self._selected if selected is None else selected
@@ -458,8 +494,6 @@ class LayerHandle:
 
     def _selection_update(self, selected):
         update = _SelectionUpdate(self, selected)
-        if self._glyph == 'path':
-            return update
         old_rows = {
             self._native_rows_by_ref[ref]
             for ref in self._selected
@@ -797,34 +831,18 @@ class LayerRegistry:
             picking.invalidate()
         attempted = []
         try:
-            # Paths retain staged replacement until their renderer supports the
-            # same retained color contract. Stage them before touching live colors.
-            for update in updates:
-                if update.layer._glyph == 'path':
-                    update.candidate = update.layer._build(selected=update.selected)
             for update in updates:
                 if update.colors is not None:
                     attempted.append(update)
-                    update.layer._visual.update_colors(update.colors)
+                    update.layer._update_display_colors(update.colors)
         except Exception:
-            self._restore_selection(updates, attempted)
+            self._restore_selection(attempted)
             raise
-        retired = []
         for update in updates:
             layer = update.layer
-            if update.candidate is not None:
-                retired.append((layer, layer._visual))
-                layer._visual = update.candidate
             layer._selected = update.selected
-        try:
-            for layer, previous in retired:
-                layer._dispose(previous)
-        except Exception as error:
-            close = getattr(self.viewer, 'close', self.close)
-            close()
-            raise RuntimeError('selection visual retirement failed; owner closed') from error
 
-    def _restore_selection(self, updates, attempted):
+    def _restore_selection(self, attempted):
         failures = []
         for update in reversed(attempted):
             component = update.layer._visual
@@ -832,15 +850,9 @@ class LayerRegistry:
                 failures.append(RuntimeError('selection component recovery failed'))
                 continue
             try:
-                component.update_colors(update.previous_colors)
+                update.layer._update_display_colors(update.previous_colors)
             except Exception as error:
                 failures.append(error)
-        for update in reversed(updates):
-            if update.candidate is not None:
-                try:
-                    update.layer._dispose(update.candidate)
-                except Exception as error:
-                    failures.append(error)
         if failures:
             close = getattr(self.viewer, 'close', self.close)
             close()
